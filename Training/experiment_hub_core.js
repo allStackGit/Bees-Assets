@@ -6611,7 +6611,7 @@ class ExperimentHub {
                     ' does not approve the learner Unity, PPO runtime or private broker key.');
         }
         const next=copy(this.state);
-        const learner=this.queueIn(next,value.learner);
+        const learner=this.queueIn(next,value.learner,undefined,false,true);
         if(learner.project_id!=='bees_native'||learner.status!=='waiting_adapter'||
             learner.frozen_parameters.wan_actors!==value.actors.length)
             throw Error('Bees WAN learner is not an unstarted native Hub job.');
@@ -7960,7 +7960,8 @@ class ExperimentHub {
         return {jobs,executable:false,
             note:'Frozen pipeline only; native execution remains subject to separate authorization.'};
     }
-    queueIn(next,value,placementParameters,internalBeesRollout=false) {
+    queueIn(next,value,placementParameters,internalBeesRollout=false,
+        internalBeesGroup=false) {
         if (!object(value) || typeof value.configuration_id !== 'string')
             throw Error('Select a saved configuration to queue.');
         const selected = next.configurations.find(x=>x.id===value.configuration_id);
@@ -7987,6 +7988,9 @@ class ExperimentHub {
         requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
         validateBeesNativeDefinition(project.id,frozen,resources);
+        if(project.id==='bees_native'&&frozen.wan_actors>0&&
+            internalBeesGroup!==true)
+            throw Error('Bees distributed WAN learners must be queued with their entire reserved actor group in the Bees WAN Design panel.');
         const runName=value.run_name==null||value.run_name===''
             ?null:name(value.run_name,'Run name');
         if(project.id==='tinybrains') {
