@@ -50,7 +50,7 @@ def mixed_pins_ok(pool, suite_root):
     for item in pool:
         if (not isinstance(item, dict)
                 or set(item) != {"id", "label", "model_sha256",
-                                 "manifest_sha256", "checkpoint_sha256"}
+                                 "manifest_sha256", "checkpoint_sha256", "model_dir"}
                 or not isinstance(item["id"], str)
                 or not (item["id"] in ("nano", "micro", "tinybrains_mini_batch128_v1")
                         or FROZEN_OPPONENT.fullmatch(item["id"]))
@@ -67,7 +67,11 @@ def mixed_pins_ok(pool, suite_root):
         if item["id"] in names:
             raise ValueError("Duplicate mixed-opponent entry.")
         names.add(item["id"])
-        model_dir = mixed_model_dir(suite_root, item["id"])
+        expected = mixed_model_dir(suite_root, item["id"]) if suite_root is not None else None
+        if (not isinstance(item["model_dir"], str)
+                or expected is not None and item["model_dir"] != str(expected)):
+            raise ValueError("Mixed-opponent model path differs from the frozen suite root.")
+        model_dir = Path(item["model_dir"])
         if (model_dir.resolve(strict=True) != model_dir or
                 not model_dir.is_dir() or model_dir.is_symlink()):
             raise ValueError("Mixed-opponent directory is unavailable or redirected.")
@@ -224,13 +228,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     mixed = "opponents" in suite
     opponent = suite.get("opponent", "mixed" if mixed else "nano")
     if mixed:
-        from pathlib import Path as _Path
-        suite_root = _Path(__file__).resolve().parent
-        # Evaluation suites are read from the private local suites directory.
-        # The verified model roots are embedded as path-free source names;
-        # resolve them only against an approved fixed evaluator suite root.
-        suite_root = _Path.home() / "evaluation-audits/tinybrains/suites"
-        frozen = {item["id"]: mixed_model_dir(suite_root, item["id"])
+        frozen = {item["id"]: Path(item["model_dir"])
                   for item in suite["opponents"]}
     if not mixed and opponent == "mini":
         fixed = Path(suite["opponent_dir"])
@@ -241,7 +239,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     elif not mixed:
         fixed = STARTER / f"models/{opponent}-bc"
     if mixed:
-        mixed_pins_ok(suite["opponents"], suite_root)
+        mixed_pins_ok(suite["opponents"], None)
     else:
         verify_opponent(suite, fixed)
     replay_root = work / "replays"
@@ -298,7 +296,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                                "ranks": ranks, "scores": replay.get("scores"),
                                "turns": replay.get("turns")})
     if mixed:
-        mixed_pins_ok(suite["opponents"], suite_root)
+        mixed_pins_ok(suite["opponents"], None)
     else:
         verify_opponent(suite, fixed)
     return wins, trials
