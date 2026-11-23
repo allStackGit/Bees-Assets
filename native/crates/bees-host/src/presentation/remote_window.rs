@@ -18,7 +18,7 @@ use bees_gameplay::campaign_dialogue::CampaignCue;
 use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap, polygons_overlap};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
-use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
+use minifb::{Key, KeyRepeat, MouseButton, ScaleMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
 use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, text};
@@ -3225,7 +3225,10 @@ pub fn connect_remote(
         "Bees | Native Spectator (Read Only)"
     } else { "Bees | Native Multiplayer" };
     let mut window=Window::new(window_title,WIDTH,HEIGHT,
-        WindowOptions::default())?;
+        WindowOptions {
+            resize: true, scale_mode: ScaleMode::AspectRatioStretch,
+            ..WindowOptions::default()
+        })?;
     window.set_target_fps(30);
     let mut pixels=vec![0;WIDTH*HEIGHT];
     // Shared local and remote preferences, no alternate game inputs.
@@ -3340,7 +3343,7 @@ pub fn connect_remote(
         // only an input-capturing local overlay, never a network pause.
         if show_battle_menu {
             let left=window.get_mouse_down(MouseButton::Left);
-            let hover=window.get_mouse_pos(MouseMode::Discard)
+            let hover=super::virtual_window_mouse(&window, WIDTH, HEIGHT)
                 .and_then(|(x,y)|NativeSoftwareRenderer::battle_menu_hit(
                     WIDTH,HEIGHT,x,y,5));
             if left&&!last_left {battle_menu_press=hover;}
@@ -4241,7 +4244,7 @@ pub fn connect_remote(
             if window.is_key_down(Key::Down){cam.center.y-=pan;}
             if window.is_key_down(Key::Left){cam.center.x-=pan;}
             if window.is_key_down(Key::Right){cam.center.x+=pan;}
-            let mouse=window.get_mouse_pos(MouseMode::Discard);
+            let mouse=super::virtual_window_mouse(&window, WIDTH, HEIGHT);
             let minimap = show_minimap.then(|| peer.state.as_ref().and_then(bounds)
                 .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
             let authored_edge=peer.state.as_ref().and_then(|state|
@@ -4811,7 +4814,7 @@ pub fn connect_remote(
         } else if now.duration_since(hover_sampled)>=Duration::from_millis(100) {
             hover_sampled=now;
             let candidate=peer.state.as_ref().zip(camera).and_then(|(state,cam)| {
-                window.get_mouse_pos(MouseMode::Discard).and_then(|(x,y)| {
+                super::virtual_window_mouse(&window, WIDTH, HEIGHT).and_then(|(x,y)| {
                     if x<0.0||y<0.0||x>=FIELD as f32||y>=HEIGHT as f32 ||
                         (show_minimap && bounds(state)
                             .and_then(|map|MiniMapLayout::top_right(FIELD,HEIGHT,map))
@@ -4987,7 +4990,7 @@ pub fn connect_remote(
             window.get_mouse_down(MouseButton::Left)
         {
             if let (Some((sx,sy)),Some((mx,my)))=
-                (drag_start,window.get_mouse_pos(MouseMode::Discard))
+                (drag_start,super::virtual_window_mouse(&window, WIDTH, HEIGHT))
             {
                 let (x,y)=(mx as i32,my as i32);
                 // Patrol's first corner is in World coordinates, so zoom
