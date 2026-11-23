@@ -80,8 +80,10 @@ enum WireInput {
         token: String,
         #[serde(default)] resume_session_id: Option<String>,
         #[serde(default)] spectator: bool,
-        #[serde(default)] compressed_world_state: bool,
     },
+    /// After authenticated welcome, a new client may opt in to compressed
+    /// replaceable snapshots. Old hosts never receive this variant.
+    StateCompression { codec: String },
     Input { request_id: u64, action: NativePlayerInput },
     /// Transport liveness only. Runs even during a paused World and never
     /// occupies the gameplay request-ID or durable command stream.
@@ -1246,8 +1248,7 @@ impl NativeRemotePlay {
                     serde_json::from_slice(&peer.incoming[start..end]);
                 start = end + 1;
                 match message {
-                    Ok(WireInput::Hello { token, resume_session_id, spectator,
-                        compressed_world_state })
+                    Ok(WireInput::Hello { token, resume_session_id, spectator })
                         if peer.side.is_none() => {
                         let credentials = if spectator {
                             &self.spectator_tokens
@@ -1280,7 +1281,6 @@ impl NativeRemotePlay {
                             }
                             peer.side = Some(side);
                             peer.spectator = spectator;
-                            peer.compressed_world_state = compressed_world_state;
                             if !spectator && self.forfeit_absence
                                 .is_some_and(|(absent,_)| absent == side)
                             {
@@ -1325,6 +1325,7 @@ impl NativeRemotePlay {
                                     "host_session_id": original,
                                     "recovered_host": true,
                                     "hosted_time_control": false,
+                                    "state_codecs": ["lz4"],
                                 }));
                                 if let Some(outcome) = receipt.campaign_outcome.as_ref()
                                     .filter(|outcome| !spectator &&
@@ -1385,10 +1386,21 @@ impl NativeRemotePlay {
                                 "host_session_id": self.host_session_id,
                                 "recovered_host": self.recovered_session,
                                 "hosted_time_control": self.dedicated_briefing_gate && !spectator,
+                                "state_codecs": ["lz4"],
                             }));
                         } else {
                             peer.closed = true;
                         }
+                    }
+                    Ok(WireInput::StateCompression { codec }) if peer.side.is_some() => {
+                        // Transport-only opt-in. Never changes an input
+                        // request ID, physical tick, replay or campaign state.
+                        if codec != "lz4" || peer.compressed_world_state {
+                            peer.closed = true;
+                            break;
+                        }
+                        peer.compressed_world_state = true;
+                        peer_orders += 1;
                     }
                     Ok(WireInput::Ping { nonce }) if peer.side.is_some() => {
                         peer.heartbeat_enabled=true;
