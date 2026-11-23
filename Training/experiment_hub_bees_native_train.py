@@ -131,7 +131,8 @@ def inspect_job(filename: Path) -> dict:
         "expected_parent_model_sha256", "expected_parent_checkpoint_sha256",
     }
     wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
-                "wan_key_fingerprint", "game_payload_sha256"}
+                "wan_key_fingerprint", "game_payload_sha256",
+                "wan_release_sha256"}
     if not isinstance(job, dict) or (
         job.get("schema_version") == 1 and set(job) != keys
     ) or (
@@ -185,6 +186,11 @@ def inspect_job(filename: Path) -> dict:
             any(ch not in "0123456789abcdef" for ch in job["game_payload_sha256"])
         ) or unity_worker_tree_sha256(Path(job["game_binary"])) != job["game_payload_sha256"]:
             raise ValueError("Complete Bees Unity player content differs from its frozen WAN job.")
+        if not isinstance(job["wan_release_sha256"], str) or (
+            len(job["wan_release_sha256"]) != 64 or
+            any(c not in "0123456789abcdef" for c in job["wan_release_sha256"])
+        ):
+            raise ValueError("Bees WAN build-release identity is not pinned.")
         if type(job["wan_actors"]) is not int or not 1 <= job["wan_actors"] <= 8 or (
             type(job["wan_broker_port"]) is not int or
             not 1024 <= job["wan_broker_port"] <= 65535
@@ -281,6 +287,7 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
     if (previous.get("schema_version") == 3 or job["schema_version"] == 3) and (
         previous.get("schema_version") != 3 or job["schema_version"] != 3 or
         previous.get("game_payload_sha256") != job.get("game_payload_sha256") or
+        previous.get("wan_release_sha256") != job.get("wan_release_sha256") or
         previous.get("wan_key_fingerprint") != job.get("wan_key_fingerprint")
     ):
         raise ValueError("Bees WAN checkpoint continuation requires the same complete Unity player and trusted broker.")
@@ -742,13 +749,13 @@ def main():
             job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
         )
         child_env.update({
-            "BEES_TRAINING_BUILD_ID": build,
+            "BEES_TRAINING_BUILD_ID": job["wan_release_sha256"],
             "BEES_TRAINING_RUN_ID": job["lineage_root_id"],
             "BEES_TRAINING_COMPATIBILITY_KEY": hashlib.sha256(
                 ("bees-native-wan-v1:" + build + ":" + trainer_hash +
                  ":" + runtime).encode("ascii")
             ).hexdigest(),
-            "BEES_TRAINING_ENVIRONMENT_ID": build,
+            "BEES_TRAINING_ENVIRONMENT_ID": job["wan_release_sha256"],
         })
     child=None
     stopped=False
