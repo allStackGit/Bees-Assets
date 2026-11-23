@@ -554,7 +554,7 @@ function approvedTinyBrainsEnvironment(parameters,machines) {
 // Resolve browser-selected opponent IDs exclusively against a connected,
 // trusted worker's pinned model catalogue. Persist hashes with the Design
 // so a later model replacement cannot silently alter queued training jobs.
-function pinTinyBrainsOpponents(parameters,machines) {
+function pinTinyBrainsOpponents(parameters,machines,previous=null) {
     if(parameters.training_opponent_ids===undefined) {
         delete parameters.training_opponent_pins;
         return;
@@ -564,6 +564,19 @@ function pinTinyBrainsOpponents(parameters,machines) {
         new Set(ids).size!==ids.length||
         ids.some(id=>typeof id!=='string'||id.length>64))
         throw Error('Select 1–16 distinct approved training opponents.');
+    // Editing map settings or attaching an evaluation must not silently
+    // re-pin an unchanged opponent roster to newer/different model bytes.
+    // These pins were derived and verified by the Hub at the earlier save.
+    const earlier=previous?.parameters;
+    if(earlier?.profile===parameters.profile&&
+        earlier.profile_sha256===parameters.profile_sha256&&
+        JSON.stringify(earlier.training_opponent_ids)===JSON.stringify(ids)&&
+        Array.isArray(earlier.training_opponent_pins)&&
+        earlier.training_opponent_pins.length===ids.length&&
+        earlier.training_opponent_pins.every((pin,i)=>pin?.id===ids[i])) {
+        parameters.training_opponent_pins=copy(earlier.training_opponent_pins);
+        return;
+    }
     const host=[...(machines||[])].sort((a,b)=>
         Number(b.status==='connected')-Number(a.status==='connected'))
         .find(machine=>
@@ -6265,8 +6278,11 @@ class ExperimentHub {
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
+        const previous=value.id?this.state.configurations.find(c=>
+            c.id===value.id&&c.project_id===project.id&&
+            c.revision===value.revision):null;
         if(project.id==='tinybrains')
-            pinTinyBrainsOpponents(params,this.state.machines);
+            pinTinyBrainsOpponents(params,this.state.machines,previous);
         requireCourierTrainingPin(project.id,params);
         if(project.id==='tinybrains'&&Object.hasOwn(params,'rollout_endpoints'))
             throw Error('Select TinyBrains rollout machines when reserving the group.');
