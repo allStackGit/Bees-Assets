@@ -316,6 +316,12 @@ internal static class NativePhysicalSceneExporter
         // frontier, including retired commands/squads. Native scene
         // authoring must not reconstruct it from only surviving squads.
         public long source_pool_item_count;
+        // Literal source LevelOptions identity, not an inferred campaign
+        // mission. The native campaign author may independently verify
+        // this against the canonical mission catalog before deployment.
+        public int source_level_options_id;
+        public int source_level_map_index;
+        public string source_level_options_name;
         public string level_name;
         public string stage_name;
         // Authored MapData.Location, used only by the client soundtrack.
@@ -426,6 +432,12 @@ internal static class NativePhysicalSceneExporter
             throw new InvalidOperationException("Native source Level requires its live Stage pool identity.");
         var snapshot = new PhysicalScene {
             source_pool_item_count = level.Stage.Pool.ItemCount,
+            source_level_options_id = level.CurrentLevelOptions != null
+                ? level.CurrentLevelOptions.Id : -1,
+            source_level_map_index = level.CurrentLevelOptions != null
+                ? level.CurrentLevelOptions.MapIndex : -1,
+            source_level_options_name = level.CurrentLevelOptions != null
+                ? level.CurrentLevelOptions.Name : null,
             targeting_context = new SourceTargetingContext { has_player = level.HasPlayer, user_side = ConfigData.Configuration.UserSide },
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
