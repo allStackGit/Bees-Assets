@@ -177,6 +177,8 @@ class FrozenInferenceMicrobatcher:
         self._last_requal_group = 0
         self._pinned_pending = deque()
         self._pinned_bytes = 0
+        self._pinned_pool = []
+        self._pinned_cached_bytes = 0
         self._condition = Condition()
         self._closed = False
         self._publishing = False
@@ -192,6 +194,7 @@ class FrozenInferenceMicrobatcher:
                               profile_refreshes=0, bucketed_groups=0,
                               flat_groups=0, flat_packed_bytes=0,
                               pinned_groups=0, pinned_h2d_bytes=0,
+                              pinned_allocations=0, pinned_reuses=0,
                               head_of_line_bypasses=0,
                               host_input_requests=0, host_input_bytes=0,
                               numpy_input_arrays=0,
@@ -409,6 +412,8 @@ class FrozenInferenceMicrobatcher:
                     torch.cuda.current_stream(self.device).synchronize()
                     self._pinned_pending.clear()
                     self._pinned_bytes = 0
+                    self._pinned_pool.clear()
+                    self._pinned_cached_bytes = 0
         except BaseException as error:
             # An unexpected worker initialization/device failure must not
             # strand pending Futures forever. Deliver exceptions without
@@ -521,6 +526,35 @@ class FrozenInferenceMicrobatcher:
         while self._pinned_pending and self._pinned_pending[0][1].query():
             buffers,event,size = self._pinned_pending.popleft()
             self._pinned_bytes -= size
+            # The GPU finished every DMA read of these buffers. Cache exact
+            # shapes for future small batches rather than repeatedly paying
+            # the OS cost of allocating and pinning host memory.
+            for buffer in buffers:
+                bytes_used = buffer.numel()*buffer.element_size()
+                if len(self._pinned_pool)<32:
+                    self._pinned_pool.append(buffer)
+                    self._pinned_cached_bytes += bytes_used
+
+    def _pinned_buffer(self, elements, dtype, checked_out_bytes):
+        count_bytes = elements*torch.empty((),dtype=dtype).element_size()
+        for index in range(len(self._pinned_pool)-1,-1,-1):
+            cached = self._pinned_pool[index]
+            if cached.dtype==dtype and cached.numel()==elements:
+                self._pinned_pool.pop(index)
+                self._pinned_cached_bytes -= count_bytes
+                self._counters["pinned_reuses"] += 1
+                return cached
+        while (self._pinned_pool and
+               self._pinned_bytes+self._pinned_cached_bytes+
+               checked_out_bytes+count_bytes>self.max_pinned_bytes):
+            evicted = self._pinned_pool.pop(0)
+            self._pinned_cached_bytes -= evicted.numel()*evicted.element_size()
+        if (self._pinned_bytes+self._pinned_cached_bytes+
+                checked_out_bytes+count_bytes>self.max_pinned_bytes):
+            raise MemoryError("Pinned staging buffers exceed the native memory budget")
+        buffer = torch.empty(elements,dtype=dtype,device="cpu",pin_memory=True)
+        self._counters["pinned_allocations"] += 1
+        return buffer
 
     def _flat_model_inputs(self, owners, keys, *, pinned=False):
         """Pack all compatible input tensors with one torch.cat per dtype.
@@ -562,19 +596,16 @@ class FrozenInferenceMicrobatcher:
                        not any(origin[1].type=="cpu" for origin in fragments)):
             raise ValueError("Pinned host transfers are not available")
         self._reap_pinned()
-        resident_bytes = sum(sum(t.numel()*t.element_size() for t in parts)
-                             for origin,parts in fragments.items()
-                             if pinned and origin[1].type=="cpu")
-        if pinned and resident_bytes+self._pinned_bytes>self.max_pinned_bytes:
-            raise MemoryError("Pinned host transfer memory exceeds its lease")
+        resident_bytes = 0
         pinned_sources = {}
         for origin,parts in fragments.items():
             if pinned and origin[1].type=="cpu":
                 # Allocate all pinned sources BEFORE submitting any GPU DMA.
                 # Allocation/copy errors then cannot discard memory already
                 # being read by an outstanding asynchronous transfer.
-                buffer = torch.empty(sum(t.numel() for t in parts),
-                                     dtype=origin[0],device="cpu",pin_memory=True)
+                buffer = self._pinned_buffer(
+                    sum(t.numel() for t in parts),origin[0],resident_bytes)
+                resident_bytes += buffer.numel()*buffer.element_size()
                 cursor = 0
                 for part in parts:
                     width = part.numel()
@@ -830,6 +861,7 @@ class FrozenInferenceMicrobatcher:
                           cached_model_cohorts=len(self._executors),
                           pending_input_bytes=self._outstanding_bytes,
                           pinned_pending_bytes=self._pinned_bytes,
+                          pinned_cached_bytes=self._pinned_cached_bytes,
                           calibrated_batch_shapes=len(self._admission),
                           multiple_producers=int(self._multi_producer),
                           active_producers=sum(
