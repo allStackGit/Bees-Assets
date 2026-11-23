@@ -312,6 +312,10 @@ internal static class NativePhysicalSceneExporter
         public int schema_version = 35;
         public SourceTargetingContext targeting_context;
         public int source_frame_count = Time.frameCount;
+        // Stage.Pool.ItemCount is the source's shared next-identity
+        // frontier, including retired commands/squads. Native scene
+        // authoring must not reconstruct it from only surviving squads.
+        public long source_pool_item_count;
         public string level_name;
         public string stage_name;
         // Authored MapData.Location, used only by the client soundtrack.
@@ -418,7 +422,10 @@ internal static class NativePhysicalSceneExporter
                 "Native source squad return positions must be finite and complete.");
         }
 
+        if (level.Stage.Pool == null || level.Stage.Pool.ItemCount < 0)
+            throw new InvalidOperationException("Native source Level requires its live Stage pool identity.");
         var snapshot = new PhysicalScene {
+            source_pool_item_count = level.Stage.Pool.ItemCount,
             targeting_context = new SourceTargetingContext { has_player = level.HasPlayer, user_side = ConfigData.Configuration.UserSide },
             level_name = !string.IsNullOrEmpty(level.Name)
                 ? level.Name : level.gameObject.name,
