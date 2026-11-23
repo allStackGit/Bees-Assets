@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import tempfile
+import time
 
 from bees_unity_worker_identity import unity_worker_tree_sha256
 
@@ -38,6 +39,7 @@ class StagedUnityPlayer:
             os.name != "nt" and scratch.stat().st_mode & 0o077
         ):
             raise ValueError("Unity runtime scratch owner is redirected or not private.")
+        started = time.monotonic()
         self._temporary = tempfile.TemporaryDirectory(
             prefix=self.job_root.name + "-", dir=scratch,
             ignore_cleanup_errors=True,
@@ -57,6 +59,12 @@ class StagedUnityPlayer:
             executable = player_root / self.source.name
             if unity_worker_tree_sha256(executable) != original_hash:
                 raise ValueError("Staged Unity player differs from its immutable source.")
+            print(
+                "[Bees Unity] disposable player verified for job " +
+                self.job_root.name + " in " +
+                f"{time.monotonic() - started:.2f}s.",
+                flush=True,
+            )
             return executable
         except Exception:
             self.close()
