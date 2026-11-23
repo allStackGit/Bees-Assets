@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from native_game_registration import register_playable
-from native_session_selection import _playable_run
+from native_session_selection import _playable_run, publish_session_playable
 from native_training_artifacts import (
     atomic_json, check_learner, file_sha256, native_source_contract_sha256,
 )
@@ -126,7 +126,18 @@ def publish(
         else:
             atomic_json(file, value)
 
-    write_once(config_path, playable)
+    prior = read_json(receipt_path) if receipt_path.is_file() else None
+    # Earlier immutable Hub receipts still refer to the original run alias.
+    # Apply physical snapshots to new publications and their retries.
+    if prior is not None and "physical_assets_sha256" not in prior:
+        write_once(config_path, playable)
+        publication = {
+            "playable_run": str(config_path),
+            "playable_run_sha256": file_sha256(config_path),
+        }
+    else:
+        publication = publish_session_playable(round_directory, playable)
+        write_once(config_path, playable)
     receipt = {
         "schema_version": 1,
         "kind": "native_training_latest_playable",
@@ -139,8 +150,7 @@ def publish(
         "manifest_sha256": manifest_sha,
         "source_run_config": str(run_path),
         "source_run_config_sha256": source_sha256,
-        "playable_run": str(config_path),
-        "playable_run_sha256": file_sha256(config_path),
+        **publication,
     }
     write_once(receipt_path, receipt)
     source = read_json(run_path)
@@ -151,7 +161,7 @@ def publish(
         "game_id": game_id,
         "source_run": str(run_path),
         "gallery_entry": str(registration),
-        "playable_run": str(config_path),
+        "playable_run": receipt["playable_run"],
         "checkpoint_sha256": checkpoint_sha,
     }
 

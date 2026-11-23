@@ -181,7 +181,7 @@ def copy_playable_asset(source, target, digest):
         raise ValueError(f"native physical input changed during publication: {source}")
 
 
-def publish_session_playable(root, alias, playable):
+def publish_session_playable(root, playable, *, alias=None):
     """Keep stable gallery receipts while the session's shortcut advances."""
     root = root.resolve(strict=True)
     assets = freeze_playable_physics(playable)
@@ -210,7 +210,8 @@ def publish_session_playable(root, alias, playable):
             raise ValueError("native playable run changed after publication")
         sync_directory(root)
     # Keep the operator-facing filename and its existing relative-path base.
-    atomic_json(root / alias, playable)
+    if alias is not None:
+        atomic_json(root / alias, playable)
     return {
         "playable_run": str(output), "playable_run_sha256": file_sha256(output),
         "physical_assets_sha256": {name: digest for name, (_, digest) in assets.items()},
@@ -399,7 +400,7 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         raise ValueError("native playable source run changed during checkpoint selection")
     selected_run = _playable_run(source, best)
     root = Path(root)
-    publication = publish_session_playable(root, "best-evaluated-run.json", selected_run)
+    publication = publish_session_playable(root, selected_run, alias="best-evaluated-run.json")
     # Publish the selection receipt last, after the runnable configuration is
     # durable. It binds the current selected run bytes and immutable source
     # artifacts; in-flight or resumed rounds can safely republish this view.
@@ -470,7 +471,7 @@ def publish_latest_playable(root, recipe, completed, manifest, checkpoint):
         "checkpoint_sha256": checkpoint_sha,
         "manifest": str(manifest),
     })
-    publication = publish_session_playable(root, "latest-playable-run.json", playable)
+    publication = publish_session_playable(root, playable, alias="latest-playable-run.json")
     receipt = {
         "schema_version": 1,
         "kind": "native_training_latest_playable",
