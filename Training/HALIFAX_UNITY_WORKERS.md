@@ -80,3 +80,38 @@ Use -NewRun only when an intentionally fresh training lineage is required.
 This is a transitional route using the existing Windows Bees learner and
 worker deployment. It does not register Bees execution in the separate
 Halifax native-only Hub, or make the ROCm Bees learner operational.
+## View and control Bees from the Halifax Experiment Hub
+
+The current native Hub remains the scheduler for TinyBrains and Courier. To
+use the same dashboard for Bees, **keep the original Bees Experiment Manager
+running on the Windows learner** (do not start two managers against its data).
+That Bees manager already owns run continuity, environment validation,
+training controls, remote worker rollout and evaluation.
+
+Set up a private SSH local port forward from Halifax to the Windows machine's
+existing loopback-only Bees manager on TCP 7148:
+
+```sh
+ssh -N -L 127.0.0.1:7158:127.0.0.1:7148 <Exeter-SSH-hostname>
+```
+
+Configure `EXPERIMENT_HUB_BEES_BRIDGE_PORT=7158` in Halifax's **standalone
+Hub systemd service environment**, then restart the coordinator during a
+safe idle window. Port 7158 is the local SSH listener, not a public web port.
+Keep the tunnel authenticated and persistent with the operator's preferred
+service management. The bridge rejects remote hosts, arbitrary proxy
+paths and overlapping Hub ports.
+
+The Hub's **Bees Unity training — external coordinator** panel can:
+
+- Read authoritative Bees training state, workers and run history.
+- Gracefully stop and resume Bees or explicitly start a new optimizer run.
+- Import a completed Halifax worker build from the manifest path **as seen on
+  the Windows Bees manager**. The worker ZIPs must already have been copied.
+- Show status and error information without automatically retrying a command
+  whose outcome is uncertain.
+
+The native Hub does not acquire Bees leases or schedule Bees workers. Its own
+registry and current TinyBrains/Courier jobs remain unchanged. The bridge is
+disabled by default if the environment variable is absent.
+
