@@ -442,8 +442,10 @@ def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
                     "candidate_as_human"] += 1
                 row["candidate_as_side_1" if candidate_side == 1 else
                     "candidate_as_side_2"] += 1
-                row["wins" if winner == candidate_side else
-                    "draws" if winner == 0 else "losses"] += 1
+                outcome = ("wins" if winner == candidate_side else
+                           "draws" if winner == 0 else "losses")
+                row[outcome] += 1
+                row[f"candidate_side_{candidate_side}_{outcome}"] += 1
                 row["timeouts"] += int(timeout)
                 row["non_timeout_draws"] += int(winner == 0 and not timeout)
             if winner:
@@ -678,6 +680,31 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         } if learner_objectives is not None else {}),
         "rollout_summary_sha256": file_sha256(summary_path),
     }
+    if side_assignment is not None:
+        # An authored group can rotate its active policy slots as the
+        # episode advances. The candidate's real physical side and wins
+        # therefore come from the immutable EpisodeFinal event context,
+        # not from the requested team route or win tally of a single side.
+        attributed, scenes_by_model = terminal_matchup(
+            output, receipt, candidate_slot, reference_slot,
+        )
+        if attributed["matches"] != expected:
+            raise ValueError("native candidate model did not play every fixed evaluation episode")
+        receipt["candidate_terminal_matchup"] = {
+            "counts": dict(attributed),
+            "by_scene_sha256": {
+                digest: dict(row) for digest, row in scenes_by_model.items()
+            },
+            "requested_physical_side": learner_side,
+            "candidate_as_requested_physical_side":
+                attributed[f"candidate_as_side_{learner_side}"],
+            "candidate_as_opposite_physical_side":
+                attributed[f"candidate_as_side_{3 - learner_side}"],
+            "candidate_win_rate": attributed["wins"] / expected,
+            "candidate_non_timeout_draw_score_rate": (
+                attributed["wins"] + 0.5 * attributed["non_timeout_draws"]
+            ) / expected,
+        }
     atomic_json(output / "evaluation-result.json", receipt)
     return receipt
 
