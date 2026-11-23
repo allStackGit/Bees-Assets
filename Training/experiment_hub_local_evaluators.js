@@ -506,12 +506,17 @@ async function status(hub) {
         entries.push({id,suite_id:id===BATCH_ID?null:suiteNames(options)[id],installed,managed,
             active,running,last_result:lastResult,last_error:lastError,reason});
     }
+    // Saved-library diagnostics are independent of scheduler health. A
+    // damaged optional catalog cannot hide otherwise healthy evaluators.
+    let library=null,library_issue=null;
+    try {library=custom.library(options,hub);}
+    catch(error){library_issue=String(error.message||error).slice(0,180);}
     return {available:true,machine:options.machine,entries,
         evaluation_capacity:evaluationCapacity(hub,options),
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
             .map(({id,updates,batch_size})=>({id,updates,batch_size})),
-        custom_library:custom.library(options,hub)};
+        custom_library:library,custom_library_issue:library_issue};
 }
 async function setup(hub) {
     const o=localOptions(hub);
