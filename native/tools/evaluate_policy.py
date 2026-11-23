@@ -530,9 +530,9 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
                 # the immutable manifest specifies a GPU execution provider.
                 # An accelerator request only counts supported GPU backends;
                 # its exact ordinal is verified by the resident ONNX worker.
-                gpu_capable |= any(provider in (
+                gpu_capable |= providers[0] in (
                     "CUDAExecutionProvider", "ROCMExecutionProvider"
-                ) for provider in providers)
+                )
             else:
                 gpu_capable = True
         if inference_device != "cpu" and not gpu_capable:
