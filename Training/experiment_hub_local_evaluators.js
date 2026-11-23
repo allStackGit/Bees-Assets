@@ -918,9 +918,26 @@ async function action(hub,value) {
         return setupMini(hub,value.source_job_id);
     if(value.action==='save-custom') {
         const o=localOptions(hub);
+        const previous=value.id==null?null:
+            custom.read(o).templates.find(t=>t.id===value.id);
         const saved=custom.saveEvaluation(o,hub,value);
         // Immutable suite files survive incomplete service installation.
         await setup(hub);
+        // Editing must not leave an obsolete six-hour timer evaluating every
+        // archived checkpoint forever. Preserve it when an already queued
+        // or completed job still needs its exact immutable revision.
+        if(previous) {
+            const referenced=hub.snapshot().jobs.some(job=>
+                job.status!=='cancelled'&&
+                [job.evaluation_monitor,job.evaluation_stop].some(policy=>
+                    (policy?.all_of||[policy]).some(rule=>
+                        rule?.suite_id===previous.suite_id)));
+            if(!referenced) {
+                const old=unitFiles(o,'mix-'+previous.id+'-v'+previous.revision);
+                if(fs.existsSync(old.timerFile))
+                    await systemctl(['stop',old.timer]);
+            }
+        }
         return saved;
     }
     if(value.action==='delete-custom') {
