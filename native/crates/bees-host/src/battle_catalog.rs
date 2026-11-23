@@ -384,6 +384,12 @@ enum CampaignSequencedEdit {
     },
     Purchase(CampaignPurchase),
     Transfer(CampaignTransfer),
+    /// Atomic, ordered reserve/fleet reorganization. Each recorded source
+    /// is verified before ANY current owner is changed.
+    BatchTransfer {
+        side: i32,
+        transfers: Vec<(i64, i64, i64)>,
+    },
     AuthoredAssignment(CampaignAuthoredAssignment),
     Tactics(CampaignTacticsEdit),
     SquadName(CampaignSquadNameEdit),
@@ -1643,6 +1649,43 @@ impl BattleCatalog {
         })
     }
 
+    /// Persist a full validated set of purchased FleetShip assignments as
+    /// one immutable career receipt. The scene preflight belongs to the
+    /// caller; this method enforces precise current ownership and uniqueness.
+    pub fn transfer_purchased_ships(
+        &self, progress: &CampaignProgress<'_>, output: &Path,
+        side: i32, moves: &[(i64, i64)],
+    ) -> io::Result<usize> {
+        let campaign = self.campaign_id.as_deref()
+            .ok_or_else(|| invalid("fleet reorganization requires a native campaign"))?;
+        if !matches!(side, 1 | 2) || moves.is_empty() || moves.len() > 32768 {
+            return Err(invalid("invalid fleet reorganization size or player side"));
+        }
+        let mut seen = HashSet::with_capacity(moves.len());
+        let mut transfers = Vec::with_capacity(moves.len());
+        for &(fleet_id, destination) in moves {
+            let (owner, ship) = progress.purchased_ship(fleet_id)
+                .ok_or_else(|| invalid("reorganized ship must be a purchased FleetShip"))?;
+            if fleet_id <= 0 || !seen.insert(fleet_id) || owner != side ||
+                destination < 0 || ship.saved_squad_id == destination ||
+                progress.is_retired_saved_squad(destination) ||
+                progress.fleet.get(&fleet_id).is_some_and(|fleet|
+                    fleet.side != side || fleet.is_dead) ||
+                (destination > 0 && (
+                    progress.squads.get(&destination).is_some_and(|squad|
+                        squad.side != side) ||
+                    progress.created_squads.iter().any(|squad|
+                        squad.saved_squad_id == destination && squad.side != side)))
+            {
+                return Err(invalid("invalid or stale fleet batch assignment"));
+            }
+            transfers.push((fleet_id, ship.saved_squad_id, destination));
+        }
+        commit_sequenced_edit(output, campaign,
+            CampaignSequencedEdit::BatchTransfer { side, transfers })?;
+        Ok(moves.len())
+    }
+
     /// Retire a vacant user-created or earned squad without rewriting
     /// previous battles. Its stable ID remains reserved for all time.
     /// Physical ships must first be moved into another squad or reserve
@@ -1801,6 +1844,7 @@ impl BattleCatalog {
             CampaignSequencedEdit::Duplicate { .. } => true,
             CampaignSequencedEdit::Purchase(row) => row.campaign_id == campaign,
             CampaignSequencedEdit::Transfer(row) => row.campaign_id == campaign,
+            CampaignSequencedEdit::BatchTransfer { .. } => true,
             CampaignSequencedEdit::AuthoredAssignment(row) => row.campaign_id == campaign,
             CampaignSequencedEdit::Tactics(row) => row.campaign_id == campaign,
             CampaignSequencedEdit::SquadName(row) => row.campaign_id == campaign,
@@ -1949,6 +1993,47 @@ impl BattleCatalog {
                 member.1.saved_squad_id = transfer.to_saved_squad_id;
                 progress.transfer_count = progress.transfer_count.checked_add(1)
                     .ok_or_else(|| invalid("saved squad transfer count overflow"))?;
+            }
+            CampaignSequencedEdit::BatchTransfer { side, transfers } => {
+                if !matches!(side, 1 | 2) || transfers.is_empty() ||
+                    transfers.len() > 32768 {
+                    return Err(invalid("invalid native fleet batch assignment"));
+                }
+                let mut ids = HashSet::with_capacity(transfers.len());
+                // First validate the complete edit against the current
+                // folded career. No partial assignment is ever exposed.
+                for &(id, from, to) in &transfers {
+                    if id <= 0 || from < 0 || to < 0 || from == to ||
+                        !ids.insert(id) ||
+                        progress.is_retired_saved_squad(to) ||
+                        !progress.purchases.iter().any(|(owner, ship)|
+                            *owner == side && ship.fleet_ship_id == id &&
+                            ship.saved_squad_id == from) ||
+                        progress.fleet.get(&id).is_some_and(|fleet|
+                            fleet.side != side || fleet.is_dead) ||
+                        (to > 0 && (
+                            progress.squads.get(&to).is_some_and(|squad|
+                                squad.side != side) ||
+                            progress.created_squads.iter().any(|squad|
+                                squad.saved_squad_id == to && squad.side != side) ||
+                            progress.tactics.iter().any(|tactics|
+                                tactics.saved_squad_id == to && tactics.side != side)))
+                    {
+                        return Err(invalid("stale, foreign or unavailable batch FleetShip"));
+                    }
+                }
+                let destinations = transfers.iter().map(|&(id, _, to)| (id, to))
+                    .collect::<HashMap<_, _>>();
+                for (owner, ship) in &mut progress.purchases {
+                    if *owner == side {
+                        if let Some(&new_squad) = destinations.get(&ship.fleet_ship_id) {
+                            ship.saved_squad_id = new_squad;
+                        }
+                    }
+                }
+                progress.transfer_count = progress.transfer_count
+                    .checked_add(transfers.len() as u64)
+                    .ok_or_else(|| invalid("native fleet transfer count overflow"))?;
             }
             CampaignSequencedEdit::AuthoredAssignment(edit) => {
                 if !matches!(edit.player_side, 1 | 2) ||
