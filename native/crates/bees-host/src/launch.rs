@@ -10993,6 +10993,33 @@ fn run_battle(
             }
         }
     }
+    if let Some(server) = &mut remote {
+        let world = host.render_world(0)
+            .ok_or_else(|| invalid("remote player Level disappeared"))?;
+        // The source Level, not LAN credentials, owns command authority.
+        // A real AI-vs-AI session has no player-controlled squads; it must
+        // admit view-only tokens without waiting for nonexistent commanders.
+        // A partially player-controlled battle still requires every
+        // configured commander side to be authored in the original World.
+        let playable = [1_i32, 2].map(|side|
+            world.roster.active_lifetimes().any(|owner|
+                world.roster.get(owner).is_some_and(|squad| squad.side == side) &&
+                world.player_authority.player_permissions(owner)
+                    .is_some_and(|permission| permission.user_controlled)
+            )
+        );
+        if !playable[0] && !playable[1] {
+            server.require_spectator_only()?;
+        } else {
+            for side in server.configured_sides() {
+                if !playable[(side - 1) as usize] {
+                    return Err(invalid(format!(
+                        "remote player side {side} has no authored user-controlled squad in the live Level",
+                    )).into());
+                }
+            }
+        }
+    }
     if let Some(cursor) = &resume_cursor {
         match (remote.as_mut(), cursor.remote_play.as_ref()) {
             (Some(server), Some(saved)) => {
@@ -11020,33 +11047,6 @@ fn run_battle(
         server.set_map_background(remote_map_background);
         server.set_camera_zoom_limits(remote_camera_zoom);
         server.set_camera_edge_scrolling(remote_edge_scrolling);
-    }
-    if let Some(server) = &mut remote {
-        let world = host.render_world(0)
-            .ok_or_else(|| invalid("remote player Level disappeared"))?;
-        // The source Level, not LAN credentials, owns command authority.
-        // A real AI-vs-AI session has no player-controlled squads; it must
-        // admit view-only tokens without waiting for nonexistent commanders.
-        // A partially player-controlled battle still requires every
-        // configured commander side to be authored in the original World.
-        let playable = [1_i32, 2].map(|side|
-            world.roster.active_lifetimes().any(|owner|
-                world.roster.get(owner).is_some_and(|squad| squad.side == side) &&
-                world.player_authority.player_permissions(owner)
-                    .is_some_and(|permission| permission.user_controlled)
-            )
-        );
-        if !playable[0] && !playable[1] {
-            server.require_spectator_only()?;
-        } else {
-            for side in server.configured_sides() {
-                if !playable[(side - 1) as usize] {
-                    return Err(invalid(format!(
-                        "remote player side {side} has no authored user-controlled squad in the live Level",
-                    )).into());
-                }
-            }
-        }
     }
     let mut remote_deadline = Instant::now();
     println!("{}", json!({
