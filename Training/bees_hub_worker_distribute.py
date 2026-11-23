@@ -160,6 +160,17 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
             raise ValueError("Invalid Unity build archive in release manifest.")
     if len(set(platforms)) != len(platforms):
         raise ValueError("Offline worker manifest duplicates one Unity target.")
+    runtime = record.get("runtime")
+    if runtime is not None and (
+        not isinstance(runtime, dict) or
+        set(runtime) != {"archive", "archive_sha256", "archive_bytes", "runtime_version"} or
+        runtime["archive"] != "bees-runtime.zip" or
+        not SHA.fullmatch(str(runtime["archive_sha256"])) or
+        not SHA.fullmatch(str(runtime["runtime_version"])) or
+        type(runtime["archive_bytes"]) is not int or
+        not 0 < runtime["archive_bytes"] <= 512 * 1024 ** 2
+    ):
+        raise ValueError("Frozen Bees runtime metadata does not match its build manifest.")
     return record, hashlib.sha256(raw).hexdigest()
 
 
@@ -195,8 +206,16 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
     scripts = [
         absolute_local(str(Path(__file__).resolve().with_name(name)),
                        "Native Unity installer")
-        for name in ("bees_hub_worker_install.py", "bees_unity_worker_identity.py")
+        for name in ("bees_hub_worker_install.py", "bees_unity_worker_identity.py",
+                     "bees_release_runtime.py")
     ]
+    runtime = doc.get("runtime")
+    source_runtime = source_dir / "bees-runtime.zip"
+    if runtime:
+        absolute_local(str(source_runtime), "Frozen Bees Python runtime ZIP")
+        if (source_runtime.stat().st_size != runtime["archive_bytes"] or
+            sha256_file(source_runtime) != runtime["archive_sha256"]):
+            raise ValueError("Frozen Bees Python training runtime changed after packaging.")
     plan = []
     for machine in machine_rows:
         if selected and machine["machine_id"] not in selected:
@@ -220,14 +239,16 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
             "tailnet_ip": machine["tailnet_ip"],
             "release_sha256": digest,
             "archive": archive_name,
-            "transfer_bytes": archive.stat().st_size,
+            "transfer_bytes": archive.stat().st_size +
+                (runtime["archive_bytes"] if runtime else 0),
             "activate": activate,
             "agent_restart_required": activate,
         })
         if not apply:
             continue
         stage_remote(machine, staging)
-        scp(machine, [*scripts, manifest, archive], staging + "/")
+        scp(machine, [*scripts, manifest, archive] +
+            ([source_runtime] if runtime else []), staging + "/")
         install = (
             machine["python_path"] + " -B " + staging +
             "/bees_hub_worker_install.py install --root " +
@@ -245,6 +266,8 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         if (remote.get("release_sha256") != digest or
             remote.get("platform") != platform_name or
             remote.get("player_tree_sha256") != match["player_tree_sha256"] or
+            runtime and (remote.get("runtime_sha256") != runtime["archive_sha256"] or
+                         remote.get("runtime_version") != runtime["runtime_version"]) or
             activate and remote.get("activated") is not True):
             raise RuntimeError("Remote Bees Unity installation receipt does not match built release.")
         plan[-1]["staging_cleaned"] = remote.get("staging_cleaned") is True
