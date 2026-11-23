@@ -133,15 +133,22 @@ fn frozen_quick_battle_source(folder:&Path)->Option<PathBuf> {
     let document:Value=serde_json::from_slice(&fs::read(&run).ok()?).ok()?;
     let levels=document["levels"].as_array()?;
     if levels.len()!=1 {return None;}
-    let scene=levels[0]["scene"].as_str()?;
-    let scene=Path::new(scene);
-    if scene.is_absolute() || scene.components().count()!=1 {
-        return None;
-    }
-    let scene=folder.join(scene);
-    let meta=fs::symlink_metadata(scene).ok()?;
-    if !meta.file_type().is_file() || meta.len()>4*1024*1024 {
-        return None;
+    let matrix = document["collision_matrix"].as_str();
+    let palette = document["stage_palette"].as_str();
+    if matrix.is_some() != palette.is_some() { return None; }
+    for asset in std::iter::once(levels[0]["scene"].as_str()?)
+        .chain(matrix).chain(palette)
+    {
+        let asset = Path::new(asset);
+        if asset.components().count() != 1 || asset.file_name().is_none_or(|name|
+            name == "replay-source-run.json")
+        {
+            return None;
+        }
+        let meta = fs::symlink_metadata(folder.join(asset)).ok()?;
+        if !meta.file_type().is_file() || meta.len() > 4 * 1024 * 1024 {
+            return None;
+        }
     }
     Some(run)
 }
@@ -155,7 +162,16 @@ pub(super) fn list(
     for (game_id, title, config) in games {
         let directory = save_root.join("battles").join(&game_id);
         for (number, folder, trace) in completed_quick_battles(&directory)? {
-            let archived=frozen_quick_battle_source(&folder);
+            let archived = match fs::symlink_metadata(folder.join("replay-source-run.json")) {
+                Ok(_) => match frozen_quick_battle_source(&folder) {
+                    Some(path) => Some(path),
+                    // An advertised archive must not substitute today's
+                    // source if one of its frozen inputs is gone.
+                    None => continue,
+                },
+                Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                Err(_) => continue,
+            };
             clips.push(RecordedBattle {
                 title: format!("{title}  |  Battle {number:06}"),
                 status: if archived.is_some() {
