@@ -221,7 +221,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     const port=brokerPort(wanBrokerPort);
     const release=releaseManifestPath?
         pinnedWorkerRelease(releaseManifestPath,worker):null;
-    const payload=key?(release?.worker_payload_sha256??unityWorkerTreeSha256(worker)):null;
+    const payload=release?.worker_payload_sha256??unityWorkerTreeSha256(worker);
     const approved={
         ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
         worker_payload_sha256:payload,
@@ -346,16 +346,15 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 throw Error('Installed Bees Unity worker or trainer changed after native adapter enrollment.');
             const parent=continuation(context,frozen);
             const root=jobPath(artifacts,context);
-            fs.mkdirSync(root,{mode:0o700});
             const wan=frozen.wanActors>0;
-            const currentRelease=wan&&release?
+            const currentRelease=release?
                 pinnedWorkerRelease(releaseManifestPath,worker):null;
-            if(wan&&(privateKey(key.path).fingerprint!==key.fingerprint||
-                (currentRelease?.worker_payload_sha256??unityWorkerTreeSha256(worker))!==
+            if((currentRelease?.worker_payload_sha256??unityWorkerTreeSha256(worker))!==
                     approved.worker_payload_sha256||
-                currentRelease&&currentRelease.release_sha256!==
-                    approved.wan_release_sha256))
-                throw Error('Bees WAN private key or complete Unity player changed after enrollment.');
+                currentRelease&&currentRelease.release_sha256!==release.release_sha256||
+                wan&&privateKey(key.path).fingerprint!==key.fingerprint)
+                throw Error('Bees Unity player, release or private WAN key changed after enrollment.');
+            fs.mkdirSync(root,{mode:0o700});
             const job={
                 schema_version:wan?3:2,job_id:context.job_id,
                 lineage_root_id:context.artifact_lineage_root_id,
