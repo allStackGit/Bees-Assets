@@ -58,6 +58,7 @@ const {
     startTailnetGatewayIfNeeded,
 } = require('./tailnet');
 const { startBeesServerIfNeeded } = require('./server');
+const { inspectOfflineWorkers, installOfflineWorkers } = require('./offlineWorkers');
 const { assertRlEnvironmentArgsValid } = require('./validation');
 const {
     prepareLocalActorReleaseRuntime,
@@ -664,8 +665,14 @@ async function invokeBuild(options = {}) {
     }
 
     const sourceSha = getGitShortSha();
+    if (options.offlineWorkers && options.fullGame) {
+        throw Error('Offline RL workers do not contain the Windows full-game build.');
+    }
+    const offline = options.offlineWorkers
+        ? await inspectOfflineWorkers(options.offlineWorkers, sourceSha)
+        : null;
     const unity = resolveUnityEditor(config);
-    assertUnityProjectAvailableForBatchBuild();
+    if (!offline) assertUnityProjectAvailableForBatchBuild();
 
     let supersedeCompatibleBuildId = '';
     if (exists(paths.latestReleasePath) && exists(paths.adminTokenPath)) {
@@ -750,8 +757,12 @@ async function invokeBuild(options = {}) {
     const date = formatLocalDate(now);
     const time = formatLocalTime(now);
     const buildId = date + '-' + time + '-' + sourceSha;
-    const windowsBuild = path.join(paths.buildsRoot, date + ' RL Windows');
-    const linuxBuild = path.join(paths.buildsRoot, date + ' RL Linux');
+    const windowsBuild = offline
+        ? path.join(paths.buildsRoot, 'Packages', buildId, 'Windows')
+        : path.join(paths.buildsRoot, date + ' RL Windows');
+    const linuxBuild = offline
+        ? path.join(paths.buildsRoot, 'Packages', buildId, 'Linux')
+        : path.join(paths.buildsRoot, date + ' RL Linux');
     const gameBuild = path.join(paths.buildsRoot, date + ' Full Game Windows');
     const packageRoot = path.join(paths.buildsRoot, 'Packages', buildId);
 
@@ -769,32 +780,37 @@ async function invokeBuild(options = {}) {
         python, buildId, sourceSha, trainingRuntimeArchive
     );
 
-    resetBuildDirectory(windowsBuild, Boolean(options.force));
-    resetBuildDirectory(linuxBuild, Boolean(options.force));
-    if (options.fullGame) resetBuildDirectory(gameBuild, Boolean(options.force));
+    if (offline) {
+        console.log('Importing verified Halifax Unity workers into the private release directory...');
+        await installOfflineWorkers(offline, python, packageRoot);
+    } else {
+        resetBuildDirectory(windowsBuild, Boolean(options.force));
+        resetBuildDirectory(linuxBuild, Boolean(options.force));
+        if (options.fullGame) resetBuildDirectory(gameBuild, Boolean(options.force));
 
-    await invokeUnityBuild(
-        unity,
-        'BeesCommandLineBuild.BuildWindowsRl',
-        windowsBuild,
-        'Bees RL Training.exe',
-        date + '-rl-windows.log',
-    );
-    await invokeUnityBuild(
-        unity,
-        'BeesCommandLineBuild.BuildLinuxRl',
-        linuxBuild,
-        'Bees RL Training.x86_64',
-        date + '-rl-linux.log',
-    );
-    if (options.fullGame) {
         await invokeUnityBuild(
             unity,
-            'BeesCommandLineBuild.BuildWindowsFullGame',
-            gameBuild,
-            'Bees.exe',
-            date + '-full-game-windows.log',
+            'BeesCommandLineBuild.BuildWindowsRl',
+            windowsBuild,
+            'Bees RL Training.exe',
+            date + '-rl-windows.log',
         );
+        await invokeUnityBuild(
+            unity,
+            'BeesCommandLineBuild.BuildLinuxRl',
+            linuxBuild,
+            'Bees RL Training.x86_64',
+            date + '-rl-linux.log',
+        );
+        if (options.fullGame) {
+            await invokeUnityBuild(
+                unity,
+                'BeesCommandLineBuild.BuildWindowsFullGame',
+                gameBuild,
+                'Bees.exe',
+                date + '-full-game-windows.log',
+            );
+        }
     }
 
     const postBuildFingerprint = getTrainingCompatibilityFingerprint(python);
@@ -809,8 +825,10 @@ async function invokeBuild(options = {}) {
 
     const windowsZip = path.join(packageRoot, 'rl-windows.zip');
     const linuxZip = path.join(packageRoot, 'rl-linux.zip');
-    packageBuild(python, windowsBuild, windowsZip, 'Bees RL Training.exe');
-    packageBuild(python, linuxBuild, linuxZip, 'Bees RL Training.x86_64');
+    if (!offline) {
+        packageBuild(python, windowsBuild, windowsZip, 'Bees RL Training.exe');
+        packageBuild(python, linuxBuild, linuxZip, 'Bees RL Training.x86_64');
+    }
     const artifacts = [
         {
             role: 'dedicated',
