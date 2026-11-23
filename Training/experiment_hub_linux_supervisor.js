@@ -21,6 +21,7 @@ const SYSTEMD_RUN='/usr/bin/systemd-run';
 const SYSTEMCTL='/usr/bin/systemctl';
 const UUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const ROCM_UUID=/^GPU-(?:[0-9a-f]{16}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const SAFE_ARG=/^[A-Za-z0-9_./:@=+\-,]+$/;
 const MAX_RECORDS=1000;
 
