@@ -2564,20 +2564,31 @@ const server = http.createServer(async (req, res) => {
         if (route === '/api/hub/bees/start' ||
             route === '/api/hub/bees/stop' ||
             route === '/api/hub/bees/build' ||
-            route === '/api/hub/bees/update-workers') {
+            route === '/api/hub/bees/update-workers' ||
+            route === '/api/hub/bees/import-workers') {
             if (state.active_id || state.armed || state.stop_requested || busy) {
                 return json(res, 409, {
                     error:'An experiment or another operator action owns training. Use experiment controls.',
                 });
             }
             const action = route.slice('/api/hub/bees/'.length);
+            const importWorkers = action === 'import-workers';
+            const incoming = importWorkers ? String(value.manifest_path || '') : '';
+            if (importWorkers) {
+                if (value.confirm_import !== true)
+                    return json(res, 409, {error:'Explicitly confirm importing the Halifax Unity worker release.'});
+                if (!path.isAbsolute(incoming) ||
+                    path.basename(incoming).toLowerCase() !== 'worker-build-manifest.json')
+                    return json(res, 400, {error:'Specify an absolute path to worker-build-manifest.json on the Bees manager.'});
+            }
             // Initial build must be possible before any Bees release or control
             // server exists. The operator itself owns bootstrap validation.
-            if (action === 'build' && !fs.existsSync(paths.latestReleasePath)) {
-                if (value.confirm_build !== true)
+            if ((action === 'build' || importWorkers) && !fs.existsSync(paths.latestReleasePath)) {
+                if (!importWorkers && value.confirm_build !== true)
                     return json(res, 409, {error:'Confirm the initial training release build.'});
                 return json(res, 202, {
-                    operation:runHubOperatorOperation('Initial Bees RL build', async()=>invokeBuild({})),
+                    operation:runHubOperatorOperation('Initial Bees RL build',
+                        async()=>invokeBuild(importWorkers ? {offlineWorkers:incoming} : {})),
                 });
             }
             const before = await control();
@@ -2596,11 +2607,12 @@ const server = http.createServer(async (req, res) => {
             if (before.desired.training_enabled) {
                 return json(res, 409, {error:'Stop the current training run safely first.'});
             }
-            if (action === 'build') {
-                if (value.confirm_build !== true)
+            if (action === 'build' || importWorkers) {
+                if (!importWorkers && value.confirm_build !== true)
                     return json(res, 409, {error:'Confirm the training release build.'});
                 return json(res, 202, {
-                    operation:runHubOperatorOperation('Bees RL build', async()=>invokeBuild({})),
+                    operation:runHubOperatorOperation('Bees RL build',
+                        async()=>invokeBuild(importWorkers ? {offlineWorkers:incoming} : {})),
                 });
             }
             if (action === 'update-workers') {
