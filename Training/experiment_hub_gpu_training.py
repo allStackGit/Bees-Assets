@@ -35,6 +35,20 @@ def _tensor_outputs(value):
             yield from _tensor_outputs(part)
 
 
+def _state_tensors(value):
+    """Visit nested optimizer state without duplicating aliased tensors."""
+    pending, seen = [value], set()
+    while pending:
+        item = pending.pop()
+        if isinstance(item, torch.Tensor):
+            yield item
+        elif isinstance(item, (dict,list,tuple)):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            pending.extend(item.values() if isinstance(item,dict) else item)
+
+
 def _storage_identity(tensor):
     if tensor.numel() == 0:
         return None
@@ -104,10 +118,11 @@ class IndependentGpuTraining:
             # of the independent update ownership contract too. Sharing
             # an Adam state allocation between learners would race even
             # when their model parameter objects are distinct.
-            state_tensors = tuple(
-                state_value for state in optimizer.state.values()
-                for state_value in state.values()
-                if isinstance(state_value, torch.Tensor))
+            state_tensors = tuple(_state_tensors(optimizer.state))
+            # Within one optimizer, weight views or repeated references to
+            # the same state buffer are safe. Reject only storage shared
+            # ACROSS independent learners executing on separate streams.
+            current_owner = set()
             for tensor in (*params, *model.buffers()):
                 if device is None:
                     device = tensor.device
@@ -118,7 +133,7 @@ class IndependentGpuTraining:
                 if ptr is not None and key in identities:
                     raise ValueError("Independent learners cannot share parameter/buffer storage")
                 if ptr is not None:
-                    identities.add(key)
+                    current_owner.add(key)
             for tensor in state_tensors:
                 # Standard Adam may maintain its scalar step count on the
                 # CPU while every parameter and accumulator lives on GPU.
@@ -129,7 +144,8 @@ class IndependentGpuTraining:
                 if ptr is not None and key in identities:
                     raise ValueError("Independent optimizers cannot share state storage")
                 if ptr is not None:
-                    identities.add(key)
+                    current_owner.add(key)
+            identities.update(current_owner)
         if device is None or device.type != "cuda":
             raise ValueError("Concurrent optimizer steps require a CUDA/HIP device")
         self.device = device
