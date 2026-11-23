@@ -279,6 +279,16 @@ impl<'a> NativeRenderWorldView<'a> {
             body.motion.position.is_finite()).then_some((id, body.motion.position))
     }
 
+    /// The commander receives the tactical panel after Tom's briefing.
+    pub(crate) fn campaign_opening_hud_locked_for(&self, viewer_side: i32) -> bool {
+        use bees_gameplay::campaign_dialogue::CampaignCue;
+
+        self.campaign_dialogue_side == Some(viewer_side) && self.terminal_result.is_none() &&
+            self.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
+                CampaignCue::PlutoAnomalyBriefing | CampaignCue::PlutoAnomalyHoneybeeSpotted |
+                CampaignCue::PlutoAnomalyScoutReportComplete | CampaignCue::PlutoAnomalyGunshipArrived))
+    }
+
     fn neptune_mining_briefing(&self) -> bool {
         use bees_gameplay::campaign_dialogue::CampaignCue;
 

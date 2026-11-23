@@ -269,6 +269,7 @@ pub struct NativeSoftwareRenderer {
     pub show_weapon_ranges: bool,
     /// Presentation-only tactical overview, never used by headless worlds.
     pub show_minimap: bool,
+    pub opening_hud_locked: bool,
     /// Only affects the window; training runs keep the same headless world.
     pub show_shooting_menu: bool,
     pub focused_shooting_strategy: u8,
@@ -1230,7 +1231,7 @@ impl NativeSoftwareRenderer {
             sprite_raster_opaque_pixels: 0,
             sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
-            show_minimap: true, show_shooting_menu: false,
+            show_minimap: true, opening_hud_locked: false, show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
             chasing_selection_all: false,
@@ -2094,7 +2095,7 @@ impl NativeSoftwareRenderer {
     /// The same coordinate frame used by drawing and click/drag navigation.
     /// Returns None when the overview is hidden or the window is too small.
     pub fn minimap_world_at(&self, bounds: Aabb, x: f32, y: f32) -> Option<Vec2> {
-        if self.show_shooting_menu { return None; }
+        if self.show_shooting_menu || self.opening_hud_locked { return None; }
         self.show_minimap.then(|| MiniMapLayout::new(self.width, self.height, bounds))
             .flatten()?.world_at(x, y)
     }
@@ -2102,7 +2103,7 @@ impl NativeSoftwareRenderer {
     /// UI-only action hit-test; the client converts intent into the exact
     /// same typed player inputs used by keyboard shortcuts and replay.
     pub fn tactical_action_at(&self, x: f32, y: f32) -> Option<super::HudAction> {
-        if self.show_shooting_menu { return None; }
+        if self.show_shooting_menu || self.opening_hud_locked { return None; }
         let action = tactical_hud::hit(self.width, self.height, x, y)?;
         (action == super::HudAction::SelectAll ||
             !self.selection.squads().is_empty()).then_some(action)
@@ -2716,7 +2717,13 @@ impl NativeSoftwareRenderer {
         (samples, atlas.loaded, ring_drawn, 0)
     }
 
+    pub fn sync_opening_hud(&mut self, view: &NativeRenderWorldView<'_>) {
+        self.opening_hud_locked = view.player_authority.player_viewer_side()
+            .is_some_and(|side| view.campaign_opening_hud_locked_for(side));
+    }
+
     pub fn render(&mut self, view: &NativeRenderWorldView<'_>, bounds: Aabb) -> NativeRenderCounts {
+        self.sync_opening_hud(view);
         self.selection.synchronize(view);
         // Selected squad count can approach ship count in large battles.
         // Keep 1v1 allocation-free and reuse the large-selection lookup
@@ -3534,7 +3541,7 @@ impl NativeSoftwareRenderer {
                         &label, 1, [198, 231, 248]);
             }
         }
-        if self.show_minimap {
+        if self.show_minimap && !self.opening_hud_locked {
             self.draw_minimap(view, bounds, &mut counts);
         }
         counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
@@ -3555,10 +3562,12 @@ impl NativeSoftwareRenderer {
             self.selection.squads().iter().all(|&owner|
                 view.player_authority.player_permissions(owner)
                     .is_some_and(|permission| permission.locked_on));
-        counts.tactical_buttons_drawn = self.draw_tactical_bar();
-        counts.selected_command_rows = self.draw_selected_command_status(view);
-        self.draw_selected_priority(view);
-        if self.show_shooting_menu { self.draw_shooting_menu(view); }
+        if !self.opening_hud_locked {
+            counts.tactical_buttons_drawn = self.draw_tactical_bar();
+            counts.selected_command_rows = self.draw_selected_command_status(view);
+            self.draw_selected_priority(view);
+            if self.show_shooting_menu { self.draw_shooting_menu(view); }
+        }
         counts
     }
 

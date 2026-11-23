@@ -3104,7 +3104,9 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         text::draw_at(pixels,WIDTH,15,HEIGHT-44,
             "MANUAL FIRE - release J to stop",1,[255,221,151]);
     }
-    for &action in &ACTIONS {
+    let actions: &[HudAction] = if state.is_some_and(|state|
+        state["campaign_dialogue"]["opening_hud_locked"] == true) { &[] } else { &ACTIONS };
+    for &action in actions {
         let Some(rect)=remote_tactical_rect(action) else{continue};
         let active=match action {
             HudAction::Attack=>mode==Some(TargetMode::Attack),
@@ -3710,7 +3712,14 @@ pub fn connect_remote_with_trust(
                 } else {"Fast geometric display enabled".into()};
             }
         }
-        if !show_controls_help && !show_codex && !show_campaign_rewards &&
+        let opening_hud_locked = peer.state.as_ref().is_some_and(|state|
+            state["campaign_dialogue"]["opening_hud_locked"] == true);
+        if opening_hud_locked {
+            minimap_dragging = false;
+            shooting_menu = false;
+            shooting_press = None;
+        }
+        if !opening_hud_locked && !show_controls_help && !show_codex && !show_campaign_rewards &&
             controls.pressed(&window,"Mini Map",KeyRepeat::No) &&
             !window.is_key_down(Key::LeftShift) &&
             !window.is_key_down(Key::RightShift)
@@ -3720,6 +3729,7 @@ pub fn connect_remote_with_trust(
             peer.notice=if show_minimap { "Minimap visible".into() }
                 else { "Minimap hidden".into() };
         }
+        let minimap_visible = show_minimap && !opening_hud_locked;
         if !show_controls_help &&
             controls.pressed(&window,"Show Ranges",KeyRepeat::No) &&
             !controls.down(&window,"Manual Fire") {
@@ -4493,7 +4503,9 @@ pub fn connect_remote_with_trust(
                     ACTIONS.iter().find_map(|&(name,action)|
                         (key==controls.key(name)).then_some(action))
                 };
-                if let Some(action)=action {
+                if let Some(action) = action.filter(|action|
+                    !opening_hud_locked || *action != HudAction::Shooting)
+                {
                     drag_start=None;patrol_start=None;
                     if let Err(error)=remote_tactical_action(
                         &mut peer,&mut selected,&mut mode,&mut patrol_start,
@@ -4516,7 +4528,7 @@ pub fn connect_remote_with_trust(
             if window.is_key_down(Key::Left){cam.center.x-=pan;}
             if window.is_key_down(Key::Right){cam.center.x+=pan;}
             let mouse=super::virtual_window_mouse(&window, WIDTH, HEIGHT);
-            let minimap = show_minimap.then(|| peer.state.as_ref().and_then(bounds)
+            let minimap = minimap_visible.then(|| peer.state.as_ref().and_then(bounds)
                 .and_then(|map| MiniMapLayout::top_right(FIELD, HEIGHT, map))).flatten();
             let authored_edge=peer.state.as_ref().and_then(|state|
                 state["camera_edge_scrolling"].as_bool()).unwrap_or(false);
@@ -4694,7 +4706,8 @@ pub fn connect_remote_with_trust(
             let battlefield_input = window.is_active() && !peer.input_suppressed && !held_fire_active;
             if left && !last_left && window.is_active() {
                 drag_start=None;patrol_start=None;
-                hud_press=mouse.and_then(|(x,y)|remote_tactical_hit(x,y));
+                hud_press = mouse.filter(|_| !opening_hud_locked)
+                    .and_then(|(x, y)| remote_tactical_hit(x, y));
                 squad_tab_press=if hud_press.is_none() {
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
@@ -4704,8 +4717,8 @@ pub fn connect_remote_with_trust(
                     squad_tab_press.is_none()&&minimap_point.is_some();
             }
             if !left && last_left {
-                let clicked=hud_press.take().filter(|&action|
-                    mouse.and_then(|(x,y)|remote_tactical_hit(x,y))==Some(action));
+                let clicked = hud_press.take().filter(|&action| !opening_hud_locked &&
+                    mouse.and_then(|(x,y)|remote_tactical_hit(x,y)) == Some(action));
                 let clicked_tab=squad_tab_press.take().filter(|&id|
                     peer.state.as_ref().and_then(|state|
                         mouse.and_then(|(x,y)|remote_squad_tab_hit(state,x,y,squad_list_offset)))
@@ -5056,7 +5069,7 @@ pub fn connect_remote_with_trust(
                 now.saturating_duration_since(dialogue_reveal_started).as_secs_f32()
             },
             &artwork,show_art,range_overlay_active,
-            show_minimap,
+            minimap_visible,
             &mut combat_hud_draws, &mut hulls, &mut map_object_health_bars,
             &mut map_ships, &mut map_terrain, &mut map_objectives,
             &mut fog_masked, &mut fog_textured);
@@ -5078,7 +5091,7 @@ pub fn connect_remote_with_trust(
             let candidate=peer.state.as_ref().zip(camera).and_then(|(state,cam)| {
                 super::virtual_window_mouse(&window, WIDTH, HEIGHT).and_then(|(x,y)| {
                     if x<0.0||y<0.0||x>=FIELD as f32||y>=HEIGHT as f32 ||
-                        (show_minimap && bounds(state)
+                        (minimap_visible && bounds(state)
                             .and_then(|map|MiniMapLayout::top_right(FIELD,HEIGHT,map))
                             .is_some_and(|map|map.world_at(x,y).is_some())) {
                         return None;

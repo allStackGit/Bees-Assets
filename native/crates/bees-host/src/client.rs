@@ -1197,7 +1197,11 @@ impl NativeClient {
             (self.window.is_active() && !self.show_controls_help &&
              !self.playback && !briefing &&
              self.controls.combined_range_fire_down(&self.window));
-        if self.controls.pressed(&self.window,"Mini Map",KeyRepeat::No) {
+        self.renderer.sync_opening_hud(&view);
+        if self.renderer.opening_hud_locked {
+            self.minimap_dragging = false;
+            self.renderer.show_shooting_menu = false;
+        } else if self.controls.pressed(&self.window,"Mini Map",KeyRepeat::No) {
             self.renderer.show_minimap = !self.renderer.show_minimap;
             if !self.renderer.show_minimap { self.minimap_dragging = false; }
         }
@@ -1475,7 +1479,7 @@ impl NativeClient {
             self.tactical_button_clicks += 1;
             self.audio.click_ui();
         }
-        if accepts_orders && pointer_active &&
+        if accepts_orders && pointer_active && !self.renderer.opening_hud_locked &&
             self.held_fire_target.is_none() && (
             clicked_hud == Some(HudAction::Shooting) ||
             self.controls.pressed(&self.window,"Shooting Priority",KeyRepeat::No)
