@@ -62,6 +62,13 @@
                 lines.push([map.map,map.players,map.trials,map.win,map.draw,
                     map.loss,mean,top].join(' | '));
             }
+            if(Array.isArray(report.opponents)&&report.opponents.length) {
+                lines.push('', 'Opponent presence (not head-to-head wins):',
+                    'Opponent | Games present | Opponent seats | Candidate wins | Draws | Losses');
+                for(const opponent of report.opponents)
+                    lines.push([opponent.id,opponent.games,opponent.seats,
+                        opponent.win,opponent.draw,opponent.loss].join(' | '));
+            }
             const pre=document.createElement('pre');
             pre.style.whiteSpace='pre';
             pre.style.maxHeight='420px';
