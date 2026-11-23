@@ -91,8 +91,8 @@ pub(super) fn original_challenge_queen(
         queen["max_health"] != expected["health"] ||
         queen["original_health"] != expected["health"] ||
         queen["max_tsv"] != expected["tsv"] ||
-        queen["base_speed"] != expected["speed"] ||
-        queen["sight"]["source_sight"] != expected["sight"] ||
+        queen["base_speed"].as_f64() != expected["speed"].as_f64() ||
+        queen["sight"]["source_sight"].as_f64() != expected["sight"].as_f64() ||
         !queen["special"]["spawn"].is_object() ||
         !queen["turrets"].as_array().is_some_and(|turrets| turrets.len() == 5)
     ) {
