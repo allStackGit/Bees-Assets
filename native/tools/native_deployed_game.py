@@ -14,7 +14,7 @@ import shutil
 import tempfile
 
 from native_game_registration import register_playable
-from native_session_selection import _playable_run
+from native_session_selection import _playable_run, freeze_playable_physics, copy_playable_asset
 from native_training_artifacts import atomic_json, file_sha256, sync_directory
 from package_policy_manifest import verify_package
 
@@ -135,28 +135,6 @@ def install_deployment(source, target):
     return pointer
 
 
-def freeze_playable_physics(playable):
-    """Give identical physical templates one local filename per publication."""
-    assets = {}
-    by_source = {}
-
-    def freeze(value):
-        source = Path(value)
-        if source not in by_source:
-            digest = file_sha256(source)
-            name = f"physical-{digest}.json"
-            by_source[source] = name
-            assets.setdefault(name, (source, digest))
-        return by_source[source]
-
-    for level in playable["levels"]:
-        level["scene"] = freeze(level["scene"])
-    for field in ("collision_matrix", "stage_palette"):
-        if playable.get(field) is not None:
-            playable[field] = freeze(playable[field])
-    return assets
-
-
 def publish_playable_version(version, manifest, playable, assets):
     """Commit all immutable game inputs before advancing the gallery pointer."""
     if not version.exists():
@@ -164,13 +142,7 @@ def publish_playable_version(version, manifest, playable, assets):
             staging = Path(temp) / "game"
             staging.mkdir()
             for name, (source, digest) in assets.items():
-                target = staging / name
-                with source.open("rb") as stream, target.open("xb") as sink:
-                    shutil.copyfileobj(stream, sink, 1024 * 1024)
-                    sink.flush()
-                    os.fsync(sink.fileno())
-                if file_sha256(target) != digest:
-                    raise ValueError("champion physical input changed during publication")
+                copy_playable_asset(source, staging / name, digest)
             atomic_json(staging / "manifest.json", manifest)
             atomic_json(staging / "run.json", playable)
             sync_directory(staging)

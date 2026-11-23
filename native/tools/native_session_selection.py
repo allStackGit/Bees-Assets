@@ -6,12 +6,15 @@ resolves source paths for a standalone native launcher. The fixed evaluation
 suite ranks completed models, not training rewards or optimizer loss.
 """
 
+import hashlib
 import json
 import math
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
-from native_training_artifacts import atomic_json, check_learner, file_sha256
+from native_training_artifacts import atomic_json, check_learner, file_sha256, sync_directory
 from native_curriculum import selected_curriculum_run
 
 
@@ -145,6 +148,73 @@ def _playable_run(source_path, selected):
     source["notifications"] = "selected-game-events.jsonl"
     source["rollout_summary"] = "selected-game-summary.json"
     return source
+
+
+def freeze_playable_physics(playable):
+    """Give identical physical templates one local filename per publication."""
+    assets = {}
+    by_source = {}
+
+    def freeze(value):
+        source = Path(value)
+        if source not in by_source:
+            digest = file_sha256(source)
+            name = f"physical-{digest}.json"
+            by_source[source] = name
+            assets.setdefault(name, (source, digest))
+        return by_source[source]
+
+    for level in playable["levels"]:
+        level["scene"] = freeze(level["scene"])
+    for field in ("collision_matrix", "stage_palette"):
+        if playable.get(field) is not None:
+            playable[field] = freeze(playable[field])
+    return assets
+
+
+def copy_playable_asset(source, target, digest):
+    with source.open("rb") as stream, target.open("xb") as sink:
+        shutil.copyfileobj(stream, sink, 1024 * 1024)
+        sink.flush()
+        os.fsync(sink.fileno())
+    if file_sha256(target) != digest:
+        raise ValueError(f"native physical input changed during publication: {source}")
+
+
+def publish_session_playable(root, alias, playable):
+    """Keep stable gallery receipts while the session's shortcut advances."""
+    root = root.resolve(strict=True)
+    assets = freeze_playable_physics(playable)
+    identity = hashlib.sha256(json.dumps(
+        playable, sort_keys=True, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")).hexdigest()
+    output = root / f"playable-{identity}.json"
+    with tempfile.TemporaryDirectory(prefix=".playable-", dir=root) as temp:
+        staging = Path(temp)
+        for name, (source, digest) in assets.items():
+            target = root / name
+            if target.is_symlink():
+                raise ValueError("native playable asset cannot be a symbolic link")
+            if not target.exists():
+                copy_playable_asset(source, staging / name, digest)
+                os.replace(staging / name, target)
+            if file_sha256(target) != digest:
+                raise ValueError(f"native playable asset changed after publication: {name}")
+        if output.is_symlink():
+            raise ValueError("native playable run cannot be a symbolic link")
+        if not output.exists():
+            staged_run = staging / "run.json"
+            atomic_json(staged_run, playable)
+            os.replace(staged_run, output)
+        if json.loads(output.read_text(encoding="utf-8")) != playable:
+            raise ValueError("native playable run changed after publication")
+        sync_directory(root)
+    # Keep the operator-facing filename and its existing relative-path base.
+    atomic_json(root / alias, playable)
+    return {
+        "playable_run": str(output), "playable_run_sha256": file_sha256(output),
+        "physical_assets_sha256": {name: digest for name, (_, digest) in assets.items()},
+    }
 
 
 def _rank_evaluation_suites(round_number, checkpoint, primary,
@@ -329,7 +399,7 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         raise ValueError("native playable source run changed during checkpoint selection")
     selected_run = _playable_run(source, best)
     root = Path(root)
-    atomic_json(root / "best-evaluated-run.json", selected_run)
+    publication = publish_session_playable(root, "best-evaluated-run.json", selected_run)
     # Publish the selection receipt last, after the runnable configuration is
     # durable. It binds the current selected run bytes and immutable source
     # artifacts; in-flight or resumed rounds can safely republish this view.
@@ -361,8 +431,7 @@ def publish_best_evaluated(root, recipe, completed, evaluations, baseline_holdou
         "source_run_config_sha256": source_run["sha256"],
         **({"curriculum_stage_start_round": active_stage_start}
            if "curriculum" in recipe else {}),
-        "playable_run": str(root / "best-evaluated-run.json"),
-        "playable_run_sha256": file_sha256(root / "best-evaluated-run.json"),
+        **publication,
     }
     atomic_json(root / "best-evaluated.json", receipt)
     return receipt
@@ -401,8 +470,7 @@ def publish_latest_playable(root, recipe, completed, manifest, checkpoint):
         "checkpoint_sha256": checkpoint_sha,
         "manifest": str(manifest),
     })
-    output = root / "latest-playable-run.json"
-    atomic_json(output, playable)
+    publication = publish_session_playable(root, "latest-playable-run.json", playable)
     receipt = {
         "schema_version": 1,
         "kind": "native_training_latest_playable",
@@ -417,8 +485,7 @@ def publish_latest_playable(root, recipe, completed, manifest, checkpoint):
         "source_run_config_sha256": source_run["sha256"],
         **({"curriculum_stage_start_round": stage_start}
            if "curriculum" in recipe else {}),
-        "playable_run": str(output),
-        "playable_run_sha256": file_sha256(output),
+        **publication,
     }
     # Receipt last: its presence means the game config has been fsynced.
     atomic_json(root / "latest-playable.json", receipt)
