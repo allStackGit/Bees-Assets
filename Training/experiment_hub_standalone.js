@@ -111,6 +111,26 @@ function renderPage(html,runtime={}) {
                 ?' · UI '+runtime.frontend_source_commit.slice(0,12):'');
     const versionPanel='<div class="hub-version" id="hub-version-status"'+
         versionAttributes+' role="status">'+versionLabel+'</div>';
+    const beesPanel='<div class="hub-standalone" id="hub-bees-bridge-controls">'+
+        '<h3>Bees Unity training — external coordinator</h3>'+
+        '<p class="muted">Bees builds, training, checkpoints and remote workers belong to the separate Bees Experiment Manager. '+
+        'This panel never launches Bees jobs through the native scheduler.</p>'+
+        '<p id="hub-bees-bridge-status" role="status">Checking Bees manager.</p>'+
+        '<p id="hub-bees-bridge-details" class="muted"></p>'+
+        '<div class="hub-controls">'+
+        '<button id="hub-bees-refresh" type="button">Refresh Bees</button>'+
+        '<button id="hub-bees-stop" type="button" disabled>Stop Bees training</button>'+
+        '<button id="hub-bees-resume" type="button" disabled>Resume Bees</button>'+
+        '<button id="hub-bees-new" type="button" disabled>New Bees run</button>'+
+        '</div>'+
+        '<div class="hub-controls">'+
+        '<input id="hub-bees-import-manifest" type="text" placeholder="Windows absolute path to worker-build-manifest.json" '+
+            'aria-label="Incoming Halifax Unity worker manifest path" style="max-width:660px">'+
+        '<button id="hub-bees-import" type="button" disabled>Import and stage Halifax build</button>'+
+        '</div>'+
+        '<p id="hub-bees-operation" role="status"></p>'+
+        '<div id="hub-bees-worker-summary" class="muted"></div>'+
+        '</div>';
     const panel='<div class="hub-standalone" id="hub-local-service-controls">'+
         '<h3>Local service control</h3>'+
         '<p class="muted">Restart the coordinator or agent on this computer. '+
@@ -168,12 +188,17 @@ function renderPage(html,runtime={}) {
             'max-width:400px;overflow-wrap:anywhere;color:#333}\n</style>')
         .replace('</header>',versionPanel+'</header>')
         .replace('<h2>Machine inventory and resource admission</h2>',
-            '<h2>Machine inventory and resource admission</h2>'+panel)
+            '<h2>Machine inventory and resource admission</h2>'+beesPanel+panel)
         .replace('<body>','<body>\n<div class="hub-standalone" role="status">'+
-            '<strong>NATIVE EXPERIMENT HUB</strong> — Bees/Unity training controls are unavailable. '+
-            'Only an enrolled worker with a locally installed trusted adapter may execute a job.'+
+            '<strong>NATIVE EXPERIMENT HUB</strong> — '+
+            (runtime.bees_bridge_configured
+                ?'Bees training is owned by an external Bees Experiment Manager. '
+                :'Bees/Unity training controls require a configured external Bees Experiment Manager. ')+
+            'Only an enrolled worker with a locally installed trusted adapter may execute a native Hub job.'+
             '</div>')
         +'\n<script src="/experiment-hub-services.js?v='+
+            runtime.frontend_revision+'"></script>'+
+            '\n<script src="/experiment-hub-bees.js?v='+
             runtime.frontend_revision+'"></script>\n</body>\n</html>\n';
 }
 
