@@ -1874,6 +1874,35 @@ class PersistentGpuForwardPool:
         self._admitted_capacity_weights[ordinals] = chosen
         return chosen
 
+    def capacity_metrics(self):
+        """Read completed per-GPU forward service rates without a GPU wait.
+
+        Timing samples cover input materialization and model forward only,
+        not PPO backward, optimizer steps, or simulated frames. Callers
+        can compare the two devices' effective rates under their shared
+        workload and decide whether peer contention is worth addressing.
+        Values are reported only after three completed samples per device;
+        an absent rate is unknown, not a measured zero.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward metrics require the live owner")
+        self._collect_device_timings()
+        metrics = dict(
+            gpu_forward_capacity_pending_events=len(self._pending_device_timings),
+            gpu_forward_capacity_timing_samples=self.device_timing_samples)
+        rates = []
+        for slot, device in enumerate(self.devices):
+            samples = self._device_work_rates[device]
+            metrics[f'gpu_forward_capacity_device_{slot}_samples'] = len(samples)
+            rate = median(samples) if len(samples) >= 3 else None
+            rates.append(rate)
+            if rate is not None:
+                metrics[f'gpu_forward_capacity_device_{slot}_pixels_per_ms'] = rate
+        if len(rates) >= 2 and rates[0] is not None and rates[1] is not None:
+            metrics['gpu_forward_capacity_secondary_primary_rate_ratio'] = (
+                rates[1] / rates[0])
+        return metrics
+
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
                  autocast_enabled, autocast_dtype):
