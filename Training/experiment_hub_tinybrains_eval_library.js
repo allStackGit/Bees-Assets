@@ -94,8 +94,21 @@ function lookupSuite(o,id) {
 function availableOpponents(o) {
     const catalog=read(o),labels=catalog.opponent_labels;
     const list=[];
+    let approvedVersions={};
+    const marker=privateFile(path.join(o.suites,'hub-approved-latest.json'));
+    if(marker) {
+        const approved=JSON.parse(fs.readFileSync(marker,'utf8'));
+        if(approved?.version===1&&typeof approved.nano==='string'&&
+            typeof approved.micro==='string')
+            approvedVersions={nano:approved.nano,micro:approved.micro};
+    }
     for(const id of ['nano','micro']) {
+        const selected=approvedVersions[id];
+        const safeSelected=typeof selected==='string'&&
+            /^tinybrains_(?:nano|micro)_tiny_v(?:[3-9]|[1-9][0-9]{1,2})$/.test(selected)&&
+            selected.startsWith('tinybrains_'+id+'_');
         const source=lookupSuite(o,'tinybrains_'+id+'_season_v1')||
+            (safeSelected?lookupSuite(o,selected):null)||
             lookupSuite(o,'tinybrains_'+id+'_tiny_v3');
         if(!source)continue;
         list.push({
