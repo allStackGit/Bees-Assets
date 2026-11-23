@@ -393,10 +393,10 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
 
     if scenario == "custom" and (
         file_sha256(source_run) != source_run_digest or
-        any(file_sha256(source_path) != digest for
-            (source_path, _), digest in zip(source_scenes, source_scene_digests))
+        any(file_sha256(source_path) != digest
+            for source_path, digest in physical_hashes.items())
     ):
-        raise ValueError("original native policy Worlds changed while bootstrapping")
+        raise ValueError("original native physical scene or Run changed while bootstrapping")
     # This is also the exact strict actor-loading path used by the resident
     # inference process, not just a JSON/hash format check.
     _, policies, _ = checked_manifest(manifest)
@@ -486,6 +486,11 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                     len(source_receipts) != len(source_levels) or
                     source_receipts[0].get("source_path") != str(first_scene)):
                 raise ValueError("resumed native source Level collection identity changed")
+            # Up to 16,384 independent Worlds can share one immutable source
+            # scene. Verify the FULL original and copied bytes once per
+            # distinct path, never 16,384 times per training resume.
+            source_digests = {}
+            staged_digests = {}
             for index, (row, level) in enumerate(zip(source_receipts, source_levels)):
                 if not isinstance(row, dict):
                     raise ValueError("resumed native source Level receipt is malformed")
@@ -494,10 +499,16 @@ def verified_existing_bootstrap(output: Path, seed: int, slots: list[int],
                         name != Path(name).name):
                     raise ValueError("resumed native physical template path is unsafe")
                 expected_source = (original_run.parent / level["scene"]).resolve(strict=True)
-                if (not (output / name).is_file() or
-                        row.get("source_path") != str(expected_source) or
-                        row.get("source_sha256") != file_sha256(expected_source) or
-                        row.get("scene_sha256") != file_sha256(output / name)):
+                copied = output / name
+                if (not copied.is_file() or copied.is_symlink() or
+                        row.get("source_path") != str(expected_source)):
+                    raise ValueError("resumed native physical source identity changed")
+                if expected_source not in source_digests:
+                    source_digests[expected_source] = file_sha256(expected_source)
+                if copied not in staged_digests:
+                    staged_digests[copied] = file_sha256(copied)
+                if (row.get("source_sha256") != source_digests[expected_source] or
+                        row.get("scene_sha256") != staged_digests[copied]):
                     raise ValueError(
                         "resumed original physical Level was modified or reordered"
                     )
