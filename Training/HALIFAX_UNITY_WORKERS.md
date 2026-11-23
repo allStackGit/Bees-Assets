@@ -496,9 +496,20 @@ active selectors. Repeat `--machine MACHINE_ID` to select a subset. The
 one-command remote path requires Linux. If both local and remote installation
 are requested, Halifax's release is **installed but not activated** until
 every selected remote machine reports successful activation. If remote
-distribution fails, Halifax retains its existing active selector; rerun the
-published manifest through the distributor to complete an interrupted
-rollout. No step restarts Hub agents or interrupts existing training.
+distribution fails, Halifax retains its existing active selector. Do not
+recompile and create a different release to repair a partial rollout. Rerun
+the same manifest through the distributor with `--apply --activate`, then
+select the already-installed matching local release using:
+
+```sh
+manifest=/absolute/OfflineWorkers/BUILD/worker-build-manifest.json
+release=$(sha256sum "$manifest" | cut -d' ' -f1)
+python3 -B Training/bees_hub_worker_install.py activate \
+    --root /home/halifax/ai/bees-unity-workers --release "$release"
+```
+
+Only then restart idle Hub agents. No build or deployment step interrupts
+existing training.
 
 The distributor validates the selected inventory and local artifacts first,
 then copies and verifies an immutable installation on **every selected machine**
