@@ -8076,6 +8076,47 @@ fn run_campaign_game_menu(
                 });
             }
         }
+        // Original source-authored hulls share the same canonical
+        // persistent fleet and scene preflight as their individual editor.
+        // Group only live members of the same currently owned SavedSquad;
+        // their first durable claims still carry the source class.
+        let mut authored_batches = HashMap::<(i32, i64), Vec<i64>>::new();
+        for &(side, id, original_squad, _) in &original_choices {
+            let Ok(lost) = progress.lost_player_fleet_ids(side) else { continue };
+            if lost.contains(&id) { continue; }
+            let current = progress.authored_current_squad(id).unwrap_or(original_squad);
+            authored_batches.entry((side, current)).or_default().push(id);
+        }
+        let mut authored_groups = authored_batches.into_iter().collect::<Vec<_>>();
+        authored_groups.sort_unstable_by_key(|((side, source), _)| (*side, *source));
+        for ((side, source), mut ids) in authored_groups {
+            if ids.len() < 2 { continue; }
+            ids.sort_unstable();
+            ids.dedup();
+            if ids.len() < 2 { continue; }
+            let destinations = std::iter::once(0).chain(
+                squad_destinations.get(&side).into_iter().flatten().copied(),
+            );
+            for destination in destinations {
+                if source == destination { continue; }
+                let from_label = if source == 0 {
+                    "Reserve".to_string()
+                } else { progress.squad_label(source) };
+                let to_label = if destination == 0 {
+                    "Reserve".to_string()
+                } else { progress.squad_label(destination) };
+                transfer_rows.push(NativeTransferMenuRow {
+                    title: format!(
+                        "All {} original ships: {} -> {} (atomic)",
+                        ids.len(), from_label, to_label,
+                    ),
+                    fleet_ship_id: 0,
+                    to_saved_squad_id: destination,
+                    authored_from: Some((side, source)),
+                    batch: Some((side, ids.clone())),
+                });
+            }
+        }
         let mut delete_rows = Vec::new();
         for side in [1, 2] {
             for squad in progress.created_squads_for_side(side) {
@@ -8352,6 +8393,21 @@ fn run_campaign_game_menu(
                 launch_failed = result.is_err();
                 if let Err(error) = result {
                     eprintln!("Could not build ship type {ship_type}: {error}");
+                }
+                continue;
+            }
+            NativeBattleMenuAction::ReassignBatch {
+                side, fleet_ship_ids, from_saved_squad_id, to_saved_squad_id,
+            } => {
+                let result = run_reassign_authored_ships(
+                    &catalog_path, output_root, side, &fleet_ship_ids,
+                    from_saved_squad_id, to_saved_squad_id,
+                );
+                progress = catalog.load_progress(output_root)?;
+                launch_failed = result.is_err();
+                feedback = result.is_ok().then_some(NativeUiFeedback::Saved);
+                if let Err(error) = result {
+                    eprintln!("Could not reassign original squad fleet: {error}");
                 }
                 continue;
             }
