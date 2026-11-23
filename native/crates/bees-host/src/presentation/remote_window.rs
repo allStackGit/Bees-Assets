@@ -15,7 +15,7 @@ use std::thread;
 use std::sync::{Arc, OnceLock};
 use rustls::ClientConfig;
 
-use bees_gameplay::campaign_dialogue::CampaignCue;
+use bees_gameplay::campaign_dialogue::{CampaignCue, PlutoFleetPractice};
 use bees_sim::collision::{Aabb, Pose, circle_overlaps_polygon, circles_overlap, polygons_overlap};
 use bees_sim::geometry::Vec2;
 use bees_sim::simulation::WorldId;
@@ -582,6 +582,7 @@ struct PeerClient {
     /// Confirmed by the same authenticated input-result request stream.
     /// Never restored when the TCP connection or host identity changes.
     briefing_pending: Option<(u64,u64,u32,u64)>,
+    fleet_practice_pending: Option<(u64, PlutoFleetPractice)>,
     briefing_approved: Option<(u64,u64,u32)>,
     /// A denied cue is not resent every display frame. A new World or
     /// source cue can still request its own acknowledgment.
@@ -696,7 +697,7 @@ impl PeerClient {
             last_heartbeat_sent: Instant::now(),
             next_heartbeat_nonce: 0, heartbeat_pending: None,
             pending_order_times: VecDeque::new(),
-            briefing_pending: None, briefing_approved: None,
+            briefing_pending: None, briefing_approved: None, fleet_practice_pending: None,
             briefing_rejected: None,
             lobby_ready_pending: None, lobby_ready_approved: None,
             lobby_ready_rejected: None,
@@ -864,6 +865,11 @@ impl PeerClient {
                     }
                     self.metrics.world_snapshot_bytes+=message_bytes as u64;
                     self.metrics.world_snapshot_max_bytes=self.metrics.world_snapshot_max_bytes.max(message_bytes);
+                    if new_episode || self.fleet_practice_pending.is_some_and(|(_, expected)|
+                        wire_fleet_practice(&message).is_none_or(|phase| phase == expected))
+                    {
+                        self.fleet_practice_pending = None;
+                    }
                     self.state = Some(message);
                     self.metrics.snapshots += 1;
                 }
@@ -1280,6 +1286,9 @@ impl PeerClient {
                         }
                     }
                     self.metrics.acknowledgments+=1;
+                    if !processed && self.fleet_practice_pending.is_some_and(|(id, _)| id == request) {
+                        self.fleet_practice_pending = None;
+                    }
                     if self.forfeit_pending == Some(request) {
                         self.forfeit_pending = None;
                         self.metrics.forfeit_claim_receipts += 1;
@@ -1379,7 +1388,7 @@ impl PeerClient {
         // authored campaign briefing is visible and after a terminal
         // outcome. The LAN window must obey the same presentation rule.
         // End is still allowed to release a live held-fire gesture.
-        if self.input_suppressed &&
+        if self.input_suppressed && action["kind"] != "pluto_fleet_practice" &&
             !(action["kind"]=="held_fire" && action["input"]["action"]=="End") &&
             !(action["kind"]=="surrender" &&
                 self.state.as_ref().is_some_and(|state|
@@ -2372,6 +2381,15 @@ fn focus_squad(state: &Value, squad_id: i64) -> Option<Vec2> {
         });
     }
     extents.map(|bounds|(bounds.min+bounds.max)*0.5)
+}
+
+fn wire_fleet_practice(state: &Value) -> Option<PlutoFleetPractice> {
+    match state["campaign_dialogue"]["pluto_fleet_practice"].as_str()? {
+        "pending" => Some(PlutoFleetPractice::Pending),
+        "active" => Some(PlutoFleetPractice::Active),
+        "complete" => Some(PlutoFleetPractice::Complete),
+        _ => None,
+    }
 }
 
 fn wire_briefing_line_count(state: &Value) -> Option<usize> {
@@ -4166,6 +4184,7 @@ pub fn connect_remote_with_trust(
         // dialogue cursor BEFORE K's meaning is determined.
         let mut dialogue_skip_key=false;
         let mut level_intro_visible = false;
+        let mut fleet_practice_input = None;
         let finale_focus = peer.state.as_ref().and_then(|state|
             point_from_wire(&state["campaign_dialogue"]["finale_focus"]));
         if let Some(state)=peer.state.as_ref() {
@@ -4184,9 +4203,27 @@ pub fn connect_remote_with_trust(
                 state["campaign_dialogue"]["cue"].clone(),
             ).ok()).flatten();
             if count>0 {
+                let practice = wire_fleet_practice(state);
+                let practicing = practice == Some(PlutoFleetPractice::Active);
+                dialogue_line = super::campaign_dialogue::fleet_practice_cursor(practice, dialogue_line);
+                let dialogue_keys = !show_controls_help && window.is_active();
+                let advance = dialogue_keys && (window.is_key_pressed(Key::L, KeyRepeat::No) ||
+                    (!lobby_waiting && window.is_key_pressed(Key::Enter, KeyRepeat::No)));
+                let close = dialogue_keys && dialogue_line < count &&
+                    window.is_key_pressed(Key::K, KeyRepeat::No);
+                let practice_target = dialogue_keys.then(|| super::campaign_dialogue::fleet_practice_transition(
+                    practice, dialogue_line, advance, close, controls.show_campaign_tooltips(),
+                )).flatten();
+                if let (Some((world, revision, sequence)), Some(phase)) = (dialogue_key, practice_target) {
+                    fleet_practice_input = Some((phase, json!({
+                        "kind": "pluto_fleet_practice",
+                        "input": {"world_id": world, "episode_revision": revision,
+                            "side": expected_side, "sequence": sequence, "phase": phase},
+                    })));
+                }
                 let skip_tooltips = |index| authored_cue.map_or(index, |cue|
                     super::campaign_dialogue::skip_disabled_tooltip_lines(
-                        cue, index, controls.show_campaign_tooltips(),
+                        cue, index, controls.show_campaign_tooltips() || practicing,
                     ));
                 dialogue_line = skip_tooltips(dialogue_line);
                 if let Some(key) = dialogue_key.filter(|_| dialogue_line < count) {
@@ -4198,15 +4235,12 @@ pub fn connect_remote_with_trust(
                 }
                 // Source campaign dialogue uses K to skip and L to advance.
                 // A skip must not activate a Beacon in the same frame.
-                dialogue_skip_key=!show_controls_help&&dialogue_line<count &&
-                    window.is_key_pressed(Key::K,KeyRepeat::No);
+                dialogue_skip_key = close;
                 let tooltip_end = authored_cue.and_then(|cue|
                     super::campaign_dialogue::campaign_tooltip_end(cue, dialogue_line));
-                if dialogue_skip_key {
+                if practice_target.is_none() && dialogue_skip_key {
                     dialogue_line = tooltip_end.unwrap_or(count);
-                } else if !show_controls_help &&
-                    (window.is_key_pressed(Key::L,KeyRepeat::No) ||
-                    (!lobby_waiting && window.is_key_pressed(Key::Enter,KeyRepeat::No))) {
+                } else if practice_target.is_none() && advance {
                     let incomplete = tooltip_end.is_none() && !dialogue_reveal_forced &&
                         authored_cue.and_then(|cue|
                             super::campaign_dialogue::visible_line(cue,dialogue_line))
@@ -4225,7 +4259,9 @@ pub fn connect_remote_with_trust(
                 {
                     dialogue_line=dialogue_line.saturating_sub(1);
                 }
-                dialogue_line = skip_tooltips(dialogue_line);
+                dialogue_line = super::campaign_dialogue::fleet_practice_cursor(
+                    practice, skip_tooltips(dialogue_line),
+                );
                 let pause = authored_cue.and_then(|cue|
                     super::campaign_dialogue::pause_seconds(cue, dialogue_line));
                 if let (Some(key),Some(seconds))=(dialogue_key,pause) {
@@ -4327,7 +4363,9 @@ pub fn connect_remote_with_trust(
         let story_briefing=peer.state.as_ref().and_then(|state| {
             let cue=serde_json::from_value::<CampaignCue>(
                 state["campaign_dialogue"]["cue"].clone()).ok()?;
-            if !cue.is_briefing(){return None;}
+            if !cue.is_briefing() || wire_fleet_practice(state) == Some(PlutoFleetPractice::Active) {
+                return None;
+            }
             Some((state["world_id"].as_u64()?,
                 state["episode_revision"].as_u64()?,
                 u32::try_from(state["campaign_dialogue"]["sequence"].as_u64()?).ok()?))
@@ -4386,6 +4424,17 @@ pub fn connect_remote_with_trust(
         peer.input_suppressed=peer.spectator||terminal||briefing||
             host_briefing_paused||lobby_waiting||reconnect_waiting||
             show_controls_help||menu_action_consumed;
+        if !terminal && !lobby_waiting && !reconnect_waiting && !menu_action_consumed &&
+            peer.authenticated && peer.connected && !peer.spectator && peer.fleet_practice_pending.is_none()
+        {
+            if let Some((phase, action)) = fleet_practice_input {
+                let request = peer.next_request;
+                match peer.send_action(action, "Fleet practice transition requested".into()) {
+                    Ok(()) => peer.fleet_practice_pending = Some((request, phase)),
+                    Err(error) => peer.notice = error.to_string(),
+                }
+            }
+        }
         if lobby_waiting { peer.metrics.lobby_wait_frames+=1; }
         if reconnect_waiting { peer.metrics.reconnect_wait_frames+=1; }
         if !peer.input_suppressed && !held_fire_active &&

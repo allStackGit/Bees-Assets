@@ -29,6 +29,10 @@ pub enum NativePlayerInput {
     LockOn(NativePlayerSquadLockOn),
     Chase(NativePlayerSquadChase),
     Select(NativePlayerSquadSelection),
+    PlutoFleetPractice {
+        world_id: WorldId, episode_revision: u64, side: i32, sequence: u32,
+        phase: bees_gameplay::campaign_dialogue::PlutoFleetPractice,
+    },
     /// Authenticated original-game retreat button. The canonical World
     /// opens its existing exit trigger; ships still have to fly through it.
     ActivateRetreat { world_id: WorldId, episode_revision: u64, side: i32 },
@@ -56,7 +60,8 @@ impl NativePlayerInput {
             Self::LockOn(v) => Some(&v.squads),
             Self::Chase(v) => Some(&v.squads),
             Self::Select(v) => Some(&v.squads),
-            Self::ActivateRetreat { .. } | Self::Surrender { .. } => None,
+            Self::PlutoFleetPractice { .. } | Self::ActivateRetreat { .. } |
+            Self::Surrender { .. } => None,
         }
     }
 
@@ -73,6 +78,7 @@ impl NativePlayerInput {
             Self::LockOn(input) => (input.world_id, input.episode_revision),
             Self::Chase(input) => (input.world_id, input.episode_revision),
             Self::Select(input) => (input.world_id, input.episode_revision),
+            Self::PlutoFleetPractice { world_id, episode_revision, .. } |
             Self::ActivateRetreat { world_id, episode_revision, .. } |
             Self::Surrender { world_id, episode_revision, .. } => (*world_id, *episode_revision),
         }

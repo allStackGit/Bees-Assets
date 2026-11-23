@@ -212,6 +212,19 @@ impl CampaignCue {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PlutoFleetPractice {
+    #[default]
+    Pending,
+    Active,
+    Complete,
+}
+
+impl PlutoFleetPractice {
+    fn is_pending(&self) -> bool { *self == Self::Pending }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 enum DialogueMode {
@@ -247,6 +260,8 @@ enum DialogueMode {
         scout_selected: bool,
         selection_reported: bool,
         combat_released: bool,
+        #[serde(default, skip_serializing_if = "PlutoFleetPractice::is_pending")]
+        fleet_practice: PlutoFleetPractice,
     },
     Minesweeper { tracked_tank: Option<i64> },
     Beenoculars { under_heavy_fire: bool, next_milestone: usize },
@@ -370,6 +385,7 @@ impl CampaignDialogue {
                 DialogueMode::PlutoReinforcements {
                     scout_id, scout_selected: false,
                     selection_reported: false, combat_released: false,
+                    fleet_practice: PlutoFleetPractice::Pending,
                 },
                 CampaignCue::PlutoReinforcementsBriefing,
             ),
@@ -648,26 +664,28 @@ impl CampaignDialogue {
                     u32::from(*honeybee_destroyed),
             (DialogueMode::PlutoReinforcements {
                 scout_id, selection_reported: false,
-                combat_released: false, ..
+                combat_released: false, fleet_practice: PlutoFleetPractice::Pending, ..
             }, CampaignCue::PlutoReinforcementsBriefing) =>
                 *scout_id > 0 && sequence == 0,
             (DialogueMode::PlutoReinforcements {
                 scout_id, scout_selected: true,
-                selection_reported: true, combat_released: false,
+                selection_reported: true, combat_released: false, ..
             }, CampaignCue::PlutoReinforcementsScoutSelected) =>
                 *scout_id > 0 && sequence == 1,
             (DialogueMode::PlutoReinforcements {
                 scout_id, scout_selected: true,
-                selection_reported: true, combat_released: true,
+                selection_reported: true, combat_released: true, fleet_practice,
             }, CampaignCue::PlutoReinforcementsCombatReady) =>
-                *scout_id > 0 && sequence == 2,
+                *scout_id > 0 && sequence == 2 && *fleet_practice != PlutoFleetPractice::Active,
             (DialogueMode::PlutoReinforcements {
-                scout_id, scout_selected, selection_reported, combat_released,
+                scout_id, scout_selected, selection_reported, combat_released, fleet_practice,
             }, CampaignCue::PlutoReinforcementsVictory |
                 CampaignCue::PlutoReinforcementsDefeat) =>
                 *scout_id > 0 &&
                 (!*selection_reported || *scout_selected) &&
                 (!*combat_released || *selection_reported) &&
+                (fleet_practice.is_pending() || *selection_reported) &&
+                (!*combat_released || *fleet_practice != PlutoFleetPractice::Active) &&
                 sequence == 1 + u32::from(*selection_reported) +
                     u32::from(*combat_released),
             (DialogueMode::Minesweeper { tracked_tank: None },
@@ -864,6 +882,28 @@ impl CampaignDialogue {
                 Some(scout_id),
             _ => None,
         }
+    }
+
+    pub fn pluto_fleet_practice(&self) -> Option<PlutoFleetPractice> {
+        match (self.cue, self.mode) {
+            (CampaignCue::PlutoReinforcementsScoutSelected,
+                DialogueMode::PlutoReinforcements { fleet_practice, .. }) => Some(fleet_practice),
+            _ => None,
+        }
+    }
+
+    pub fn set_pluto_fleet_practice(&mut self, sequence: u32, next: PlutoFleetPractice) -> bool {
+        if self.sequence != sequence || !matches!((self.pluto_fleet_practice(), next),
+            (Some(PlutoFleetPractice::Pending), PlutoFleetPractice::Active) |
+            (Some(PlutoFleetPractice::Active), PlutoFleetPractice::Complete))
+        {
+            return false;
+        }
+        if let DialogueMode::PlutoReinforcements { fleet_practice, .. } = &mut self.mode {
+            *fleet_practice = next;
+            return true;
+        }
+        false
     }
 
     pub fn pluto_reinforcements_progress(&self) -> Option<(bool, bool)> {
@@ -1226,15 +1266,17 @@ impl CampaignDialogue {
             }
         }
         if let DialogueMode::PlutoReinforcements {
-            scout_selected, selection_reported, combat_released, ..
+            scout_selected, selection_reported, combat_released, fleet_practice, ..
         } = &mut self.mode {
             if *scout_selected && !*selection_reported {
                 *selection_reported = true;
                 return Some(CampaignCue::PlutoReinforcementsScoutSelected);
             }
-            if *selection_reported && !*combat_released {
-                // Local and authenticated LAN dialogue pauses hold the
-                // simulation until the real control tutorial is read.
+            if *selection_reported && !*combat_released &&
+                *fleet_practice != PlutoFleetPractice::Active
+            {
+                // Clients hold the final spoken briefing. Older recordings
+                // take the Pending path, which retains their original ticks.
                 *combat_released = true;
                 return Some(CampaignCue::PlutoReinforcementsCombatReady);
             }

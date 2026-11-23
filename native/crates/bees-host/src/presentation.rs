@@ -231,6 +231,7 @@ pub struct NativeRenderWorldView<'a> {
     pub campaign_scout_alarm: bool,
     pub pluto_scout_tutorial: Option<(i64, bool)>,
     pub pluto_reinforcements_scout: Option<i64>,
+    pub pluto_fleet_practice: Option<bees_gameplay::campaign_dialogue::PlutoFleetPractice>,
     pub campaign_gunship_handoff: Option<i64>,
     /// Current source GameState.PlayerScore, read from the same checkpointed
     /// physical death ledger as the terminal campaign result.
@@ -276,7 +277,9 @@ impl<'a> NativeRenderWorldView<'a> {
         if self.terminal_result.is_some() { return None; }
         let (sequence, cue) = self.campaign_dialogue?;
         let owner = self.campaign_dialogue_side?;
-        cue.is_briefing().then_some((owner, sequence))
+        (cue.is_briefing() && self.pluto_fleet_practice !=
+            Some(bees_gameplay::campaign_dialogue::PlutoFleetPractice::Active))
+            .then_some((owner, sequence))
     }
 
     pub(crate) fn campaign_camera_subject_for(&self, viewer_side: i32) -> Option<(i64, Vec2)> {

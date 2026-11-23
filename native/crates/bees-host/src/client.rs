@@ -989,6 +989,7 @@ impl NativeClient {
             view.player_authority.player_viewer_side() == Some(side));
         let finale_focus = view.player_authority.player_viewer_side()
             .and_then(|side| view.pluto_finale_focus_for(side));
+        let mut fleet_practice_input = None;
         let dialogue = view.campaign_dialogue
             .filter(|_| dialogue_for_viewer)
             .and_then(|(sequence, cue)| {
@@ -1001,11 +1002,30 @@ impl NativeClient {
                 self.pluto_finale_camera = Default::default();
             }
             use crate::presentation::campaign_dialogue::{
-                campaign_tooltip_end, skip_disabled_tooltip_lines,
+                campaign_tooltip_end, fleet_practice_cursor, fleet_practice_transition,
+                skip_disabled_tooltip_lines,
             };
             let count = crate::presentation::campaign_dialogue::line_count(cue);
             let show_tooltips = self.controls.show_campaign_tooltips();
-            self.dialogue_line = skip_disabled_tooltip_lines(cue, self.dialogue_line, show_tooltips);
+            let practice = view.pluto_fleet_practice;
+            self.dialogue_line = fleet_practice_cursor(practice, self.dialogue_line);
+            let accepts_dialogue_keys = !self.show_controls_help && self.window.is_active();
+            let advance = accepts_dialogue_keys && self.window.is_key_pressed(Key::L, KeyRepeat::No);
+            let close = accepts_dialogue_keys && self.window.is_key_pressed(Key::K, KeyRepeat::No);
+            if !self.playback && accepts_dialogue_keys && view.terminal_result.is_none() {
+                if let (Some(side), Some(phase)) = (view.campaign_dialogue_side,
+                    fleet_practice_transition(practice, self.dialogue_line, advance, close, show_tooltips))
+                {
+                    fleet_practice_input = Some(NativePlayerInput::PlutoFleetPractice {
+                        world_id: view.world_id, episode_revision: view.episode_revision,
+                        side, sequence, phase,
+                    });
+                }
+            }
+            let practicing = practice == Some(bees_gameplay::campaign_dialogue::PlutoFleetPractice::Active);
+            self.dialogue_line = skip_disabled_tooltip_lines(
+                cue, self.dialogue_line, show_tooltips || practicing,
+            );
             if self.dialogue_reveal.as_ref().is_none_or(|(prior, index, _)|
                 *prior != sequence || *index != self.dialogue_line)
             {
@@ -1013,10 +1033,9 @@ impl NativeClient {
                 self.dialogue_reveal_forced = false;
             }
             let tooltip_end = campaign_tooltip_end(cue, self.dialogue_line);
-            if !self.show_controls_help && self.window.is_key_pressed(Key::K, KeyRepeat::No) {
+            if fleet_practice_input.is_none() && close {
                 self.dialogue_line = tooltip_end.unwrap_or(count);
-            } else if !self.show_controls_help && self.dialogue_line < count &&
-                self.window.is_key_pressed(Key::L, KeyRepeat::No) {
+            } else if fleet_practice_input.is_none() && self.dialogue_line < count && advance {
                 let incomplete = tooltip_end.is_none() && !self.dialogue_reveal_forced &&
                     crate::presentation::campaign_dialogue::visible_line(
                         cue, self.dialogue_line,
@@ -1064,6 +1083,9 @@ impl NativeClient {
             crate::presentation::campaign_dialogue::visible_line(cue,self.dialogue_line)
                 .map(|(speaker, line)| (cue, speaker, line))
         });
+        if let Some(action) = fleet_practice_input {
+            return Ok(NativeClientAction::Input { action, step: false });
+        }
         if let (Some((sequence, _)), Some(_)) = (
             view.campaign_dialogue.filter(|_| dialogue_for_viewer), dialogue,
         ) {
@@ -1090,13 +1112,9 @@ impl NativeClient {
         );
         // Hiding the owner's story from the opposite hot-seat must not
         // advance the authoritative mission before the owner has read it.
-        let briefing = if dialogue_for_viewer {
-            dialogue.is_some_and(|(cue, _, _)| self.dialogue_line <
-                crate::presentation::campaign_dialogue::briefing_line_count(cue))
-        } else {
-            view.terminal_result.is_none() &&
-                view.campaign_dialogue.is_some_and(|(_, cue)| cue.is_briefing())
-        };
+        let briefing = view.active_campaign_briefing().is_some() &&
+            (!dialogue_for_viewer || dialogue.is_some_and(|(cue, _, _)| self.dialogue_line <
+                crate::presentation::campaign_dialogue::briefing_line_count(cue)));
         if view.terminal_result.is_some() { self.held_fire_target = None; }
         if !self.playback && !self.show_controls_help && !briefing &&
             self.held_fire_target.is_none() && view.terminal_result.is_none() &&

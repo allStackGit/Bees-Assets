@@ -1577,6 +1577,7 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
                 NativePlayerInput::LockOn(_) => "Squad cannot change Lock On",
                 NativePlayerInput::Chase(_) => "Squad cannot change Chase",
                 NativePlayerInput::Select(_) => "Selection has no controllable squads",
+                NativePlayerInput::PlutoFleetPractice { .. } => "Fleet practice transition is unavailable",
                 NativePlayerInput::ActivateRetreat { .. } =>
                     "Campaign retreat corridor is not available",
                 NativePlayerInput::Surrender { .. } => "Surrender is not available",
@@ -1597,9 +1598,17 @@ fn apply_player_input(host: &mut RolloutHost, action: NativePlayerInput)
         Outcome::HeldFire(message) =>
             message != "No selected weapons accepted held fire",
         // Clearing a selection is also a valid non-command user input.
-        Outcome::Select(_) | Outcome::RetreatActivated | Outcome::Surrender => true,
+        Outcome::Select(_) | Outcome::PlutoFleetPractice |
+        Outcome::RetreatActivated | Outcome::Surrender => true,
     };
     let feedback = match (action, outcome) {
+        (NativePlayerInput::PlutoFleetPractice { phase, .. }, Outcome::PlutoFleetPractice) => {
+            if phase == bees_gameplay::campaign_dialogue::PlutoFleetPractice::Active {
+                "Fleet practice started"
+            } else {
+                "Fleet practice complete"
+            }
+        }
         (NativePlayerInput::Surrender { .. }, Outcome::Surrender) => "Surrender accepted",
         (NativePlayerInput::ActivateRetreat { .. }, Outcome::RetreatActivated) =>
             "Retreat corridor opened; withdraw surviving ships",
@@ -1690,6 +1699,11 @@ fn remote_side_owns_input(host: &RolloutHost, action: &NativePlayerInput, side: 
     // This dispatcher remains the shared local/remote combat authority.
     // Only Begin supplies new squad lifetimes requiring individual checks.
     let owners = match action {
+        NativePlayerInput::PlutoFleetPractice { side: claimed, sequence, .. } => {
+            return *claimed == side && world.state.campaign_dialogue.as_ref().is_some_and(|dialogue|
+                dialogue.player_side() == side && dialogue.current().0 == *sequence &&
+                dialogue.pluto_fleet_practice().is_some());
+        }
         NativePlayerInput::ActivateRetreat { side: claimed, .. } |
         NativePlayerInput::Surrender { side: claimed, .. } => {
             return *claimed == side && world.state.events.roster().active_lifetimes().any(|owner|
@@ -11312,7 +11326,11 @@ fn run_battle(
                 // A story briefing blocks physical orders from both player
                 // sides until its authored viewer releases the real Level.
                 // End still frees an existing peer-owned held-fire gesture.
-                if (remote_briefing_waiting ||
+                let practice_transition = matches!(&order.action, NativePlayerInput::PlutoFleetPractice { .. });
+                let opens_practice = matches!(&order.action, NativePlayerInput::PlutoFleetPractice {
+                    phase: bees_gameplay::campaign_dialogue::PlutoFleetPractice::Active, ..
+                });
+                if ((remote_briefing_waiting && !opens_practice) ||
                     remote_lobby_waiting || remote_reconnect_waiting) &&
                     !matches!(&order.action, NativePlayerInput::HeldFire(input)
                         if matches!(input.action,
@@ -11392,6 +11410,11 @@ fn run_battle(
                 }
                 match apply_remote_side_input(&mut host, order.action, order.side) {
                     Ok(feedback) if feedback.accepted => {
+                        if practice_transition {
+                            let battle_view = host.render_world(0).expect("remote presentation Level");
+                            remote_briefing_waiting = remote.as_mut().expect("remote listener")
+                                .campaign_briefing_waiting(&battle_view);
+                        }
                         if host_checkpoint_file.is_some() {
                             pending_remote_successes.push((
                                 order.peer, order.request_id, feedback.message,
@@ -11419,12 +11442,9 @@ fn run_battle(
             // The local window may still be displaying its own briefing;
             // deliver the initial paused state to newly authenticated LAN
             // peers without advancing physics to make a snapshot.
-            if remote_briefing.is_some() || remote_lobby_waiting ||
-                remote_reconnect_waiting {
-                if let Some(view) = host.render_world(0) {
-                    remote.as_mut().expect("remote listener")
-                        .broadcast_initial_if_pending(&view, client_bounds[0]);
-                }
+            if let Some(view) = host.render_world(0) {
+                remote.as_mut().expect("remote listener")
+                    .broadcast_initial_if_pending(&view, client_bounds[0]);
             }
         }
         #[cfg(feature = "client")]

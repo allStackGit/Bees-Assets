@@ -733,6 +733,33 @@ pub(crate) fn briefing_line_count(cue: CampaignCue) -> usize {
     }
 }
 
+#[cfg(feature = "client")]
+pub(crate) fn fleet_practice_cursor(
+    phase: Option<bees_gameplay::campaign_dialogue::PlutoFleetPractice>, cursor: usize,
+) -> usize {
+    use bees_gameplay::campaign_dialogue::PlutoFleetPractice;
+    match phase {
+        Some(PlutoFleetPractice::Active) => cursor.clamp(1, 4),
+        Some(PlutoFleetPractice::Complete) => cursor.max(5),
+        _ => cursor,
+    }
+}
+
+#[cfg(feature = "client")]
+pub(crate) fn fleet_practice_transition(
+    phase: Option<bees_gameplay::campaign_dialogue::PlutoFleetPractice>,
+    cursor: usize, advance: bool, close: bool, show_tooltips: bool,
+) -> Option<bees_gameplay::campaign_dialogue::PlutoFleetPractice> {
+    use bees_gameplay::campaign_dialogue::PlutoFleetPractice;
+    match phase {
+        Some(PlutoFleetPractice::Pending) if cursor == 0 && show_tooltips && advance && !close =>
+            Some(PlutoFleetPractice::Active),
+        Some(PlutoFleetPractice::Active) if close || !show_tooltips || (cursor == 4 && advance) =>
+            Some(PlutoFleetPractice::Complete),
+        _ => None,
+    }
+}
+
 /// Keep the canonical cursor and cue acknowledgment intact when hiding
 /// optional instructional lines embedded in a story section.
 #[cfg(feature = "client")]

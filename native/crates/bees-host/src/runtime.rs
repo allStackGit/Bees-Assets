@@ -60,6 +60,7 @@ pub enum NativePlayerInputOutcome {
     LockOn(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     Chase(bees_gameplay::player_inputs::NativePlayerCommandCounts),
     Select(usize),
+    PlutoFleetPractice,
     RetreatActivated,
     Surrender,
 }
@@ -710,6 +711,26 @@ where
             Input::LockOn(value) => self.player_lock_on_squads(value).map(Outcome::LockOn),
             Input::Chase(value) => self.player_chase_squads(value).map(Outcome::Chase),
             Input::Select(value) => self.player_select_squads(value).map(Outcome::Select),
+            Input::PlutoFleetPractice { world_id, episode_revision, side, sequence, phase } => {
+                let index = (0..self.simulation.world_count()).find(|&index|
+                    self.simulation.world(index).is_some_and(|world| world.id == *world_id)
+                ).ok_or(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld))?;
+                let world = self.simulation.world_mut(index).expect("located world");
+                if world.episode_revision() != *episode_revision {
+                    return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::StaleWorld));
+                }
+                if world.is_failed() || world.state.events.is_failed() || world.state.events.completed() {
+                    return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::InactiveWorld));
+                }
+                let state = &mut world.state;
+                if state.metadata.player_viewer_side() != Some(*side) ||
+                    !state.campaign_dialogue.as_mut().is_some_and(|dialogue|
+                        dialogue.player_side() == *side && dialogue.set_pluto_fleet_practice(*sequence, *phase))
+                {
+                    return Err(HostPlayerInputError::Gameplay(NativePlayerInputError::NotControllable));
+                }
+                Ok(Outcome::PlutoFleetPractice)
+            },
             Input::ActivateRetreat { world_id, episode_revision, side } => {
                 let index = (0..self.simulation.world_count()).find(|&index|
                     self.simulation.world(index).is_some_and(|world|
@@ -2019,6 +2040,8 @@ where
                 .is_some_and(|dialogue| dialogue.pluto_scout_alarm_active(world.tick())),
             pluto_scout_tutorial: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.pluto_scout_tutorial()),
+            pluto_fleet_practice: world.state.campaign_dialogue.as_ref()
+                .and_then(|dialogue| dialogue.pluto_fleet_practice()),
             pluto_reinforcements_scout: world.state.campaign_dialogue.as_ref()
                 .and_then(|dialogue| dialogue.unselected_pluto_reinforcements_scout()),
             campaign_gunship_handoff: world.state.campaign_dialogue.as_ref()
