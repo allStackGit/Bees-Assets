@@ -220,7 +220,7 @@ class QualifiedPpoValueTerms:
             raise ValueError("Invalid PPO value qualification margin")
         self.min_speedup=min_speedup
         self.selected={}
-        self.ranges={}
+        self.admitted_shapes={}
         self.speedups={}
         self.coefficients={}
 
@@ -269,7 +269,7 @@ class QualifiedPpoValueTerms:
                                     backend='inductor',
                                     dynamic=True,fullgraph=True)
             results=[]
-            for rows in (8,128):
+            for rows in (1,8,64,256):
                 inputs=self._sample(device,dtype,rows)
                 expected,expected_grad=self._forward_backward(
                     ppo_value_terms,inputs,coefficients)
@@ -295,17 +295,11 @@ class QualifiedPpoValueTerms:
                 compiled=median(compiled_times)
                 gain=(1-compiled/eager if eager>0 else -1.)
                 results.append((rows,gain>=self.min_speedup,gain))
-            wins=[rows for rows,win,_ in results if win]
+            wins={rows for rows,win,_ in results if win}
             if not wins:
                 return False
-            if len(wins)==len(results):
-                allowed=(1,None)
-            elif wins[0]==128:
-                allowed=(128,None)
-            else:
-                allowed=(1,8)
             self.selected[key]=candidate
-            self.ranges[key]=allowed
+            self.admitted_shapes[key]=((1,8,64,256),wins)
             self.speedups[key]=max(
                 gain for _,win,gain in results if win)
             return True
@@ -316,9 +310,10 @@ class QualifiedPpoValueTerms:
                  clip,value_coefficient,entropy_coefficient):
         key=(str(values.device),str(values.dtype))
         fn=self.selected.get(key)
-        low,high=self.ranges.get(key,(1,None))
-        if (fn is None or len(values)<low or
-                (high is not None and len(values)>high) or
+        cohort_sizes,winners=self.admitted_shapes.get(key,((),set()))
+        closest=(min(cohort_sizes,key=lambda size:abs(size-len(values)))
+                 if cohort_sizes else None)
+        if (fn is None or closest not in winners or
                 self.coefficients.get(key)!=(
                     float(clip),float(value_coefficient),float(entropy_coefficient)) or
                 any(t.dtype!=values.dtype or t.device!=values.device
@@ -330,7 +325,7 @@ class QualifiedPpoValueTerms:
                       clip,value_coefficient,entropy_coefficient)
         except Exception:
             self.selected[key]=None
-            self.ranges.pop(key,None)
+            self.admitted_shapes.pop(key,None)
             return ppo_value_terms(policy,entropy,values,old_values,targets,
                                    clip,value_coefficient,entropy_coefficient)
 
