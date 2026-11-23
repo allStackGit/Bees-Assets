@@ -375,6 +375,10 @@ pub struct RemotePlayMeasurements {
     pub lobby_ready_rejections: u64,
     #[serde(default)]
     pub lobby_wait_polls: u64,
+    /// Physical ticks held while an authenticated side has no connected
+    /// commander. This is a host admission gate, not another simulation.
+    #[serde(default)]
+    pub reconnect_wait_polls: u64,
     #[serde(default)]
     pub commander_pause_requests: u64,
     #[serde(default)]
@@ -1622,6 +1626,22 @@ impl NativeRemotePlay {
         !ready
     }
 
+    /// If a two-sided match loses every live commander for a faction,
+    /// withhold the NEXT physical tick until that faction reauthenticates.
+    /// Existing host checkpoint and World are unchanged; no synthetic
+    /// input or inferred forfeit is issued on transient network failure.
+    pub fn reconnect_waiting(&mut self, tick: u64) -> bool {
+        if tick == 0 || !self.dedicated_briefing_gate ||
+            self.side_tokens.len() != 2 || self.archive_only {
+            return false;
+        }
+        let missing = self.side_tokens.keys().any(|&side|
+            !self.peers.iter().any(|peer|
+                !peer.closed && !peer.spectator && peer.side == Some(side)));
+        if missing { self.measurements.reconnect_wait_polls += 1; }
+        missing
+    }
+
     pub fn briefing_waiting(&mut self, world_id: WorldId, revision: u64,
         owner_side: i32, sequence: u32) -> bool
     {
@@ -1857,6 +1877,23 @@ impl NativeRemotePlay {
         let camera_edge_scrolling = self.camera_edge_scrolling;
         let commander_paused = !self.pause_peers.is_empty();
         let game_speed = self.actual_game_speed();
+        let two_sided = self.dedicated_briefing_gate &&
+            self.side_tokens.len() == 2 && !self.archive_only;
+        let mut connected_commander_sides = Vec::new();
+        if two_sided {
+            for peer in &self.peers {
+                if !peer.closed && !peer.spectator {
+                    if let Some(side) = peer.side {
+                        connected_commander_sides.push(side);
+                    }
+                }
+            }
+            connected_commander_sides.sort_unstable();
+            connected_commander_sides.dedup();
+        }
+        let waiting_for_reconnect = two_sided && view.tick > 0 &&
+            view.terminal_result.is_none() &&
+            connected_commander_sides.len() < self.side_tokens.len();
         let lobby_active = self.dedicated_briefing_gate &&
             self.side_tokens.len() == 2 && view.tick == 0 &&
             view.terminal_result.is_none() && !self.archive_only;
@@ -1964,6 +2001,10 @@ impl NativeRemotePlay {
                 );
                 state["commander_paused"] = json!(commander_paused);
                 state["game_speed"] = json!(game_speed);
+                if two_sided {
+                    state["connected_commander_sides"] = json!(&connected_commander_sides);
+                    state["waiting_for_player_reconnect"] = json!(waiting_for_reconnect);
+                }
                 if lobby_active {
                     state["lobby"] = json!({
                         "required_sides": lobby_required_sides,
@@ -2190,6 +2231,11 @@ impl NativeRemotePlay {
             self.peers.iter().any(|client| client.id == *peer &&
                 client.side.is_some() && !client.spectator));
         if ready_before != self.lobby_ready_peers.len() {
+            self.force_initial_state = true;
+        }
+        if before != self.peers.len() {
+            // When the last commander disconnects, a new same-tick world
+            // projection must tell remaining viewers why physics stopped.
             self.force_initial_state = true;
         }
         let paused_before = self.pause_peers.len();
