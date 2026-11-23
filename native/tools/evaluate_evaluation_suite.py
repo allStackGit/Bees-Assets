@@ -283,7 +283,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
             work["episodes"] += receipt["episodes"]
             work["world_steps"] += receipt["world_steps"]
             work["execution_wall_seconds_sum"] += receipt["execution_wall_seconds"]
-            execution = receipt.get("execution_evidence")
+            execution = receipt.get("policy_execution")
             if isinstance(execution, dict):
                 work["completed_gpu_forward_calls"] += execution.get("gpu_forward_calls", 0)
                 work["completed_gpu_forward_rows"] += execution.get("gpu_forward_rows", 0)
