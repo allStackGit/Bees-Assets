@@ -36,7 +36,7 @@ pub fn compress_world_state(raw: &[u8]) -> Option<Vec<u8>> {
 /// allocation; neither untrusted network input nor decompressed data can
 /// exceed the original per-frame JSON memory cap. Never accept nested
 /// compressed messages or a non-world_state payload.
-pub fn decompress_world_state(frame: &Value) -> io::Result<Value> {
+pub fn decompress_world_state(frame: &Value) -> io::Result<(Value, usize)> {
     let fields = frame.as_object().ok_or_else(|| invalid("invalid compressed native world state"))?;
     if fields.len() != 2 || frame["kind"] != "world_state_lz4" {
         return Err(invalid("unexpected compressed native state envelope"));
@@ -65,5 +65,5 @@ pub fn decompress_world_state(frame: &Value) -> io::Result<Value> {
     if state["kind"] != "world_state" {
         return Err(invalid("compressed native payload is not a world state"));
     }
-    Ok(state)
+    Ok((state, raw.len()))
 }
