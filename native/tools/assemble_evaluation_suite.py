@@ -64,11 +64,12 @@ def physical_contract(config: dict) -> dict:
 
 
 def assemble(output: Path, source_paths: list[Path],
-             training: bool = False, recovery: bool = False) -> dict:
+             training: bool = False, recovery: bool = False,
+             bootstrap_source: bool = False) -> dict:
     if not 2 <= len(source_paths) <= 64:
         raise ValueError("native joint Level run requires 2..64 distinct sources")
-    if recovery and not training:
-        raise ValueError("host recovery is a native training option, not a holdout option")
+    if (recovery or bootstrap_source) and not training:
+        raise ValueError("bootstrap-source and host recovery require a native training suite")
     source_paths = [path.resolve(strict=True) for path in source_paths]
     if len(set(source_paths)) != len(source_paths):
         raise ValueError("evaluation cannot double-count one authored source run")
@@ -80,20 +81,29 @@ def assemble(output: Path, source_paths: list[Path],
                 f"{path}: original Stage, collision assets, native model worker, "
                 "fixed-step or experiment contract differs; separate runs are required"
             )
+    manifest = None
     manifest_sha = None
     if training:
         manifest = runs[0].get("model_manifest")
-        if not isinstance(manifest, str) or not Path(manifest).is_file():
-            raise ValueError("joint training needs an existing explicit model manifest")
-        manifest_sha = file_sha256(Path(manifest))
-        for path, run in zip(source_paths, runs):
-            if run.get("model_manifest") != manifest or (
-                file_sha256(Path(manifest)) != manifest_sha
-            ):
+        if bootstrap_source:
+            if any(run.get("model_manifest") is not None for run in runs):
                 raise ValueError(
-                    f"{path}: every training Level must use the same pinned model "
-                    "manifest; do not silently change learner or self-play policies"
+                    "native cold-start Level assembly needs unbootstrapped "
+                    "source policy episodes; keep all existing learner "
+                    "weights outside the new model initialization"
                 )
+        else:
+            if not isinstance(manifest, str) or not Path(manifest).is_file():
+                raise ValueError("joint training needs a pinned existing model manifest")
+            manifest_sha = file_sha256(Path(manifest))
+            for path, run in zip(source_paths, runs):
+                if run.get("model_manifest") != manifest or (
+                    file_sha256(Path(manifest)) != manifest_sha
+                ):
+                    raise ValueError(
+                        f"{path}: every training Level must use the same "
+                        "frozen model and explicit self-play policy slots"
+                    )
     # The root allocator is shared by all independent native Levels.
     # A fresh dynamic squad must never reuse an original serialized ID.
     output = output.resolve()
@@ -167,9 +177,11 @@ def assemble(output: Path, source_paths: list[Path],
             source_receipts, sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
         config["run_id"] = (
-            "native-mixed-training-" if training else "native-mixed-holdout-"
+            "native-mixed-bootstrap-" if bootstrap_source
+            else "native-mixed-training-" if training
+            else "native-mixed-holdout-"
         ) + identity[:16]
-        if training and file_sha256(Path(manifest)) != manifest_sha:
+        if training and not bootstrap_source and file_sha256(Path(manifest)) != manifest_sha:
             raise ValueError("joint training model manifest changed during suite authoring")
         atomic_json(stage / "run.json", config)
         receipt = {
@@ -179,8 +191,9 @@ def assemble(output: Path, source_paths: list[Path],
             "run_id": config["run_id"],
             "training": training,
             "recovery_enabled": recovery,
+            "requires_policy_bootstrap": bootstrap_source,
             **({"model_manifest": manifest, "model_manifest_sha256": manifest_sha}
-               if training else {}),
+               if training and not bootstrap_source else {}),
             "source_runs": source_receipts,
             "levels": count,
             "episodes_per_world": config["episodes_per_world"],
@@ -209,10 +222,14 @@ def main() -> None:
                              "joint self-play training across original Level rosters")
     parser.add_argument("--host-recovery", action="store_true",
                         help="enable native host transaction recovery for joint training")
+    parser.add_argument("--bootstrap-source", action="store_true",
+                        help="joint cold-start of uninitialized authentic policy Levels; "
+                             "pass the assembled Run and its first scene to bootstrap_policy.py")
     args = parser.parse_args()
     print(json.dumps(assemble(
         args.output_dir, args.native_run_configs,
         training=args.training, recovery=args.host_recovery,
+        bootstrap_source=args.bootstrap_source,
     ), sort_keys=True), flush=True)
 
 
