@@ -792,6 +792,27 @@ class MeasuredGpuExecution:
         self._pending_fused_validation = False
         self._pending_graph_validation = set()
         self.graph_profiles_released = 0
+        self.graph_profiles_evicted = 0
+
+    def _trim_graph_residency(self):
+        """Enforce graph residency after direct strategy qualification.
+
+        MeasuredGpuExecution qualifies via graphs._qualify() rather than
+        graphs.run(), so the latter's LRU is not applied on first use.
+        Never let that shortcut retain unbounded captured allocators.
+        A shape evicted here is demoted to eager, not silently re-captured
+        outside its owner's calibrated workload budget.
+        """
+        while len(self.graphs.profiles) > self.graphs.max_graphs:
+            old_signature, profile = self.graphs.profiles.popitem(last=False)
+            if profile is not None:
+                # Graph replay is asynchronous. The last use must finish
+                # before removing its static input/output storage.
+                torch.cuda.current_stream(self.graphs.device).synchronize()
+                self.graph_profiles_evicted += 1
+                if self.choices.get(old_signature) == "graph":
+                    self.choices[old_signature] = "eager"
+                self._pending_graph_validation.discard(old_signature)
 
     def release_graph_profile(self, batches):
         """Release a captured graph rejected by an adapter's faster baseline.
@@ -906,13 +927,21 @@ class MeasuredGpuExecution:
                         choice = "graph"
                         best_seconds = self.graphs.last_graph_seconds
             if choice != "graph" and self.graphs.profiles.pop(signature, None) is not None:
-                # Graph qualification already completed the device timings.
-                # Do not retain graph memory for shapes actually served by
-                # a faster stream, fused or eager path.
+                # Graph qualification already completed device timing.
+                # Keep only captures that actually serve inference.
                 self.graph_profiles_released += 1
             self.choices[signature] = choice
+            # Qualification uses the private graph entrypoint; explicitly
+            # enforce its bounded residency before exposing the new choice.
+            self._trim_graph_residency()
             if len(self.choices) > self.max_profiles:
-                self.choices.popitem(last=False)
+                old_signature, _ = self.choices.popitem(last=False)
+                self._pending_graph_validation.discard(old_signature)
+                if self.graphs.profiles.get(old_signature) is not None:
+                    # A selected graph cannot outlive its owner's decision.
+                    torch.cuda.current_stream(self.graphs.device).synchronize()
+                    self.graphs.profiles.pop(old_signature)
+                    self.graph_profiles_evicted += 1
         else:
             self.choices.move_to_end(signature)
         if choice == "fused":
@@ -948,6 +977,15 @@ class MeasuredGpuExecution:
                 self.stream_calls += 1
             return result
         if choice == "graph":
+            # A graph can be evicted by another input shape while its
+            # owner still remembers the old selection. Do not call
+            # graphs.run() here: its cache miss would silently re-capture
+            # an old shape on the hot path without the caller's budget.
+            if self.graphs.profiles.get(signature) is None:
+                self.choices[signature] = "eager"
+                self.eager_calls += 1
+                return self.graphs._eager([
+                    FrozenGpuFusion._args(batch) for batch in batches])
             before = self.graphs.replays
             result = self.graphs.run(batches)
             if self.graphs.replays == before:
@@ -984,6 +1022,7 @@ class MeasuredGpuExecution:
             gpu_execution_refresh_validations=self.refresh_validations,
             gpu_execution_refresh_invalidations=self.refresh_invalidations,
             gpu_execution_graph_profiles_released=self.graph_profiles_released,
+            gpu_execution_graph_profiles_evicted=self.graph_profiles_evicted,
             **self.fusion.metrics(),
             **self.streams.metrics(),
             **self.graphs.metrics(),
