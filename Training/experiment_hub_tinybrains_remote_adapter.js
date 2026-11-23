@@ -117,6 +117,14 @@ function createTinyBrainsRemoteRolloutAdapter({
         'import inspect; from ants_mapoca.remote_rollout import RemoteRolloutService; assert "gpu_vram_mb" in inspect.signature(RemoteRolloutService).parameters'],{
         cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
     }).status===0;
+    // Keep old installed collectors on their unchanged -m entrypoint.
+    // Newer GPU collectors opt into the shared Hub runtime only when
+    // their installed TinyBrains source advertises the local adapter.
+    const sharedExecution=(enableCuda||enableRocm)&&spawnSync(
+        pythonPath,['-B','-c',
+            'from importlib.util import find_spec; assert find_spec("ants_mapoca.shared_gpu_inference") is not None'],{
+            cwd:project,timeout:15000,encoding:'utf8',windowsHide:true,
+        }).status===0;
     return {
         executable:pythonPath,cwd:project,stop_policy:'terminate-group',
         tinybrains_rollout_endpoint:host+':'+port,
@@ -185,7 +193,9 @@ function createTinyBrainsRemoteRolloutAdapter({
                 if(fs.realpathSync(scratch)!==scratch||!fs.statSync(scratch).isDirectory())
                     throw Error('TinyBrains collector scratch directory was redirected.');
             }
-            return ['-B','-m','ants_mapoca.remote_rollout',
+            return ['-B',...(sharedExecution&&hasGpu
+                ?[path.join(__dirname,'experiment_hub_tinybrains_remote_runtime.py')]
+                :['-m','ants_mapoca.remote_rollout']),
                 '--listen',host,'--port',String(listenPort),
                 '--job-id',parameters.learner_job_id,
                 '--threads',String(desired),'--key-file',secret,
