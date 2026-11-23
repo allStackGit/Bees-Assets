@@ -43,7 +43,7 @@ enum Terrain {
 #[derive(Clone, Copy)]
 enum Objective {
     Elimination, Survival, Extraction, Withdrawal,
-    Escort, Demolition, TargetFlagship,
+    Escort, Demolition, TargetFlagship, TargetFactory,
 }
 
 /// Native Level waves are source-authored physical squads. This option
@@ -332,6 +332,7 @@ impl Objective {
             Self::Escort => "Deliver Command Convoy",
             Self::Demolition => "Destroy Enemy Objective",
             Self::TargetFlagship => "Hunt Enemy Flagship",
+            Self::TargetFactory => "Destroy Enemy Factory",
         }
     }
 }
@@ -545,7 +546,7 @@ pub(super) fn choose_for_preferred_side(
         )? else { return Ok(None); };
         count
     } else { 1 };
-    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
     let player_side = match mode {
         0 | 4 => Some(1),
         1 | 5 => Some(2),
@@ -571,6 +572,7 @@ pub(super) fn choose_for_preferred_side(
     };
     let objective_side = match objective {
         Objective::Elimination => None,
+        Objective::TargetFactory => Some(1),
         _ => {
             // A local player can own the mission OR intercept an AI-owned
             // objective. The same playable objective-side choice already
@@ -583,9 +585,16 @@ pub(super) fn choose_for_preferred_side(
         // Preserve the original dedicated incoming-enemy wave objective.
         ReinforcementPattern::AllAtStart
     } else {
-        let reserved_side = objective_side
-            .filter(|_| matches!(objective, Objective::Withdrawal))
-            .map(|side| (side - 1) as usize);
+        let reserved_side = if matches!(objective, Objective::TargetFactory) {
+            // The original building must be physically present from
+            // world construction; deferring its body would invalidate the
+            // authoritative TargetShipObjective.
+            Some(1_usize)
+        } else {
+            objective_side
+                .filter(|_| matches!(objective, Objective::Withdrawal))
+                .map(|side| (side - 1) as usize)
+        };
         let escaping_side = objective_side
             .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
@@ -647,9 +656,10 @@ pub(super) fn choose_multiplayer(
     let Some(specialist_squad_sizes) =
         choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
-    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
+        Objective::TargetFactory => Some(1),
         _ => {
             let Some(side) = choose_objective_side()? else { return Ok(None); };
             Some(side)
@@ -658,9 +668,13 @@ pub(super) fn choose_multiplayer(
     let reinforcements = if matches!(objective, Objective::Survival) {
         ReinforcementPattern::AllAtStart
     } else {
-        let reserved_side = objective_side
-            .filter(|_| matches!(objective, Objective::Withdrawal))
-            .map(|side| (side - 1) as usize);
+        let reserved_side = if matches!(objective, Objective::TargetFactory) {
+            Some(1_usize)
+        } else {
+            objective_side
+                .filter(|_| matches!(objective, Objective::Withdrawal))
+                .map(|side| (side - 1) as usize)
+        };
         let escaping_side = objective_side
             .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
@@ -709,9 +723,10 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
         )? else { return Ok(None); };
         ai_tactics[side] = value;
     }
-    let Some(objective) = choose_objective()? else { return Ok(None); };
+    let Some(objective) = choose_objective(mix)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
+        Objective::TargetFactory => Some(1),
         _ => {
             let Some(side) = choose_objective_side()? else { return Ok(None); };
             Some(side)
@@ -722,9 +737,13 @@ pub(super) fn choose_benchmark() -> Result<Option<FleetChoice>, Box<dyn Error>> 
     let reinforcements = if matches!(objective, Objective::Survival) {
         ReinforcementPattern::AllAtStart
     } else {
-        let reserved_side = objective_side
-            .filter(|_| matches!(objective, Objective::Withdrawal))
-            .map(|side| (side - 1) as usize);
+        let reserved_side = if matches!(objective, Objective::TargetFactory) {
+            Some(1_usize)
+        } else {
+            objective_side
+                .filter(|_| matches!(objective, Objective::Withdrawal))
+                .map(|side| (side - 1) as usize)
+        };
         let escaping_side = objective_side
             .filter(|_| matches!(objective, Objective::Extraction | Objective::Withdrawal))
             .map(|side| (side - 1) as usize);
@@ -1083,8 +1102,8 @@ fn choose_squad_sizes(
     Ok(Some(selected_sizes))
 }
 
-fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
-    let choices = [
+fn choose_objective(mix: [FleetMix; 2]) -> Result<Option<Objective>, Box<dyn Error>> {
+    let mut choices = vec![
         ("Eliminate all opposing ships", "  [Standard battle]"),
         ("Defend your command ship for 90 seconds", "  [Incoming waves]"),
         ("Reach the enemy-side extraction zone", "  [Tactical escape]"),
@@ -1093,6 +1112,12 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         ("Destroy a fortified MapObject", "  [90-second assault]"),
         ("Destroy the enemy flagship", "  [Named physical commander target]"),
     ];
+    if matches!(mix[1], FleetMix::Factories) {
+        choices.push((
+            "Destroy the human production Factory",
+            "  [Real unarmed building; Bee assault, Human defense]",
+        ));
+    }
     let rows = choices.iter().map(|(title, status)| BattleMenuRow {
         title, status, unlocked: true,
     }).collect::<Vec<_>>();
@@ -1104,6 +1129,7 @@ fn choose_objective() -> Result<Option<Objective>, Box<dyn Error>> {
         4 => Objective::Escort,
         5 => Objective::Demolition,
         6 => Objective::TargetFlagship,
+        7 => Objective::TargetFactory,
         _ => Objective::Elimination,
     }))
 }
@@ -2642,15 +2668,26 @@ pub(super) fn archive(
                 "seconds": 90.0,
             });
         }
-    } else if matches!(selected.objective, Objective::TargetFlagship) {
+    } else if matches!(selected.objective, Objective::TargetFlagship | Objective::TargetFactory) {
         let attacker = selected.objective_side.ok_or_else(||
-            invalid("flagship hunt requires an authentic attacking faction"))?;
+            invalid("target-ship mission requires an authentic attacking faction"))?;
         // Both command ships are real, initially deployed source hulls.
         // TargetShipObjective shares the exact combat death and reserved
         // reinforcement lifecycle of all other game terminal modes.
         run["levels"][0]["target_ship"] = json!({
             "attacking_side": attacker,
-            "target_ship_id": if attacker == 1 { 12 } else { 11 },
+            "target_ship_id": if matches!(selected.objective, Objective::TargetFactory) {
+                if attacker != 1 ||
+                    !matches!(selected.mix[1], FleetMix::Factories) ||
+                    support_count[1] == 0 ||
+                    !scene["ships"].as_array().is_some_and(|ships|
+                        ships.iter().any(|ship| ship["entity_id"] == 14 &&
+                            ship["ship_type"] == 9 && ship["side"] == 2))
+                {
+                    return Err(invalid("Factory objective requires its deployed physical Human Factory").into());
+                }
+                14
+            } else if attacker == 1 { 12 } else { 11 },
         });
     } else if matches!(selected.objective, Objective::Demolition) {
         let attacker = selected.objective_side.ok_or_else(||
@@ -2774,6 +2811,7 @@ pub(super) fn archive(
             Objective::Escort => "escort",
             Objective::Demolition => "demolition",
             Objective::TargetFlagship => "flagship-hunt",
+            Objective::TargetFactory => "factory-assault",
         },
         selected.objective_side.unwrap_or(0),
         selected.ore_count, u8::from(selected.fog_of_war),
@@ -3012,7 +3050,7 @@ pub(super) fn archive(
                     json!({"kind": "bombard_map_object", "target_map_object_id": 91}),
                 ]
             } else if mission_owner &&
-                matches!(selected.objective, Objective::TargetFlagship) &&
+                matches!(selected.objective, Objective::TargetFlagship | Objective::TargetFactory) &&
                 !bomber && !charger && scout.is_none()
             {
                 // The original TargetEnemy command follows the physical
@@ -3020,10 +3058,12 @@ pub(super) fn archive(
                 // bystanders never completes this specific objective.
                 vec![json!({
                     "kind": "target_enemy",
-                    "enemy_squad_item_id": squad_ids[1 - side][0],
+                    "enemy_squad_item_id": if matches!(selected.objective, Objective::TargetFactory) {
+                        104
+                    } else { squad_ids[1 - side][0] },
                 })]
             } else if !mission_owner &&
-                matches!(selected.objective, Objective::TargetFlagship) &&
+                matches!(selected.objective, Objective::TargetFlagship | Objective::TargetFactory) &&
                 position == 0
             {
                 // The actual flagship holds its starting defensive lane
@@ -3031,14 +3071,16 @@ pub(super) fn archive(
                 // fleet. Its original turrets keep firing automatically.
                 vec![json!({"kind": "hold"})]
             } else if !mission_owner &&
-                matches!(selected.objective, Objective::TargetFlagship) &&
+                matches!(selected.objective, Objective::TargetFlagship | Objective::TargetFactory) &&
                 !bomber && !charger && scout.is_none() && !miner
             {
                 // Protect the real hull with the shared Guard command's
                 // changing live formation, pursuit and target lifetime.
                 vec![json!({
                     "kind": "guard",
-                    "friendly_squad_item_id": squad_ids[side][0],
+                    "friendly_squad_item_id": if matches!(selected.objective, Objective::TargetFactory) {
+                        104
+                    } else { squad_ids[side][0] },
                 })]
             } else if miner {
                 // A genuine source Carpenter Bee uses the existing
