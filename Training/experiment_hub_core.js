@@ -6588,6 +6588,19 @@ class ExperimentHub {
             machine.software_update_blocked!==true;
         if(!eligible(owner)||owner.agent_platform!=='linux')
             throw Error('Bees distributed learner requires a connected enrolled Linux machine with native resource controls.');
+        // The native Bees learner uses one operator-approved loopback broker
+        // port per host, not a distinct port per job. Do not reserve a second
+        // WAN group that could race the existing listener even when CPU/GPU
+        // claims would otherwise fit.
+        const existingWan=snapshot.jobs.find(job=>
+            job.project_id==='bees_native'&&
+            job.assigned_machine_id===owner.id&&
+            (job.frozen_parameters?.wan_actors??0)>0&&
+            (!job.capacity_released_at||
+                !['finished','stopped','failed','cancelled'].includes(job.status)));
+        if(existingWan)
+            throw Error('A Bees WAN learner already holds or may still own the fixed broker port on '+
+                owner.id+' (job '+existingWan.id+'). Reconcile and release its capacity before reserving another WAN group.');
         const configRow=this.state.configurations.find(item=>
             item.id===value.learner.configuration_id);
         if(!configRow||configRow.project_id!=='bees_native'||
