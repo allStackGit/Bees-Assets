@@ -11,6 +11,8 @@ pub enum HudAction {
     Circle, RightSwipe, LeftSwipe, InAndOut,
 }
 
+pub(super) const CONTEXT_ATTACK_RADIUS_SQUARED: f32 = 100.0;
+
 pub const ACTIONS: [HudAction; 24] = [
     HudAction::Attack, HudAction::Guard, HudAction::Patrol,
     HudAction::Mine, HudAction::Heal,

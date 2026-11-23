@@ -374,6 +374,21 @@ impl WorldCollider {
         }
     }
 
+    fn contains_point_at_pose(&self, point: Vec2, pose: Pose) -> bool {
+        if self.cached_pose == Some(pose) { return self.contains_point(point); }
+        let point = pose.inverse_transform_point(point);
+        match &self.shape {
+            ShipShape::Circle { offset, radius } => {
+                (point - *offset).length_squared() <= radius * radius
+            }
+            ShipShape::Box { offset, half_extents } => {
+                let delta = point - *offset;
+                delta.x.abs() <= half_extents.x && delta.y.abs() <= half_extents.y
+            }
+            ShipShape::Polygon(vertices) => circle_overlaps_polygon(point, 0.0, vertices),
+        }
+    }
+
     fn overlaps_circle(&self, center: Vec2, radius: f32) -> bool {
         let bounds = Aabb { min: center - Vec2::new(radius, radius),
             max: center + Vec2::new(radius, radius) };
@@ -565,6 +580,13 @@ impl ShipBody {
     /// without enlarging the combat collider or cloning the physics world.
     pub fn input_healing_zone_shape(&self) -> Option<&ShipShape> {
         self.healing_zone.as_ref().map(|zone| &zone.shape)
+    }
+
+    pub fn input_contains_point(&self, point: Vec2) -> bool {
+        if !self.active || !point.is_finite() { return false; }
+        let pose = Pose { position: self.motion.position, rotation_degrees: self.motion.rotation_degrees };
+        self.collider.contains_point_at_pose(point, pose) ||
+            self.healing_zone.as_ref().is_some_and(|zone| zone.contains_point_at_pose(point, pose))
     }
 
     pub(crate) fn matches_source_geometry(&self, source: &Self) -> bool {

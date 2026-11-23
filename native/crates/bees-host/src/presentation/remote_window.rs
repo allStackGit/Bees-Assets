@@ -25,7 +25,7 @@ use serde_json::{json, Value};
 use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, WorldMoveDrag, text};
 use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
-use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
+use super::tactical_hud::{HudAction, HudRect, ACTIONS, CONTEXT_ATTACK_RADIUS_SQUARED, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
 use crate::remote_tls::{client_tls_from_environment, client_tls_from_file, RemoteSocket};
@@ -2025,56 +2025,70 @@ fn squad_for_ship<'a>(state: &'a Value, id: i64, side: i64) -> Option<&'a Value>
         squad["members"].as_array().is_some_and(|members|
             members.iter().any(|member| member.as_i64() == Some(id))))
 }
+#[derive(Clone, Copy)]
+enum HitTolerance { Screen, Exact, EnemyProximity }
+
 fn hit<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
     visual: &RemoteVisual, fraction: f32,
     ship_filter: impl Fn(&Value) -> bool, obstacle_filter: impl Fn(&Value) -> bool)
     -> Option<(&'static str, &'a Value)>
 {
-    // A foreground ship wins over an obstacle underneath its hull.
-    let cursor=camera.screen_to_world(x as f32,y as f32,FIELD,HEIGHT);
-    let ship_pick_radius=18.0/camera.pixels_per_unit.max(0.001);
-    let mut ship_hit=None;
-    let mut best_ship=i32::MAX;
+    hit_with_tolerance(state, camera, x, y, visual, fraction, HitTolerance::Screen,
+        ship_filter, obstacle_filter)
+}
+
+fn hit_with_tolerance<'a>(state: &'a Value, camera: NativeCamera, x: i32, y: i32,
+    visual: &RemoteVisual, fraction: f32, tolerance: HitTolerance,
+    ship_filter: impl Fn(&Value) -> bool, obstacle_filter: impl Fn(&Value) -> bool)
+    -> Option<(&'static str, &'a Value)>
+{
+    let cursor = camera.screen_to_world(x as f32, y as f32, FIELD, HEIGHT);
+    let ppu = camera.pixels_per_unit.max(0.001);
+    let ship_radius = match tolerance {
+        HitTolerance::Screen => 18.0 / ppu,
+        _ => 0.0,
+    };
+    let mut ship_hit = None;
+    let mut best_ship = (f32::INFINITY, i64::MAX);
     for ship in state["ships"].as_array().into_iter().flatten() {
         if !ship_filter(ship) { continue; }
-        let Some(point)=visual.position(ship,0,fraction) else {continue};
-        let (sx,sy)=screen(camera,point);
-        let distance=(sx-x).pow(2)+(sy-y).pow(2);
-        let heading=visual.heading_for(ship,0,fraction);
-        let body_hit=remote_primary_hull(ship,point,heading)
-            .is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius));
-        // Unity CheckClickCollision admits the Beehive's authored child
-        // HealCollider as a click target. This read-only geometry comes
-        // from the SAME host ShipBody, not an enlarged combat collider.
-        let healing_hit=remote_collider_hull(
-            &ship["input_healing_zone"],point,heading,
-        ).is_some_and(|hull|hull.overlaps_cursor(cursor,ship_pick_radius));
-        if (body_hit||healing_hit) &&distance<best_ship {
-            best_ship=distance;
-            ship_hit=Some(("ship",ship));
+        let Some(point) = visual.position(ship, 0, fraction) else { continue };
+        let distance = (point - cursor).length_squared();
+        let key = (distance, ship["id"].as_i64().unwrap_or(i64::MAX));
+        if key >= best_ship { continue; }
+        let hit = if matches!(tolerance, HitTolerance::EnemyProximity) {
+            distance <= CONTEXT_ATTACK_RADIUS_SQUARED
+        } else {
+            let heading = visual.heading_for(ship, 0, fraction);
+            remote_primary_hull(ship, point, heading)
+                .is_some_and(|hull| hull.overlaps_cursor(cursor, ship_radius)) ||
+                remote_collider_hull(&ship["input_healing_zone"], point, heading)
+                    .is_some_and(|hull| hull.overlaps_cursor(cursor, ship_radius))
+        };
+        if hit {
+            best_ship = key;
+            ship_hit = Some(("ship", ship));
         }
     }
-    if ship_hit.is_some() {return ship_hit;}
+    if ship_hit.is_some() || matches!(tolerance, HitTolerance::EnemyProximity) {
+        return ship_hit;
+    }
 
-    let pick_radius = 10.0 / camera.pixels_per_unit.max(0.001);
+    let pick_radius = if matches!(tolerance, HitTolerance::Exact) { 0.0 } else { 10.0 / ppu };
     let mut selected = None;
-    let mut nearest = i32::MAX;
-    for obj in state["obstacles"].as_array().into_iter().flatten() {
-        if !obstacle_filter(obj) { continue; }
-        let Some(point) = visual.position(obj, 2, fraction) else { continue };
-        let overlap = remote_primary_hull(obj, point,
-            visual.heading_for(obj, 2, fraction))
-            .map_or_else(|| {
-                // Invalid/missing hull: preserve the existing point picker.
-                let (sx, sy) = screen(camera, point);
-                (sx - x).pow(2) + (sy - y).pow(2) < 18 * 18
-            }, |hull| hull.overlaps_cursor(cursor, pick_radius));
-        if !overlap { continue; }
-        let (sx, sy) = screen(camera, point);
-        let distance = (sx - x).pow(2) + (sy - y).pow(2);
-        if distance < nearest {
-            selected = Some(("obstacle", obj));
-            nearest = distance;
+    let mut nearest = (f32::INFINITY, i64::MAX);
+    for object in state["obstacles"].as_array().into_iter().flatten() {
+        if !obstacle_filter(object) { continue; }
+        let Some(point) = visual.position(object, 2, fraction) else { continue };
+        let distance = (point - cursor).length_squared();
+        let key = (distance, object["id"].as_i64().unwrap_or(i64::MAX));
+        if key >= nearest { continue; }
+        let overlap = remote_primary_hull(object, point, visual.heading_for(object, 2, fraction))
+            .map_or_else(|| matches!(tolerance, HitTolerance::Screen) && distance < (18.0 / ppu).powi(2),
+                |hull| hull.overlaps_cursor(cursor, pick_radius));
+        if overlap {
+            selected = Some(("obstacle", object));
+            nearest = key;
         }
     }
     selected
@@ -3136,12 +3150,10 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
     x: i32,y: i32, mode: Option<TargetMode>) -> Result<(),Box<dyn Error>> {
     if x<0||x>=FIELD as i32||y<0||y>=HEIGHT as i32{return Ok(())}
     let Some(state)=peer.state.as_ref() else{return Ok(())};
-    // Resolve eligible targets before comparing hull distance. A friendly
-    // ship over a mining rock or a non-healer in front of a Beehive must
-    // not mask the explicit command's actual target. Context clicks follow
-    // the same Attack -> Retreat -> Heal -> Mining priority as local play.
-    let pick = |target_mode| {
-        hit(state, camera, x, y, &peer.visual, peer.visual.fraction(),
+    // Explicit tools still filter to eligible targets before picking.
+    let fraction = peer.visual.fraction();
+    let pick = |target_mode, tolerance| {
+        hit_with_tolerance(state, camera, x, y, &peer.visual, fraction, tolerance,
             |ship| match target_mode {
                 Some(TargetMode::Attack | TargetMode::Circle | TargetMode::RightSwipe |
                     TargetMode::LeftSwipe | TargetMode::InAndOut) => ship["friendly"] == false,
@@ -3161,10 +3173,29 @@ fn order_at(peer: &mut PeerClient, selected: &[i64], camera: NativeCamera,
             })
     };
     let (mode, hit) = if mode.is_none() {
-        [TargetMode::Attack, TargetMode::Retreat, TargetMode::Heal, TargetMode::Mine]
-            .into_iter().find_map(|candidate| pick(Some(candidate)).map(|target| (Some(candidate), Some(target))))
-            .unwrap_or_else(|| (None, pick(None)))
-    } else { (mode, pick(mode)) };
+        let direct = hit_with_tolerance(state, camera, x, y, &peer.visual, fraction,
+            HitTolerance::Exact, |_| true, |_| false);
+        let target = if let Some((_, ship)) = direct {
+            use bees_sim::combat_world::{BEEHIVE_TYPE, WARP_GATE_TYPE};
+
+            let kind = ship["ship_type"].as_u64().and_then(|id| u8::try_from(id).ok());
+            let mode = match (ship["friendly"].as_bool(), kind) {
+                (Some(false), _) => Some(TargetMode::Attack),
+                (Some(true), Some(WARP_GATE_TYPE)) => Some(TargetMode::Retreat),
+                (Some(true), Some(BEEHIVE_TYPE)) => Some(TargetMode::Heal),
+                _ => None,
+            };
+            mode.map(|action| (Some(action), direct))
+        } else {
+            pick(Some(TargetMode::Attack), HitTolerance::EnemyProximity)
+                .map(|enemy| (Some(TargetMode::Attack), Some(enemy)))
+        };
+        target.or_else(|| pick(Some(TargetMode::Mine), HitTolerance::Exact)
+            .map(|rock| (Some(TargetMode::Mine), Some(rock))))
+            .unwrap_or_else(|| (None, pick(None, HitTolerance::Screen)))
+    } else {
+        (mode, pick(mode, HitTolerance::Screen))
+    };
     let action=match (mode,hit) {
         (Some(TargetMode::Attack | TargetMode::Circle | TargetMode::RightSwipe |
               TargetMode::LeftSwipe | TargetMode::InAndOut),Some(("ship",target))) |

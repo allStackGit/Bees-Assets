@@ -2531,15 +2531,59 @@ impl NativeSoftwareRenderer {
         Some((bounds.min + bounds.max) * 0.5)
     }
 
-    /// Right-click uses the same target resolution as the explicit tools.
-    /// Ground movement is the caller's fallback when no command target is hit.
+    /// Source context clicks resolve the physical ship first. A miss can
+    /// still attack a nearby enemy, then fall through to mining or ground.
     pub fn pick_right_click_action(
         &self, view: &NativeRenderWorldView<'_>, point: Vec2,
     ) -> Option<bees_gameplay::player_inputs::NativePlayerSupportAction> {
-        use super::NativeSupportMode as Mode;
-        if self.selection.squads().is_empty() { return None; }
-        [Mode::Attack, Mode::FullRetreat, Mode::Heal, Mode::Mining].into_iter()
-            .find_map(|mode| self.pick_support_action(view, mode, point, None))
+        use bees_gameplay::player_inputs::NativePlayerSupportAction as Action;
+        use bees_sim::combat_world::{BEEHIVE_TYPE, WARP_GATE_TYPE};
+        use bees_sim::obstacle::ObstacleKind;
+
+        if !point.is_finite() || !self.fog_visible_at(view, point) { return None; }
+        let side = view.roster.get(*self.selection.squads().first()?)?.side;
+        let mut direct = None;
+        let mut nearby_enemy = None;
+        for (ship, body) in view.combat.render_ships() {
+            let position = body.motion.position;
+            let distance = (position - point).length_squared();
+            let enemy = ship.side != side;
+            let nearby = enemy && distance <= tactical_hud::CONTEXT_ATTACK_RADIUS_SQUARED;
+            let hit = body.input_contains_point(point);
+            if !hit && !nearby { continue; }
+            let owned = view.roster.owning_squad(ship.entity_id)
+                .is_some_and(|owner| view.is_local_player_squad(owner));
+            if !owned && !self.fog_visible_at(view, position) { continue; }
+
+            let key = (distance, ship.entity_id);
+            if hit && direct.as_ref().is_none_or(|(best, _)| key < *best) {
+                direct = Some((key, ship));
+            }
+            if nearby && nearby_enemy.is_none_or(|best| key < best) {
+                nearby_enemy = Some(key);
+            }
+        }
+        if let Some((_, ship)) = direct {
+            match (ship.side == side, ship.ship_type) {
+                (false, _) => return Some(Action::Attack {
+                    target: view.roster.owning_squad(ship.entity_id)?,
+                }),
+                (true, WARP_GATE_TYPE) => return Some(Action::FullRetreat { warp_gate_id: ship.entity_id }),
+                (true, BEEHIVE_TYPE) => return Some(Action::Heal { beehive_ids: vec![ship.entity_id] }),
+                _ => {}
+            }
+        } else if let Some((_, id)) = nearby_enemy {
+            return Some(Action::Attack { target: view.roster.owning_squad(id)? });
+        }
+
+        view.combat.render_obstacles().filter_map(|(obstacle, body)| {
+            if obstacle.kind != ObstacleKind::MiningAsteroid ||
+                !body.primary_overlaps_circle(point, 0.0) { return None; }
+            let position = view.combat.mining_asteroid_position(obstacle.entity_id)?;
+            self.fog_visible_at(view, position)
+                .then_some(((position - point).length_squared(), obstacle.entity_id))
+        }).min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, asteroid_id)| Action::Mining { asteroid_id })
     }
 
     /// Multiplayer's host-filtered projection uses exactly the same
