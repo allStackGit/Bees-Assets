@@ -901,9 +901,33 @@ pub(super) fn choose_multiplayer(
             return Err(invalid("hosted AI viewing needs private spectator credentials").into());
         }
         mode + 1
+    } else if spectator_available {
+        // Independent commander tokens can still host Fish Tank for both
+        // spectator factions. Only the selected source fleet determines
+        // whether there are any real human-commandable squads; a token
+        // cannot promote AI ships to player ownership.
+        let hive_available = has_hivemind_profile(save_root);
+        let rows = [
+            BattleMenuRow { title: "Two remote commanders",
+                status: "  [Original Bees and Humans player squads]",
+                unlocked: true },
+            BattleMenuRow { title: "Watch native AI vs AI battles",
+                status: "  [Both sides have independent viewer invitations]",
+                unlocked: true },
+            BattleMenuRow { title: "Watch HiveMind vs HiveMind",
+                status: "  [Two configured opponents; spectator-only World]",
+                unlocked: hive_available },
+        ];
+        let mut selected = 0_usize;
+        let Some(mode) = select_library(&rows, &mut selected, false)?
+            else { return Ok(None); };
+        if mode == 2 && !hive_available {
+            return Err(invalid("hosted HiveMind opponents need a configured profile").into());
+        }
+        [0, 3, 4][mode]
     } else {
-        // Two player tokens belong to the existing two-commander game.
-        // A single player token must NEVER be mistaken for two seats.
+        // Without independently scoped viewer secrets the two player
+        // tokens still represent exactly two genuine commander seats.
         0
     };
     let use_scripted_ai = opponent_mode == 1;
