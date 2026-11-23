@@ -648,7 +648,7 @@ def write_launchers(output: Path, binary_name: str,
                 'if not defined BEES_NATIVE_REMOTE_SIDE_TOKENS (echo Set BEES_NATIVE_REMOTE_SIDE_TOKENS 1>&2 & popd & exit /b 2)\n' +
                 'if not defined BEES_NATIVE_SERVER_OUTPUT_DIR set "BEES_NATIVE_SERVER_OUTPUT_DIR=%BEES_SAVE%\\servers\\two-player"\n' +
                 'if not exist "%BEES_SAVE%" mkdir "%BEES_SAVE%"\n' +
-                f'".\\{server_binary}" serve "examples\\\native-two-player.run.json" ' +
+                f'".\\{server_binary}" serve "examples/native-two-player.run.json" ' +
                 '--output-dir "%BEES_NATIVE_SERVER_OUTPUT_DIR%" %*\n' + windows_finish,
                 encoding="utf-8", newline="\r\n",
             )
