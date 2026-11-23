@@ -7,9 +7,34 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{self, Read};
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
+use bees_sim::geometry::Vec2;
 use minifb::{Key, KeyRepeat, ScaleMode, Window, WindowOptions};
 use serde::{Deserialize, Serialize};
 use super::NativeSoftwareRenderer;
+
+/// Battlefield right-drag orders use the source world-distance and cadence.
+pub(crate) struct WorldMoveDrag {
+    next_move_at: Instant,
+    last_destination: Vec2,
+}
+
+impl WorldMoveDrag {
+    const INTERVAL: Duration = Duration::from_millis(250);
+
+    pub(crate) fn new(now: Instant, origin: Vec2) -> Self {
+        Self { next_move_at: now + Self::INTERVAL, last_destination: origin }
+    }
+
+    pub(crate) fn should_move(&mut self, now: Instant, destination: Vec2) -> bool {
+        if now < self.next_move_at || (destination - self.last_destination).length_squared() <= 25.0 {
+            return false;
+        }
+        self.last_destination = destination;
+        self.next_move_at = now + Self::INTERVAL;
+        true
+    }
+}
 
 const DEFAULTS: &[(&str, Key)] = &[
     ("Attack on Sight", Key::A),

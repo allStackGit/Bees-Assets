@@ -22,7 +22,7 @@ use bees_sim::simulation::WorldId;
 use minifb::{Key, KeyRepeat, MouseButton, ScaleMode, Window, WindowOptions};
 use serde_json::{json, Value};
 
-use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, text};
+use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, WorldMoveDrag, text};
 use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
 use super::tactical_hud::{HudAction, HudRect, ACTIONS, shooting_hit, shooting_rect};
@@ -55,15 +55,6 @@ enum TargetMode {
     Guard, Mine, Heal, Retreat, Patrol,
 }
 
-// Same 250 ms movement cadence and captured input surface as the local
-// native client. The host receives only canonical move/attack/fire inputs.
-struct RemoteRightPress {
-    next_move_at: Instant,
-    last_move_pixel: Option<Vec2>,
-    minimap: bool,
-}
-
-const RIGHT_DRAG_INTERVAL: Duration=Duration::from_millis(250);
 const MAX_PENDING_ORDER_TIMINGS: usize = 4096;
 
 #[derive(Default)]
@@ -3437,7 +3428,7 @@ pub fn connect_remote_with_trust(
     let mut last_selection_press:Option<Instant>=None;
     let mut double_left_press=false;
     let mut last_right=false;
-    let mut right_press:Option<RemoteRightPress>=None;
+    let mut right_press:Option<WorldMoveDrag>=None;
     let mut minimap_dragging=false;
     // Pure local presentation preference, never sent to the host.
     let mut show_minimap=true;
@@ -4833,69 +4824,48 @@ pub fn connect_remote_with_trust(
             // minimap or window) never carries a corner into a later drag.
             if !left { drag_start=None;patrol_start=None; }
             if !battlefield_input { right_press=None; }
-            // Capture the origin of a right-button gesture. Its minimap
-            // and World coordinates must never swap halfway through a drag.
-            // A right-click while aiming a support order cancels that mode,
-            // as in the source local client, without issuing a new command.
-            if battlefield_input&&right&&!last_right {
+            // A minimap press sends one move immediately. Only a press
+            // that began on the battlefield can become a drag or context click.
+            let battlefield_point = mouse.filter(|&(x, y)|
+                minimap_point.is_none() && x >= 0.0 && x < FIELD as f32 &&
+                y >= 0.0 && y < HEIGHT as f32);
+            if battlefield_input && right && !last_right {
                 if mode.is_some() {
-                    mode=None;patrol_start=None;drag_start=None;right_press=None;
-                    peer.notice="Target selection cancelled".into();
+                    mode = None;
+                    patrol_start = None;
+                    drag_start = None;
+                    right_press = None;
+                    peer.notice = "Target selection cancelled".into();
                 } else if !selected.is_empty() {
-                    if let Some((x,y))=mouse {
-                        let on_minimap=minimap_point.is_some();
-                        if on_minimap||(x>=0.0&&x<FIELD as f32&&
-                            y>=0.0&&y<HEIGHT as f32) {
-                            right_press=Some(RemoteRightPress {
-                                next_move_at:now+RIGHT_DRAG_INTERVAL,
-                                last_move_pixel:None,minimap:on_minimap,
-                            });
+                    if let Some(point) = minimap_point {
+                        match peer.order(&selected, "move", json!({
+                            "destination": {"x": point.x, "y": point.y}
+                        })) {
+                            Ok(()) => peer.metrics.minimap_move_orders_submitted += 1,
+                            Err(error) => peer.notice = error.to_string(),
                         }
+                    } else if let Some((x, y)) = battlefield_point {
+                        let point = cam.screen_to_world(x, y, FIELD, HEIGHT);
+                        right_press = Some(WorldMoveDrag::new(now, point));
                     }
                 }
             }
             if right {
-                if let (Some(press),Some((x,y)))=(right_press.as_mut(),mouse) {
-                    let pixel=Vec2::new(x,y);
-                    if now>=press.next_move_at &&
-                        !press.last_move_pixel.is_some_and(|last|
-                            (pixel-last).length_squared()<=25.0)
-                    {
-                        let destination=if press.minimap {minimap_point}
-                            else if minimap_point.is_none()&&x>=0.0&&
-                                x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32
-                            {Some(cam.screen_to_world(x,y,FIELD,HEIGHT))}
-                            else {None};
-                        if let Some(point)=destination {
-                            press.next_move_at=now+RIGHT_DRAG_INTERVAL;
-                            press.last_move_pixel=Some(pixel);
-                            match peer.order(&selected,"move",json!({
-                                "destination":{"x":point.x,"y":point.y}
-                            })) {
-                                Ok(())=>peer.metrics.right_drag_move_orders_submitted+=1,
-                                Err(error)=>peer.notice=error.to_string(),
-                            }
+                if let (Some(press), Some((x, y))) = (right_press.as_mut(), battlefield_point) {
+                    let point = cam.screen_to_world(x, y, FIELD, HEIGHT);
+                    if press.should_move(now, point) {
+                        match peer.order(&selected, "move", json!({
+                            "destination": {"x": point.x, "y": point.y}
+                        })) {
+                            Ok(()) => peer.metrics.right_drag_move_orders_submitted += 1,
+                            Err(error) => peer.notice = error.to_string(),
                         }
                     }
                 }
-            } else if last_right {
-                if let (Some(press),Some((x,y)))=(right_press.take(),mouse) {
-                    if press.minimap {
-                        if let Some(point)=minimap_point {
-                            match peer.order(&selected,"move",json!({
-                                "destination":{"x":point.x,"y":point.y}
-                            })) {
-                                Ok(())=>peer.metrics.minimap_move_orders_submitted+=1,
-                                Err(error)=>peer.notice=error.to_string(),
-                            }
-                        }
-                    } else if minimap_point.is_none()&&x>=0.0&&
-                        x<FIELD as f32&&y>=0.0&&y<HEIGHT as f32
-                    {
-                        if let Err(error)=order_at(&mut peer,&selected,cam,
-                            x as i32,y as i32,None) {
-                            peer.notice=error.to_string();
-                        }
+            } else if last_right && right_press.take().is_some() {
+                if let Some((x, y)) = battlefield_point {
+                    if let Err(error) = order_at(&mut peer, &selected, cam, x as i32, y as i32, None) {
+                        peer.notice = error.to_string();
                     }
                 }
             }

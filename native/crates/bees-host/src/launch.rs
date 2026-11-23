@@ -12992,6 +12992,7 @@ fn run_battle(
             "camera_boundary_clamps": client.camera_boundary_clamps,
             "camera_zoom_clamps": client.camera_zoom_clamps,
             "minimap_move_orders_submitted": client.minimap_move_orders_submitted,
+            "right_drag_move_orders_submitted": client.right_drag_move_orders_submitted,
             "tactical_button_clicks": client.tactical_button_clicks,
             "squad_tab_clicks": client.squad_tab_clicks,
             "shooting_priority_requests_submitted": client.shooting_priority_requests_submitted,

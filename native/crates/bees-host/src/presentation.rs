@@ -26,7 +26,7 @@ pub use campaign_dialogue::{NativeCampaignIntermission, NativeCampaignPreparatio
 #[cfg(feature = "client")]
 mod controls;
 #[cfg(feature = "client")]
-pub(crate) use controls::NativeControls;
+pub(crate) use controls::{NativeControls, WorldMoveDrag};
 #[cfg(feature = "client")]
 pub use controls::show_control_settings;
 #[cfg(feature = "client")]

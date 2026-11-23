@@ -8,7 +8,7 @@ use bees_sim::simulation::WorldId;
 use bees_hivemind::session::SquadLifetime;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use crate::presentation::{squad_name_key, HudAction, NativeCamera, NativeControls,
-    NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode};
+    NativeRenderWorldView, NativeSoftwareRenderer, NativeSupportMode, WorldMoveDrag};
 use crate::game_audio::{NativeGameAudio, NativeAudioMeasurements};
 use crate::unity_scene_snapshot::{NativeMusicLocation, NativeMapBackdrop};
 use bees_gameplay::player_inputs::{NativeHeldFireAction, NativePlayerHeldFire, NativePlayerSquadMoves,
@@ -46,17 +46,6 @@ impl NativeResultControls {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum NativeTargetMode { Support(NativeSupportMode), ManualFire }
-
-const RIGHT_DRAG_INTERVAL: Duration = Duration::from_millis(250);
-
-struct RightPress {
-    next_move_at: Instant,
-    last_move_pixel: Option<Vec2>,
-    /// Capture the input surface on mouse-down. Crossing into the minimap
-    /// must not re-map an ordinary world drag into a different coordinate
-    /// system halfway through the held gesture.
-    minimap: bool,
-}
 
 /// Rolling measured presentation throughput, never inferred from target FPS.
 /// Counters come from the authoritative completed-tick and rendered-frame
@@ -176,7 +165,7 @@ pub struct NativeClient {
     right_was_down: bool,
     /// Presentation-only camera grab; no player input or physical tick.
     middle_drag_last: Option<(f32, f32)>,
-    right_press: Option<RightPress>,
+    right_press: Option<WorldMoveDrag>,
     last_left_press: Option<Instant>,
     double_left_press: bool,
     input_feedback: &'static str,
@@ -272,6 +261,7 @@ pub struct NativeClient {
     pub numbered_shortcut_selections: u64,
     pub cycled_shortcut_selections: u64,
     pub minimap_move_orders_submitted: u64,
+    pub right_drag_move_orders_submitted: u64,
     pub tactical_button_clicks: u64,
     pub squad_tab_clicks: u64,
     pub shooting_priority_requests_submitted: u64,
@@ -366,7 +356,7 @@ impl NativeClient {
             camera_wheel_pans: 0, camera_boundary_clamps: 0,
             camera_zoom_clamps: 0, numbered_shortcut_selections: 0,
             cycled_shortcut_selections: 0,
-            minimap_move_orders_submitted: 0,
+            minimap_move_orders_submitted: 0, right_drag_move_orders_submitted: 0,
             tactical_button_clicks: 0, squad_tab_clicks: 0,
             shooting_priority_requests_submitted: 0,
             selected_command_rows_drawn: 0, command_target_markers_drawn: 0 })
@@ -1638,17 +1628,15 @@ impl NativeClient {
         let right_pressed = right_down && !self.right_was_down;
         let right_released = !right_down && self.right_was_down;
         let cancel_support = right_pressed && pointer_active && self.support_mode.is_some();
-        if !pointer_active {
+        if !pointer_active || !accepts_orders {
             self.right_press = None;
-        } else if right_pressed && accepts_orders {
-            self.right_press = (mouse.is_some() && !cancel_support &&
-                !self.renderer.selection.squads().is_empty())
-                .then_some(RightPress {
-                    next_move_at: now + RIGHT_DRAG_INTERVAL,
-                    last_move_pixel: None,
-                    minimap: mouse.is_some_and(|(x, y)|
-                        self.renderer.minimap_world_at(bounds, x, y).is_some()),
-                });
+        } else if right_pressed {
+            self.right_press = mouse
+                .filter(|&(x, y)| !cancel_support &&
+                    !self.renderer.selection.squads().is_empty() &&
+                    self.renderer.minimap_world_at(bounds, x, y).is_none())
+                .map(|(x, y)| WorldMoveDrag::new(now,
+                    self.renderer.camera.screen_to_world(x, y, width, height)));
         }
         if cancel_support {
             self.support_mode = None;
@@ -1938,33 +1926,20 @@ impl NativeClient {
             support_command.is_none() && manual_fire.is_none() &&
             cease_fire_input.is_none() && accepts_orders {
             mouse.filter(|_| !self.renderer.selection.squads().is_empty()).and_then(|(x, y)| {
-                let captured_minimap = if right_released {
-                    released_press.as_ref()?.minimap
+                let destination = if let Some(point) = self.renderer.minimap_world_at(bounds, x, y) {
+                    // The source minimap issues one ground order at mouse-down.
+                    if !right_pressed || !pointer_active || cancel_support { return None; }
+                    self.minimap_move_orders_submitted += 1;
+                    point
                 } else {
-                    self.right_press.as_ref()?.minimap
-                };
-                let over_minimap = self.renderer.minimap_world_at(bounds, x, y);
-                // A drag beginning outside the map cannot turn into a
-                // minimap order by moving over the HUD mid-gesture.
-                let destination = if captured_minimap {
-                    over_minimap?
-                } else {
-                    if over_minimap.is_some() { return None; }
-                    self.renderer.camera.screen_to_world(x, y, width, height)
-                };
-                if right_released {
-                    if released_press.is_none() { return None; }
-                    if !captured_minimap {
-                        if let Some(action) = self.renderer.pick_right_click_action(&view, destination) {
+                    let point = self.renderer.camera.screen_to_world(x, y, width, height);
+                    if right_released {
+                        released_press.as_ref()?;
+                        if let Some(action) = self.renderer.pick_right_click_action(&view, point) {
                             support_command = self.renderer.selection.support_command(&view, action);
                             return None;
                         }
-                        if let Some(target) = self.renderer.pick_demolition_fire_point(
-                            &view, destination,
-                        ) {
-                            // Submit the exact same authenticated point-fire
-                            // used by the explicit T tool; firing never
-                            // creates a separate mission damage pathway.
+                        if let Some(target) = self.renderer.pick_demolition_fire_point(&view, point) {
                             manual_fire = Some(NativePlayerSquadFire {
                                 world_id: view.world_id,
                                 episode_revision: view.episode_revision,
@@ -1975,20 +1950,16 @@ impl NativeClient {
                             self.input_feedback = "Bombardment: target selected";
                             return None;
                         }
+                    } else {
+                        if !right_down || self.paused ||
+                            !self.right_press.as_mut()?.should_move(now, point)
+                        {
+                            return None;
+                        }
+                        self.right_drag_move_orders_submitted += 1;
                     }
-                } else {
-                    if !right_down || self.paused { return None; }
-                    let press = self.right_press.as_mut()?;
-                    let pixel = Vec2::new(x, y);
-                    if now < press.next_move_at || press.last_move_pixel.is_some_and(|last|
-                        (pixel - last).length_squared() <= 25.0
-                    ) { return None; }
-                    press.next_move_at = now + RIGHT_DRAG_INTERVAL;
-                    press.last_move_pixel = Some(pixel);
-                }
-                if captured_minimap {
-                    self.minimap_move_orders_submitted += 1;
-                }
+                    point
+                };
                 Some(NativePlayerSquadMoves { world_id: view.world_id,
                     episode_revision: view.episode_revision,
                     squads: self.renderer.selection.squads().to_vec(),
