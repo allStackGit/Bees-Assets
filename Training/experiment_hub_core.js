@@ -26,7 +26,8 @@ function supportsJobRuntime(machine,job) {
         return machine?.agent_platform==='linux'&&
             machine?.installed_projects?.includes('bees_native')&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
-            pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256;
+            pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
+            pinned?.runtime_version===job.frozen_parameters?.runtime_version;
     }
     return supportsTinyBrainsProfile(machine,job);
 }
@@ -525,11 +526,12 @@ function config(value) {
 function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(projectId!=='bees_native')return;
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
-        'environment_args','worker_sha256','trainer_sha256',
+        'environment_args','worker_sha256','trainer_sha256','runtime_version',
         'evaluation_profile','evaluation_matches','batch_inference']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
         !SHA256.test(String(parameters.worker_sha256||''))||
         !SHA256.test(String(parameters.trainer_sha256||''))||
+        !SHA256.test(String(parameters.runtime_version||''))||
         !Number.isSafeInteger(parameters.max_steps)||
         parameters.max_steps<1000||parameters.max_steps>100000000000||
         !Number.isSafeInteger(parameters.envs)||
