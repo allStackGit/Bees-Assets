@@ -122,6 +122,10 @@ class RemoteConsole:
         self.expected_session_id = expected_session_id
         self.host_session_id = None
         self.authenticated_side = None
+        # Distinguish a rejected or malformed authoritative protocol from a
+        # transient transport failure. Never auto-rejoin after an identity
+        # mismatch or untrusted server payload.
+        self.protocol_failure = None
         self.notifications = SimpleQueue()
         self.lock = threading.Lock()
         self.latest = None
@@ -382,6 +386,8 @@ class RemoteConsole:
                         if not self.silent:
                             print(f"Host: {message}")
         except (OSError, ValueError) as error:
+            if isinstance(error, ValueError):
+                self.protocol_failure = str(error)
             self.notifications.put(f"Connection failed: {error}")
             if not self.silent:
                 print(f"Connection failed: {error}")
