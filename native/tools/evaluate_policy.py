@@ -378,7 +378,16 @@ def evaluation_execution_evidence(final_report):
 def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
     """Read only the terminal records; reconcile them with the verified summary."""
     journal = directory / "events.jsonl"
-    counts = Counter()
+    # Explicit zeroes make published JSON stable even if the candidate
+    # loses every match on one physical faction or authored scene.
+    outcome_fields = (
+        "matches", "wins", "draws", "losses", "timeouts",
+        "non_timeout_draws", "candidate_as_bee", "candidate_as_human",
+        "candidate_as_side_1", "candidate_as_side_2",
+        *(f"candidate_side_{side}_{outcome}"
+          for side in (1, 2) for outcome in ("wins", "draws", "losses")),
+    )
+    counts = Counter({field: 0 for field in outcome_fields})
     by_scene = {}
     physical_wins = Counter()
     episodes = set()
@@ -435,7 +444,9 @@ def terminal_matchup(directory, result, candidate_slot, incumbent_slot):
                     (candidate_behavior["hits"] == 0) != (candidate_behavior["damage"] == 0)):
                 raise ValueError("inconsistent native champion physical behavior evidence")
             scene = context["scene_sha256"]
-            scene_counts = by_scene.setdefault(scene, Counter())
+            scene_counts = by_scene.setdefault(
+                scene, Counter({field: 0 for field in outcome_fields}),
+            )
             for row in (counts, scene_counts):
                 row["matches"] += 1
                 row["candidate_as_bee" if candidate_side == bee else
