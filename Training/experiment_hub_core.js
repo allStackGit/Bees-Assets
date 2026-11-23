@@ -603,6 +603,26 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
             throw Error('Bees native environment count must fit the CPU claim, with exactly one exclusive GPU for ROCm or no GPU for CPU.');
     }
 }
+// Bees' current scripted evaluator runs only after the final PPO checkpoint.
+// Never promise in-training cadence evaluations or a mismatched suite.
+function validateBeesFinalEvaluation(projectId,parameters,configuration) {
+    if(projectId!=='bees_native')return;
+    if(configuration.evaluation_monitor)
+        throw Error('Bees Unity supports final scripted evaluation, not in-training checkpoint-cadence monitoring.');
+    if(!configuration.evaluation_stop)return;
+    const rule=evaluationPolicy(configuration.evaluation_stop);
+    const suite=parameters.evaluation_profile==='scripted-maps-v1'
+        ?'bees_scripted_maps_v1':
+        parameters.evaluation_profile==='scripted-coverage-v2'
+            ?'bees_scripted_coverage_v2':null;
+    const cases=parameters.evaluation_profile==='scripted-maps-v1'?4:
+        parameters.evaluation_profile==='scripted-coverage-v2'?48:0;
+    if(!suite||rule.all_of||rule.suite_id!==suite)
+        throw Error('Bees Unity final evaluation threshold must select the exact scripted profile saved in this training configuration.');
+    const available=cases*(parameters.evaluation_matches??8);
+    if(rule.min_trials>available)
+        throw Error('Bees Unity final evaluation requests more trials than its frozen scenario count and matches permit.');
+}
 // Persisted TinyBrains authoring metadata originates exclusively from a
 // bounded, authenticated agent report. Offline catalogues may define drafts,
 // but may never prove execution readiness or reserve native resources.
@@ -8156,6 +8176,7 @@ class ExperimentHub {
         requireCourierTrainingPin(project.id,frozen);
         const resources = resourceRequest(value.resources);
         validateBeesNativeDefinition(project.id,frozen,resources);
+        validateBeesFinalEvaluation(project.id,frozen,selected);
         if(project.id==='bees_native'&&frozen.wan_actors>0&&
             internalBeesGroup!==true)
             throw Error('Bees distributed WAN learners must be queued with their entire reserved actor group in the Bees WAN Design panel.');
