@@ -129,6 +129,8 @@ async function build(argv = process.argv.slice(2)) {
         : [TARGETS[arg.platform]];
     const commit = getGitShortSha();
     const sourceDirty = dirtySource();
+    const packagesManifest = path.join(paths.beesRoot, 'Packages', 'manifest.json');
+    const packagesSha = await sha256(packagesManifest);
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
     const buildId = 'offline-unity-' + timestamp + '-' + commit + '-' +
         crypto.randomBytes(3).toString('hex');
@@ -159,6 +161,11 @@ async function build(argv = process.argv.slice(2)) {
         });
     }
 
+    if (getGitShortSha() !== commit ||
+        (await sha256(packagesManifest)) !== packagesSha ||
+        dirtySource() !== sourceDirty) {
+        throw Error('Unity source or project packages changed during the worker build; artifacts were not published.');
+    }
     const manifest = {
         schema_version: 1,
         kind: 'offline-unity-workers',
@@ -168,7 +175,7 @@ async function build(argv = process.argv.slice(2)) {
         source_commit: commit,
         source_dirty: sourceDirty,
         unity_version: version,
-        packages_manifest_sha256: await sha256(path.join(paths.beesRoot, 'Packages', 'manifest.json')),
+        packages_manifest_sha256: packagesSha,
         artifacts,
     };
     const manifestPath = path.join(root, 'worker-build-manifest.json');
