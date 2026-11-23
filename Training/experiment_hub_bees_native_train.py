@@ -101,7 +101,7 @@ def inspect_job(filename: Path) -> dict:
         require_file(Path(job[source]),value,executable)
     if type(job["batch_inference"]) is not bool:
         raise ValueError("Cross-worker inference batching must be a boolean.")
-    if job["evaluation_profile"] not in ("off","scripted-maps-v1") or (
+    if job["evaluation_profile"] not in ("off","scripted-maps-v1","scripted-coverage-v2") or (
         type(job["evaluation_matches"]) is not int or
         not 1 <= job["evaluation_matches"] <= 100
     ):
@@ -295,6 +295,27 @@ SCRIPTED_CASES = (
     ("wide_6v6_strafe", 6, 128, "strafe"),
 )
 
+# Explicit cross-product of all supported sizes in this versioned evaluation
+# suite. Numerical map sizes form a continuum; these four sizes are strata,
+# not a claim to exhaust every possible map or randomized spawn seed.
+COVERAGE_V2_COUNTS = (1, 2, 3, 4, 5, 6)
+COVERAGE_V2_MAP_SIZES = (32, 64, 128, 256)
+COVERAGE_V2_OPPONENTS = ("pursuit", "strafe")
+COVERAGE_V2_CASES = tuple(
+    (f"p{players}_map{size}_{opponent}", players, size, opponent)
+    for players in COVERAGE_V2_COUNTS
+    for size in COVERAGE_V2_MAP_SIZES
+    for opponent in COVERAGE_V2_OPPONENTS
+)
+
+def evaluation_cases(profile: str) -> tuple:
+    if profile == "scripted-maps-v1":
+        return SCRIPTED_CASES
+    if profile == "scripted-coverage-v2":
+        return COVERAGE_V2_CASES
+    raise ValueError("Unsupported Bees scripted evaluation profile.")
+
+
 def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
     label,players,map_size,_ = case
     recipe = {
@@ -307,9 +328,9 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
             "--rl-matchup-mode=sampled",
             f"--rl-ships-per-side={players}",
             f"--rl-map-size={map_size}",
-            ("--rl-bee-ship-types=Wasp,Hornet" if players==2
+            ("--rl-bee-ship-types=Wasp,Hornet" if players==2 and map_size>=64
              else "--rl-bee-ship-types=Wasp"),
-            ("--rl-human-ship-types=Gunship,Frigate" if players==2
+            ("--rl-human-ship-types=Gunship,Frigate" if players==2 and map_size>=64
              else "--rl-human-ship-types=Gunship"),
             "--rl-episode-timeout=60",
             "--rl-health-ratio=0.5",
@@ -408,12 +429,13 @@ def main():
         if result!=0 or stopped:
             return 130 if stopped else result or 1
         record_model(root,job["job_id"])
-        if job["evaluation_profile"]=="scripted-maps-v1":
+        if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2"):
             evaluation_root=root/"evaluations"
             evaluation_root.mkdir(mode=0o700)
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
             observed=[]
-            for index,case in enumerate(SCRIPTED_CASES):
+            cases=evaluation_cases(job["evaluation_profile"])
+            for index,case in enumerate(cases):
                 if stopped: return 130
                 label,_,_,opponent=case
                 recipe=benchmark_recipe(evaluation_root,job,case,index)
@@ -455,7 +477,7 @@ def main():
                 observed.append(collect_benchmark(root,reported,job,label,opponent))
             summary={
                 "schema_version":1,"job_id":job["job_id"],
-                "profile":"scripted-maps-v1","model_sha256":model["sha256"],
+                "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
                 "case_count":len(observed),"cases":observed,
                 "total_matches":sum(item["matches"] for item in observed),
                 "total_wins":sum(item["wins"] for item in observed),
