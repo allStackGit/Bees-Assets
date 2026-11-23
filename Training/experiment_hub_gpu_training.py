@@ -579,7 +579,8 @@ def prepare_training_segment_reduction(device, *, dtype=torch.float32):
 
 
 def sum_consecutive_training_segments(terms, counts, owner, *,
-                                      denominator_dtype, min_parallel_rows=2048):
+                                      denominator_dtype, counts_tensor=None,
+                                      min_parallel_rows=2048):
     """Reduce grouped training contributions without scatter atomics.
 
     When per-entity contributions are already packed in contiguous,
@@ -594,16 +595,26 @@ def sum_consecutive_training_segments(terms, counts, owner, *,
             owner.device!=terms.device or owner.numel()!=len(terms) or
             not isinstance(counts,(list,tuple)) or
             sum(counts)!=len(terms) or any(
-                not isinstance(c,Integral) or c<0 for c in counts)):
+                not isinstance(c,Integral) or c<0 for c in counts) or
+            (counts_tensor is not None and
+             (not isinstance(counts_tensor,torch.Tensor) or
+              counts_tensor.device!=terms.device or counts_tensor.ndim!=1 or
+              counts_tensor.numel()!=len(counts) or
+              counts_tensor.dtype not in (torch.int32,torch.int64) or
+              counts_tensor.requires_grad))):
         raise ValueError("Training segment sizes do not match ordered contributions")
+    # Record counts are immutable within a PPO minibatch. If supplied as
+    # views of its existing uploaded index bank, never re-upload the same
+    # tiny list on each shape group's reduction.
     threshold = _SEGMENT_THRESHOLDS.get((str(terms.device),terms.dtype))
     use_segment = (terms.device.type=='cuda' and
                    threshold is not None and
                    len(terms)>=max(min_parallel_rows,threshold))
     if use_segment:
         try:
-            lengths = torch.as_tensor(
-                counts,device=terms.device,dtype=torch.int64)
+            lengths = (counts_tensor.to(dtype=torch.int64)
+                       if counts_tensor is not None else torch.as_tensor(
+                           counts,device=terms.device,dtype=torch.int64))
             reduced = torch.segment_reduce(
                 terms,reduce='sum',lengths=lengths,axis=0)
         except (RuntimeError,NotImplementedError,TypeError,AttributeError):
@@ -612,8 +623,10 @@ def sum_consecutive_training_segments(terms, counts, owner, *,
             return reduced,lengths.clamp_min(1).to(dtype=denominator_dtype)
     reduced = terms.new_zeros((len(counts),terms.shape[1]))
     reduced.index_add_(0,owner,terms)
-    denominator = terms.new_tensor(counts,dtype=denominator_dtype).clamp_min(1)
-    return reduced,denominator
+    denominator = (counts_tensor.to(dtype=denominator_dtype)
+                   if counts_tensor is not None else
+                   terms.new_tensor(counts,dtype=denominator_dtype))
+    return reduced,denominator.clamp_min(1)
 
 
 def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets, *, weights=None):
