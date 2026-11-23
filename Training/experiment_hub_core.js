@@ -4915,6 +4915,10 @@ class ExperimentHub {
             throw Error('Explicitly confirm which managed job to stop.');
         const next=copy(this.state);
         const job=next.jobs.find(j=>j.id===value.job_id);
+        if(job?.resource_bundle&&
+            (job.project_id==='bees_rollout'||
+             job.project_id==='bees_native'&&job.frozen_parameters?.wan_actors>0))
+            throw Error('Stop the Bees WAN learner and all remote simulation actors through their resource bundle.');
         if(!job||!job.dispatch_id||
             !['start_requested','launch_requested','running','unverified'].includes(job.status))
             throw Error('Only a dispatched, nonterminal job may request a native stop.');
@@ -6424,10 +6428,10 @@ class ExperimentHub {
         if(!root)throw Error('Job not found; refresh Train.');
         if(root.adapter!=='unconfigured'||root.project_id==='ants')
             throw Error('Only native Experiment Hub job records can be deleted here.');
-        if(['tinybrains_rollout','courier_lineage'].includes(root.project_id))
+        if(['tinybrains_rollout','courier_lineage','bees_rollout'].includes(root.project_id))
             throw Error('Delete a remote collector through its original learner group.');
         const sidecars=next.jobs.filter(j=>
-            ['tinybrains_rollout','courier_lineage'].includes(j.project_id)&&
+            ['tinybrains_rollout','courier_lineage','bees_rollout'].includes(j.project_id)&&
             j.frozen_parameters?.learner_job_id===root.id);
         const selected=[root,...sidecars],ids=new Set(selected.map(j=>j.id));
         if(ids.size!==value.expected_job_ids.length||
@@ -8283,6 +8287,10 @@ class ExperimentHub {
             (plan.learner_job_id===job.id||
              plan.collector_job_ids.includes(job.id))))
             throw Error('Cancel the pending distributed group approval before cancelling an individual native job.');
+        if(job.resource_bundle&&
+            (job.project_id==='bees_rollout'||
+             job.project_id==='bees_native'&&job.frozen_parameters?.wan_actors>0))
+            throw Error('Cancel the complete Bees WAN resource bundle, not one reserved actor or learner.');
         if (job.status==='cancelled') return copy(job);
         const cancelledAt=now();
         if(job.project_id==='tinybrains'&&job.distributed_rollout_managed===true||
