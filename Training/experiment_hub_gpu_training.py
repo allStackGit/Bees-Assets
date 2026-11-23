@@ -765,13 +765,23 @@ class ImmutableGpuScalarBank:
             return False
         try:
             combined=torch.stack(columns,dim=1)
-            remote=combined.to(self.device,non_blocking=True)
-            # The cross-GPU copy is submitted from the source stream.
-            # A destination-thread event would not necessarily order this
-            # DMA on HIP. Record its source completion and establish that
-            # dependency before the peer GPU gathers any of the columns.
-            ready=torch.cuda.Event()
-            ready.record(torch.cuda.current_stream(first.device))
+            producer=torch.cuda.current_stream(first.device)
+            # The copy is enqueued on the DESTINATION device's current
+            # stream, which may differ from the stream later chosen by its
+            # persistent GPU worker. Ensure that the source GPU has finished
+            # building the immutable tensor before scheduling peer DMA.
+            destination_stream=torch.cuda.current_stream(self.device)
+            try:
+                destination_stream.wait_stream(producer)
+            except (RuntimeError,NotImplementedError):
+                # Some ROCm versions cannot enqueue cross-GPU event waits.
+                # A one-time staged dataset may wait for its producer;
+                # avoid introducing this barrier for each minibatch gather.
+                producer.synchronize()
+            with torch.cuda.device(self.device), torch.cuda.stream(destination_stream):
+                remote=combined.to(self.device,non_blocking=True)
+                ready=torch.cuda.Event()
+                ready.record(destination_stream)
         except (RuntimeError,MemoryError,torch.OutOfMemoryError):
             return False
         self._indices={key:i for i,key in enumerate(record_keys)}
