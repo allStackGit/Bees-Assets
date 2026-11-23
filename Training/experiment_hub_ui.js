@@ -4327,6 +4327,11 @@ document.addEventListener('DOMContentLoaded', () => {
             }else delete parameters.training_map_ids;
             const available=choice.entry.opponent_catalog||[];
             if(available.length) {
+                const absent=(parameters.training_opponent_ids||[])
+                    .filter(id=>!available.some(row=>row.id===id));
+                if(absent.length)
+                    throw Error('Saved training opponent(s) are not currently verified on this worker: '+
+                        absent.join(', ')+'. Restore their frozen models before editing the Design.');
                 const chosen=[...tinyBrainsOpponentFields.querySelectorAll('input[data-training-opponent]')]
                     .filter(input=>input.checked).map(input=>input.value);
                 if(!chosen.length||chosen.length>16||
