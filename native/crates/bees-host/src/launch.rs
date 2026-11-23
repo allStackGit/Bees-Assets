@@ -1774,7 +1774,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2> [--spectate]
        bees generate-server-credentials --output-dir <new-private-dir> [--side <1|2>] [--spectators]
-       bees serve-receipts <saved-game-battle-root>
+       bees serve-receipts <saved-game-battle-root> [--headless] [--seconds <1-86400>]
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
        bees campaign <catalog.json> --output-dir <battle-runs> --all
@@ -2854,14 +2854,35 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             &mission_id.to_string_lossy(), serve);
     }
     if first == "serve-receipts" {
+        let game_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        let mut headless = false;
+        let mut max_seconds = None;
+        while let Some(option) = args.next() {
+            match option.to_str() {
+                Some("--headless") if !headless => headless = true,
+                Some("--seconds") if max_seconds.is_none() => {
+                    let raw = args.next().ok_or_else(|| invalid(USAGE))?;
+                    let seconds: u64 = raw.to_str().ok_or_else(||
+                        invalid("receipt duration must be a positive integer")
+                    )?.parse()?;
+                    if !(1..=86_400).contains(&seconds) {
+                        return Err(invalid(
+                            "receipt duration must be between 1 and 86400 seconds",
+                        ).into());
+                    }
+                    max_seconds = Some(seconds);
+                }
+                _ => return Err(invalid(USAGE).into()),
+            }
+        }
         #[cfg(feature = "client")]
-        {
-            let game_root = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
-            if args.next().is_some() { return Err(invalid(USAGE).into()); }
+        if !headless && max_seconds.is_none() {
             return serve_native_archived_receipts(&game_root);
         }
-        #[cfg(not(feature = "client"))]
-        return Err(invalid("Saved multiplayer receipt hosting requires --features client").into());
+        // Without the optional desktop client the same executable runs
+        // this transport-only service as a normal headless process.
+        let _ = headless;
+        return serve_native_archived_receipts_headless(&game_root, max_seconds);
     }
     if first == "connect" {
         #[cfg(feature = "client")]
@@ -6498,33 +6519,75 @@ fn recover_generated_library_battle(
     Ok(pending)
 }
 
-/// Reuse the same authenticated LAN listener to deliver completed game
-/// receipts when there is no active authoritative World. The existing menu
-/// keeps a visible stop control; the transport thread never runs physics,
-/// opens policy workers or modifies the immutable campaign ledger.
-#[cfg(feature = "client")]
-fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
-    use bees_host::presentation::{select_library, BattleMenuRow};
-    let _writer = battle_catalog::CampaignWriterLease::acquire(root)?;
+/// One owned archive and the SAME authenticated socket protocol used by
+/// live native matches. Both graphical and headless listeners retain the
+/// writer lease until all transport polling has stopped.
+fn open_native_archived_receipts(
+    root: &Path,
+) -> Result<(
+    battle_catalog::CampaignWriterLease,
+    bees_host::remote_play::NativeRemotePlay,
+), Box<dyn Error>> {
+    let writer = battle_catalog::CampaignWriterLease::acquire(root)?;
     let receipts = archived_native_remote_receipts_from_root(root, None)?;
     if receipts.is_empty() {
         return Err(invalid("no committed native multiplayer receipts for this game").into());
     }
     if env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS").is_none() &&
         env::var_os("BEES_NATIVE_REMOTE_SIDE_TOKENS_FILE").is_none() {
-        return Err(invalid("archived multiplayer requires authenticated player-side credentials").into());
+        return Err(invalid(
+            "archived multiplayer requires authenticated player-side credentials",
+        ).into());
     }
     let mut server = bees_host::remote_play::NativeRemotePlay::from_environment(0, true)?
         .ok_or_else(|| invalid("archived multiplayer requires a LAN listen endpoint"))?;
     server.install_archived_receipts(receipts)?;
     server.serve_archived_only();
+    Ok((writer, server))
+}
+
+/// Serve prior committed terminal receipts as a headless, read-only LAN
+/// service. It performs NO physical World steps, policy inference or replay
+/// and is suitable for Linux/Windows dedicated server processes with no
+/// windowing feature. The operator owns process lifetime; an optional
+/// duration bounds scripted deliveries without inventing another scheduler.
+fn serve_native_archived_receipts_headless(
+    root: &Path, max_seconds: Option<u64>,
+) -> Result<(), Box<dyn Error>> {
+    let (_writer, mut server) = open_native_archived_receipts(root)?;
+    let started = Instant::now();
+    println!("{}", json!({
+        "kind": "native_multiplayer_archived_delivery_ready",
+        "headless": true,
+        "max_seconds": max_seconds,
+    }));
+    while max_seconds.is_none_or(|seconds| started.elapsed().as_secs() < seconds) {
+        let _ = server.poll(WorldId(0), 0, &[], None);
+        std::thread::sleep(std::time::Duration::from_millis(16));
+    }
+    println!("{}", json!({
+        "kind": "native_multiplayer_archived_delivery",
+        "headless": true,
+        "elapsed_wall_seconds": started.elapsed().as_secs_f64(),
+        "measurements": server.measurements(),
+    }));
+    Ok(())
+}
+
+/// The interactive home screen keeps its original visible stop control,
+/// but now uses the exact same read-only receipt server initialization
+/// as a native headless dedicated host.
+#[cfg(feature = "client")]
+fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
+    use bees_host::presentation::{select_library, BattleMenuRow};
+    let (_writer, mut server) = open_native_archived_receipts(root)?;
     let stop = std::sync::atomic::AtomicBool::new(false);
     let (choice, measurements) = std::thread::scope(|scope| {
         let signal = &stop;
         let handler = scope.spawn(move || {
             while !signal.load(Ordering::Relaxed) {
-                // This is transport-only polling. The session has no World,
-                // so the listener accepts only prior committed session IDs.
+                // Transport-only polling: without a World a remote peer
+                // must name a previously committed session to authenticate.
                 let _ = server.poll(WorldId(0), 0, &[], None);
                 std::thread::sleep(std::time::Duration::from_millis(16));
             }
@@ -6539,9 +6602,11 @@ fn serve_native_archived_receipts(root: &Path) -> Result<(), Box<dyn Error>> {
         stop.store(true, Ordering::Relaxed);
         (choice, handler.join())
     });
-    let measurements = measurements.map_err(|_| invalid("native archive listener terminated unexpectedly"))?;
+    let measurements = measurements
+        .map_err(|_| invalid("native archive listener terminated unexpectedly"))?;
     println!("{}", json!({
         "kind": "native_multiplayer_archived_delivery",
+        "headless": false,
         "measurements": measurements,
     }));
     choice?;
