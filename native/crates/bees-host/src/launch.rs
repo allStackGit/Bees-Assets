@@ -1773,7 +1773,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2> [--spectate]
-       bees generate-server-credentials --output-dir <new-private-dir> [--spectators]
+       bees generate-server-credentials --output-dir <new-private-dir> [--side <1|2>] [--spectators]
        bees serve-receipts <saved-game-battle-root>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
@@ -2166,7 +2166,12 @@ fn new_multiplayer_side_tokens() -> io::Result<[String; 2]> {
 /// authoritative host and two standalone player files consumed by the
 /// existing Rust/Tk remote clients. No token is printed to the console,
 /// embedded in a release or stored in a game checkpoint.
-fn generate_server_credentials(path: &Path, with_spectators: bool) -> io::Result<()> {
+fn generate_server_credentials(
+    path: &Path, with_spectators: bool, commander_side: Option<usize>,
+) -> io::Result<()> {
+    if commander_side.is_some_and(|side| !matches!(side, 1 | 2)) {
+        return Err(invalid("native multiplayer commander side must be 1 or 2"));
+    }
     if path.as_os_str().is_empty() {
         return Err(invalid("server credentials require a new directory"));
     }
@@ -2194,7 +2199,16 @@ fn generate_server_credentials(path: &Path, with_spectators: bool) -> io::Result
     builder.create(folder)?;
     let created = (|| -> io::Result<()> {
         let tokens = new_multiplayer_side_tokens()?;
-        let server = json!({"1": &tokens[0], "2": &tokens[1]}).to_string();
+        // The host cannot advertise a human token on a scripted/learned
+        // opponent side: only the explicitly selected commander has
+        // authority. No second credential file is created accidentally.
+        let mut server = serde_json::Map::new();
+        for side in 1..=2 {
+            if commander_side.is_none_or(|selected| side == selected) {
+                server.insert(side.to_string(), json!(&tokens[side - 1]));
+            }
+        }
+        let server = serde_json::Value::Object(server).to_string();
 
         fn write_private(file: &Path, contents: &[u8]) -> io::Result<()> {
             let mut options = fs::OpenOptions::new();
@@ -2209,20 +2223,33 @@ fn generate_server_credentials(path: &Path, with_spectators: bool) -> io::Result
             output.sync_all()
         }
         write_private(&folder.join("host-side-tokens.json"), server.as_bytes())?;
-        write_private(&folder.join("side-1.token"), tokens[0].as_bytes())?;
-        write_private(&folder.join("side-2.token"), tokens[1].as_bytes())?;
+        for side in 1..=2 {
+            if commander_side.is_none_or(|selected| side == selected) {
+                write_private(
+                    &folder.join(format!("side-{side}.token")),
+                    tokens[side - 1].as_bytes(),
+                )?;
+            }
+        }
         if with_spectators {
             // Spectators have an entirely separate credential set. The
             // existing transport authenticates them as read-only; a
             // spectator invite never grants a commander command seat.
             let viewers = new_multiplayer_side_tokens()?;
-            let spectator_map = json!({"1": viewers[0], "2": viewers[1]});
+            let mut spectator_map = serde_json::Map::new();
+            for side in 1..=2 {
+                if commander_side.is_none_or(|selected| side == selected) {
+                    spectator_map.insert(side.to_string(), json!(&viewers[side - 1]));
+                    write_private(
+                        &folder.join(format!("spectator-{side}.token")),
+                        viewers[side - 1].as_bytes(),
+                    )?;
+                }
+            }
             write_private(
                 &folder.join("host-spectator-tokens.json"),
-                spectator_map.to_string().as_bytes(),
+                serde_json::Value::Object(spectator_map).to_string().as_bytes(),
             )?;
-            write_private(&folder.join("spectator-1.token"), viewers[0].as_bytes())?;
-            write_private(&folder.join("spectator-2.token"), viewers[1].as_bytes())?;
         }
         #[cfg(unix)]
         fs::File::open(folder)?.sync_all()?;
@@ -2237,15 +2264,21 @@ fn generate_server_credentials(path: &Path, with_spectators: bool) -> io::Result
     println!("{}", json!({
         "kind": "native_remote_credentials_created",
         "host_credentials": folder.join("host-side-tokens.json"),
-        "side_1_client_token": folder.join("side-1.token"),
-        "side_2_client_token": folder.join("side-2.token"),
+        "side_1_client_token": if commander_side.is_none_or(|side| side == 1) {
+            Some(folder.join("side-1.token"))
+        } else { None },
+        "side_2_client_token": if commander_side.is_none_or(|side| side == 2) {
+            Some(folder.join("side-2.token"))
+        } else { None },
         "spectator_host_credentials": if with_spectators {
             Some(folder.join("host-spectator-tokens.json"))
         } else { None },
-        "spectator_1_token": if with_spectators {
+        "spectator_1_token": if with_spectators &&
+            commander_side.is_none_or(|side| side == 1) {
             Some(folder.join("spectator-1.token"))
         } else { None },
-        "spectator_2_token": if with_spectators {
+        "spectator_2_token": if with_spectators &&
+            commander_side.is_none_or(|side| side == 2) {
             Some(folder.join("spectator-2.token"))
         } else { None },
     }));
@@ -2283,15 +2316,25 @@ pub fn run() -> Result<(), Box<dyn Error>> {
             return Err(invalid(USAGE).into());
         }
         let destination = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
-        let spectators = match args.next() {
-            None => false,
-            Some(flag) if flag == "--spectators" => true,
-            _ => return Err(invalid(USAGE).into()),
-        };
-        if args.next().is_some() {
-            return Err(invalid(USAGE).into());
+        let mut spectators = false;
+        let mut commander_side = None;
+        while let Some(flag) = args.next() {
+            match flag.to_str() {
+                Some("--spectators") if !spectators => spectators = true,
+                Some("--side") if commander_side.is_none() => {
+                    let side = args.next().ok_or_else(|| invalid(USAGE))?;
+                    commander_side = match side.to_str() {
+                        Some("1") => Some(1),
+                        Some("2") => Some(2),
+                        _ => return Err(invalid(USAGE).into()),
+                    };
+                }
+                _ => return Err(invalid(USAGE).into()),
+            }
         }
-        return generate_server_credentials(&destination, spectators).map_err(Into::into);
+        return generate_server_credentials(
+            &destination, spectators, commander_side,
+        ).map_err(Into::into);
     }
     if first == "hivemind-reconcile" {
         // This command is an OFFLINE checkpoint writer. The game/server
