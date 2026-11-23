@@ -117,12 +117,19 @@ function preflightExternalLearner(executable, config) {
         'if version!="1.1.0": raise RuntimeError("Bees requires mlagents==1.1.0, got "+version)',
         'if env_version!="1.1.0": raise RuntimeError("Bees requires mlagents_envs==1.1.0, got "+env_version)',
         'if int(numpy.__version__.split(".")[0])>=2: raise RuntimeError("Bees requires numpy<2")',
-        'gpu=torch.cuda.is_available()',
+        'gpu=torch.cuda.is_available() if sys.argv[1]=="cuda" else False',
         'if sys.argv[1]=="cuda" and not gpu: raise RuntimeError("Selected GPU learner has no accessible CUDA/ROCm PyTorch device")',
+        'if gpu:',
+        '  # A recognized device is not sufficient; confirm a real HIP/CUDA matmul executes.',
+        '  x=torch.ones((32,32),device="cuda",dtype=torch.float32)',
+        '  total=float((x@x).sum().item())',
+        '  if abs(total-32768.0)>0.01: raise RuntimeError("GPU compute probe produced an invalid result")',
+        '  torch.cuda.synchronize()',
         'backend="rocm" if getattr(torch.version,"hip",None) else ("cuda" if gpu else "cpu")',
+        'devices=[torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())] if gpu else []',
         'print(json.dumps({"python":sys.executable,"torch":torch.__version__,"mlagents":version,',
         '  "mlagents_envs":env_version,"numpy":numpy.__version__,"device":sys.argv[1],"backend":backend,',
-        '  "hip":getattr(torch.version,"hip",None),"gpus":torch.cuda.device_count() if gpu else 0}))',
+        '  "hip":getattr(torch.version,"hip",None),"gpus":len(devices),"gpu_devices":devices}))',
     ].join('\n');
     let result;
     try {
