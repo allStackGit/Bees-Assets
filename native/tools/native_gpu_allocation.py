@@ -55,6 +55,61 @@ def rocm_visible_gpu_pci(device_index=0) -> str | None:
         return None
 
 
+def cuda_visible_gpu_pci(device_index=0) -> str | None:
+    """Identify NVIDIA CUDA's actual device with cudaDeviceGetPCIBusId.
+
+    Use the already-loaded CUDA runtime following a successful model
+    forward. This works with ordinal-remapped visibility masks and does
+    not use the mask as attestation. Unsupported drivers remain unproven.
+    """
+    import ctypes
+
+    try:
+        if os.name == "nt":
+            # The Python CUDA runtime is already loaded by Torch/ONNX.
+            # GetModuleHandle prevents loading a second, unrelated CUDA
+            # runtime DLL merely to probe hardware identity.
+            kernel = ctypes.WinDLL("kernel32")
+            get_module = kernel.GetModuleHandleW
+            get_module.argtypes = [ctypes.c_wchar_p]
+            get_module.restype = ctypes.c_void_p
+            modules = [
+                (name, handle)
+                for name in ("cudart64_13.dll", "cudart64_12.dll",
+                             "cudart64_110.dll")
+                if (handle := get_module(name))
+            ]
+            if len(modules) != 1:
+                return None
+            name, handle = modules[0]
+            runtime = ctypes.WinDLL(name, handle=handle)
+        else:
+            with open("/proc/self/maps", encoding="utf-8") as maps:
+                loaded = {
+                    fields[-1] for line in maps
+                    if (fields := line.rstrip().split(maxsplit=5)) and
+                    len(fields) == 6 and
+                    re.fullmatch(r"libcudart\\.so(?:\\.[0-9]+)*",
+                                 os.path.basename(fields[-1])) and
+                    os.path.isabs(fields[-1])
+                }
+            if len(loaded) != 1:
+                return None
+            runtime = ctypes.CDLL(loaded.pop())
+        get_pci = runtime.cudaDeviceGetPCIBusId
+        get_pci.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_int]
+        get_pci.restype = ctypes.c_int
+        address = ctypes.create_string_buffer(64)
+        if get_pci(address, len(address), device_index) != 0:
+            return None
+        value = address.value.decode("ascii").lower()
+        return value if re.fullmatch(
+            r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]", value
+        ) else None
+    except (OSError, AttributeError, UnicodeDecodeError):
+        return None
+
+
 def cuda_visible_gpu_uuid(device_index=0) -> str | None:
     """Identify the CUDA card that completed resident PyTorch forwards.
 
