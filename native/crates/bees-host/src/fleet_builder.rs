@@ -648,6 +648,7 @@ pub(super) struct FleetChoice {
     /// Canonical original campaign archetypes for support, specialists,
     /// and starter ships; demo archetypes remain only for sandbox games.
     original_hulls: [Vec<Value>; 2],
+    original_mining_asteroid: Option<Value>,
     carrier_deck: usize,
     terrain: Terrain,
     map_background: NativeMapBackdrop,
@@ -686,10 +687,10 @@ fn invalid(message: &'static str) -> io::Error {
 
 pub(super) fn choose(
     save_root: &Path, queen_archetype: Option<&Value>,
-    factory_archetype: Option<&Value>, fighters: &[Vec<Value>; 2],
+    factory_archetype: Option<&Value>, sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     choose_for_preferred_side(
-        save_root, None, queen_archetype, factory_archetype, fighters,
+        save_root, None, queen_archetype, factory_archetype, sources,
     )
 }
 
@@ -699,8 +700,9 @@ pub(super) fn choose(
 pub(super) fn choose_for_preferred_side(
     save_root: &Path, preferred_side: Option<i32>,
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
-    fighters: &[Vec<Value>; 2],
+    sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>,Box<dyn Error>> {
+    let fighters = &sources.ships;
     if preferred_side.is_some_and(|side|!matches!(side,1|2)) {
         return Err(invalid("preferred Fleet Builder side must be Bee or Human").into());
     }
@@ -835,6 +837,7 @@ pub(super) fn choose_for_preferred_side(
             }),
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
+        original_mining_asteroid: sources.mining_asteroid.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: matches!(mode, 3 | 6), benchmark: false, spectator_episodes, ai_tactics, hivemind, objective,
         reinforcements, objective_side, benchmark_worlds: 1, benchmark_workers: 1,
@@ -846,8 +849,9 @@ pub(super) fn choose_for_preferred_side(
 pub(super) fn choose_multiplayer(
     authenticated_side: Option<i32>, save_root: &Path,
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
-    fighters: &[Vec<Value>; 2],
+    sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    let fighters = &sources.ships;
     // The existing LAN host's token map is authoritative. A HiveMind
     // opponent is selectable only when exactly one real remote commander
     // can authenticate, so two users can never be assigned the same side.
@@ -933,6 +937,7 @@ pub(super) fn choose_multiplayer(
             }),
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
+        original_mining_asteroid: sources.mining_asteroid.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: false,
         benchmark: false,
@@ -947,8 +952,9 @@ pub(super) fn choose_multiplayer(
 /// exactly the same collision, command and ship code used in windowed play.
 pub(super) fn choose_benchmark(
     queen_archetype: Option<&Value>, factory_archetype: Option<&Value>,
-    fighters: &[Vec<Value>; 2],
+    sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
+    let fighters = &sources.ships;
     let Some(fleet_sizes) = choose_sizes()? else { return Ok(None); };
     let Some(terrain) = choose_terrain(fleet_sizes)? else { return Ok(None); };
     let Some(map_background) = choose_planet()? else { return Ok(None); };
@@ -1025,6 +1031,7 @@ pub(super) fn choose_benchmark(
             }),
         original_fighters: original_roster,
         original_hulls: fighters.clone(),
+        original_mining_asteroid: sources.mining_asteroid.clone(),
         carrier_deck, terrain, map_background, colors, shooting_priorities, fog_of_war, asteroid_timer, ore_count, arena_size, lethal_borders,
         ai_both: true,
         benchmark: true,
@@ -2395,11 +2402,27 @@ pub(super) fn archive(
         // into a new, nonconflicting native scene identity. Its ore/health,
         // collision layer, and eventual depletion are handled by the shared
         // CombatWorld and Level, not by this fleet authoring screen.
-        let mine = source_archetypes["mining_asteroids"]
-            .as_array().and_then(|ores| ores.first())
-            .ok_or_else(|| invalid("native source has no mineable asteroid archetype"))?
-            .clone();
-        let original = mine["position"].as_array().ok_or_else(||
+        let mine = if original_game {
+            selected.original_mining_asteroid.as_ref()
+                .ok_or_else(|| invalid(
+                    "original FreePlay mineral field needs its actual campaign asteroid"
+                ))?.clone()
+        } else {
+            source_archetypes["mining_asteroids"]
+                .as_array().and_then(|ores| ores.first())
+                .ok_or_else(|| invalid("native sandbox has no mineable asteroid archetype"))?
+                .clone()
+        };
+        // Source mining geometry is authoritative, but deployment
+        // positions remain the player's selected FreePlay map layout.
+        // Do not accidentally transport Neptune's mission coordinates
+        // into an unrelated 320x200 skirmish map.
+        let position = if original_game {
+            &json!([-2.0, 70.0])
+        } else {
+            &mine["position"]
+        };
+        let original = position.as_array().ok_or_else(||
             invalid("source mineable asteroid has no physical position"))?;
         let x = original.first().and_then(Value::as_f64)
             .ok_or_else(|| invalid("source mineable asteroid has no X coordinate"))?;
