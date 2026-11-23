@@ -1759,6 +1759,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
        bees menu <catalog.json> --output-dir <battle-runs>
        bees library <library.json> --output-dir <player-save-root>
        bees connect <host:port> --token-file <private-file> --side <1|2> [--spectate]
+       bees generate-server-credentials --output-dir <new-private-dir>
        bees serve-receipts <saved-game-battle-root>
        bees status <catalog.json> --output-dir <battle-runs>
        bees campaign <catalog.json> --output-dir <battle-runs> --mission <mission-id>
@@ -1779,6 +1780,7 @@ const USAGE: &str = "Usage: bees [play|run|serve] <run.json> [--output-dir <new-
   serve-receipts  Host committed results only, with the same authenticated LAN protocol
   library  Open packaged native campaigns and quick battles
   connect  Join authoritative native multiplayer without Python
+  generate-server-credentials  Create private server/player secrets without Unity or Python
   run   Run the battle headlessly (default)
   --replay-inputs <player-inputs.jsonl>  Play back a recorded offline battle";
 
@@ -2122,6 +2124,78 @@ fn default_native_user_save_root(fallback: &Path) -> PathBuf {
     }
 }
 
+/// Generate host-owned, side-specific secrets with the OS CSPRNG.
+///
+/// This produces ONE JSON credential file consumed by the existing
+/// authoritative host and two standalone player files consumed by the
+/// existing Rust/Tk remote clients. No token is printed to the console,
+/// embedded in a release or stored in a game checkpoint.
+fn generate_server_credentials(folder: &Path) -> io::Result<()> {
+    if folder.as_os_str().is_empty() {
+        return Err(invalid("server credentials require a new directory"));
+    }
+    let parent = folder.parent().ok_or_else(|| invalid(
+        "server credential directory requires an existing parent"
+    ))?;
+    if !parent.is_dir() || parent.symlink_metadata()?.file_type().is_symlink() {
+        return Err(invalid("server credential parent must be a real directory"));
+    }
+
+    let mut builder = fs::DirBuilder::new();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    // mkdir is exclusive on every supported OS. A previously issued
+    // credential directory is never silently overwritten or rotated.
+    builder.create(folder)?;
+    let created = (|| -> io::Result<()> {
+        let mut random = [[0_u8; 32]; 2];
+        for secret in &mut random {
+            getrandom::getrandom(secret).map_err(|error|
+                io::Error::new(ErrorKind::Other,
+                    format!("native host credential entropy unavailable: {error}")))?;
+        }
+        let tokens = random.map(|secret| secret.iter()
+            .map(|byte| format!("{byte:02x}")).collect::<String>());
+        let server = json!({"1": &tokens[0], "2": &tokens[1]}).to_string();
+
+        fn write_private(file: &Path, contents: &[u8]) -> io::Result<()> {
+            let mut options = fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.mode(0o600);
+            }
+            let mut output = options.open(file)?;
+            output.write_all(contents)?;
+            output.write_all(b"\n")?;
+            output.sync_all()
+        }
+        write_private(&folder.join("server-side-tokens.json"), server.as_bytes())?;
+        write_private(&folder.join("side-1.token"), tokens[0].as_bytes())?;
+        write_private(&folder.join("side-2.token"), tokens[1].as_bytes())?;
+        #[cfg(unix)]
+        fs::File::open(folder)?.sync_all()?;
+        Ok(())
+    })();
+    if created.is_err() {
+        // This invocation exclusively created the directory. A partial
+        // secret set must never be treated as a valid host configuration.
+        let _ = fs::remove_dir_all(folder);
+    }
+    created?;
+    println!("{}", json!({
+        "kind": "native_remote_credentials_created",
+        "host_credentials": folder.join("server-side-tokens.json"),
+        "side_1_client_token": folder.join("side-1.token"),
+        "side_2_client_token": folder.join("side-2.token"),
+    }));
+    Ok(())
+}
+
 pub fn run() -> Result<(), Box<dyn Error>> {
     let mut args = env::args_os().skip(1);
     let first = match args.next() {
@@ -2147,6 +2221,16 @@ pub fn run() -> Result<(), Box<dyn Error>> {
     if first == "--help" || first == "-h" {
         println!("{USAGE}");
         return Ok(());
+    }
+    if first == "generate-server-credentials" {
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let destination = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_some() {
+            return Err(invalid(USAGE).into());
+        }
+        return generate_server_credentials(&destination).map_err(Into::into);
     }
     if first == "hivemind-reconcile" {
         // This command is an OFFLINE checkpoint writer. The game/server
