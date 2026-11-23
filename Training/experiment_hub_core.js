@@ -6843,6 +6843,9 @@ class ExperimentHub {
                 ].includes(key))||
                 !ID.test(String(selection.machine_id||'')))
                 throw Error('Each bundle member requires a saved configuration, machine ID and fixed resource budget.');
+            // Queue only in the uncommitted draft: the preparation gate must
+            // inspect the actual frozen job, not an uninitialized binding.
+            const job=this.queueIn(next,selection);
             const machine=machines.find(host=>host.id===selection.machine_id);
             const preparing=canPrepareSimulation(machine,job);
             if(!machine||machine.status!=='connected'||
@@ -6854,7 +6857,6 @@ class ExperimentHub {
                      !['cpu','memory'].every(controller=>
                          machine.execution_capabilities?.cgroup_controllers?.includes(controller)))))
                 throw Error('Bundle member '+(index+1)+' requires a connected, qualified native machine.');
-            const job=this.queueIn(next,selection);
             if(job.project_id==='tinybrains_rollout'||job.project_id==='courier_lineage'||
                 job.project_id==='bees'||job.project_id==='ants'||
                 (job.project_id==='tinybrains'&&job.frozen_parameters?.remote_rollouts===true)||
