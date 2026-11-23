@@ -175,7 +175,7 @@ function validField(field) {
 function validateCatalog(raw,installed=[],approved={}) {
     if(raw==null)return {};
     if(!raw||typeof raw!=='object'||Array.isArray(raw)||
-        Object.keys(raw).some(key=>!['courier','tinybrains'].includes(key))||
+        Object.keys(raw).some(key=>!['courier','tinybrains','bees_native'].includes(key))||
         JSON.stringify(raw).length>32768)
         throw Error('Invalid bounded project Design catalogue.');
     const validateFields=entry=>{
@@ -228,6 +228,17 @@ function validateCatalog(raw,installed=[],approved={}) {
             metric_catalog:metricCatalog(raw.courier.metric_catalog),
             ...(raw.courier.training_schema_sha256
                 ?{training_schema_sha256:raw.courier.training_schema_sha256}:{})};
+    }
+    if(raw.bees_native!==undefined) {
+        const entry=raw.bees_native;
+        if(!installed.includes('bees_native')||
+            !/^[0-9a-f]{64}$/.test(String(entry?.worker_sha256||''))||
+            !/^[0-9a-f]{64}$/.test(String(entry?.trainer_sha256||'')))
+            throw Error('Bees native Design defaults require pinned Unity worker and MA-POCA trainer SHA-256 values.');
+        result.bees_native={...validateFields(entry),
+            worker_sha256:entry.worker_sha256,
+            trainer_sha256:entry.trainer_sha256,
+            metric_catalog:metricCatalog(entry.metric_catalog)};
     }
     if(raw.tinybrains!==undefined) {
         const profiles=raw.tinybrains?.profiles;
