@@ -309,7 +309,14 @@ async function build(argv = process.argv.slice(2)) {
             buildId + '-' + target.folder.toLowerCase() + '.log',
         );
         const archive = path.join(root, target.archive);
+        const entrypoint=path.join(folder,target.entrypoint);
+        // Reject redirected/native build content before the ZIP packager can
+        // follow a symlink. Check again after packaging so the manifest never
+        // pins a player tree that changed while its archive was being written.
+        const playerTree=unityWorkerTreeSha256(entrypoint);
         packageBuild(python, folder, archive, target.entrypoint);
+        if(unityWorkerTreeSha256(entrypoint)!==playerTree)
+            throw Error('Unity worker files changed during archive packaging; no release was published.');
         const stat = fs.statSync(archive);
         artifacts.push({
             role: 'dedicated',
@@ -319,7 +326,7 @@ async function build(argv = process.argv.slice(2)) {
             entrypoint: target.entrypoint,
             archive_sha256: await sha256(archive),
             archive_bytes: stat.size,
-            player_tree_sha256: unityWorkerTreeSha256(path.join(folder,target.entrypoint)),
+            player_tree_sha256: playerTree,
         });
     }
 
