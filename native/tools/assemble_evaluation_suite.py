@@ -65,9 +65,14 @@ def physical_contract(config: dict) -> dict:
 
 def assemble(output: Path, source_paths: list[Path],
              training: bool = False, recovery: bool = False,
-             bootstrap_source: bool = False) -> dict:
+             bootstrap_source: bool = False,
+             worlds_per_source: int = 1) -> dict:
     if not 2 <= len(source_paths) <= 64:
         raise ValueError("native joint Level run requires 2..64 distinct sources")
+    if (type(worlds_per_source) is not int or not 1 <= worlds_per_source <= 1024 or
+            len(source_paths) * worlds_per_source > 16384):
+        raise ValueError("native Level suite needs 1..1024 persistent arenas per source, "
+                         "with no more than 16384 worlds total")
     if (recovery or bootstrap_source) and not training:
         raise ValueError("bootstrap-source and host recovery require a native training suite")
     source_paths = [path.resolve(strict=True) for path in source_paths]
@@ -130,6 +135,11 @@ def assemble(output: Path, source_paths: list[Path],
         stage = Path(temp) / "complete"
         stage.mkdir()
         count = 0
+        # The same authentic scene bytes may be used by many independent
+        # Worlds. Referencing ONE staged file per digest lets the existing
+        # native source template cache reuse the parsed physical Level;
+        # only World-owned physics state and RNG are allocated per replica.
+        staged_scenes = {}
         for path, run in zip(source_paths, runs):
             original_sha = file_sha256(path)
             recorded_levels = []
@@ -146,27 +156,45 @@ def assemble(output: Path, source_paths: list[Path],
                 scene = (path.parent / level["scene"]).resolve(strict=True)
                 if not scene.is_file() or scene.suffix.lower() != ".json":
                     raise ValueError(f"{path}: native Level scene must be a JSON source")
-                count += 1
-                # Two source Levels might use identical source IDs. Rebase
-                # ONLY the host identities, never physical ships/squads,
-                # weapons, objective targets, mission seeds or policy IDs.
-                authored = copy.deepcopy(level)
-                authored["world_id"] = count
-                authored["level_id"] = count
-                name = f"level-{count:04d}.scene.json"
-                shutil.copyfile(scene, stage / name)
                 scene_sha = file_sha256(scene)
-                if file_sha256(stage / name) != scene_sha:
-                    raise ValueError(f"{path}: scene changed during immutable suite authoring")
-                authored["scene"] = name
-                config["levels"].append(authored)
-                recorded_levels.append({
-                    "original_world_id": level.get("world_id"),
-                    "original_level_id": level.get("level_id"),
-                    "suite_world_id": count, "suite_level_id": count,
-                    "scene": name, "source_scene": str(scene),
-                    "scene_sha256": scene_sha, "episode_seeds": seeds,
-                })
+                name = staged_scenes.get(scene_sha)
+                if name is None:
+                    name = f"level-source-{len(staged_scenes) + 1:04d}.scene.json"
+                    shutil.copyfile(scene, stage / name)
+                    if file_sha256(stage / name) != scene_sha:
+                        raise ValueError(f"{path}: physical source changed during authoring")
+                    staged_scenes[scene_sha] = name
+                for replica in range(worlds_per_source):
+                    count += 1
+                    if count > (1 << 63) - 1:
+                        raise ValueError("native Level identity allocation exhausted")
+                    # Odd uint64 stride makes each persistent arena's seed
+                    # distinct without changing the canonical simulation RNG
+                    # implementation, reward algorithm or model policy.
+                    # Replica zero preserves EXACT supplied source seeds.
+                    offset = (replica * 0x9E3779B97F4A7C15) % (1 << 64)
+                    episode_seeds = [
+                        (value + offset) % (1 << 64) for value in seeds
+                    ]
+                    authored = copy.deepcopy(level)
+                    authored["world_id"] = count
+                    authored["level_id"] = count
+                    authored["scene"] = name
+                    if single_seed:
+                        authored["seed"] = episode_seeds[0]
+                    else:
+                        authored["episode_seeds"] = episode_seeds
+                    config["levels"].append(authored)
+                    recorded_levels.append({
+                        "source_replica": replica,
+                        "original_world_id": level.get("world_id"),
+                        "original_level_id": level.get("level_id"),
+                        "suite_world_id": count, "suite_level_id": count,
+                        "scene": name, "source_scene": str(scene),
+                        "scene_sha256": scene_sha,
+                        "source_episode_seeds": seeds,
+                        "episode_seeds": episode_seeds,
+                    })
             if file_sha256(path) != original_sha:
                 raise ValueError(f"{path}: source run changed during immutable authoring")
             source_receipts.append({
@@ -196,6 +224,8 @@ def assemble(output: Path, source_paths: list[Path],
                if training and not bootstrap_source else {}),
             "source_runs": source_receipts,
             "levels": count,
+            "worlds_per_source": worlds_per_source,
+            "distinct_physical_scene_templates": len(staged_scenes),
             "episodes_per_world": config["episodes_per_world"],
             "planned_episodes": count * config["episodes_per_world"],
             "native_run_sha256": file_sha256(stage / "run.json"),
@@ -225,11 +255,15 @@ def main() -> None:
     parser.add_argument("--bootstrap-source", action="store_true",
                         help="joint cold-start of uninitialized authentic policy Levels; "
                              "pass the assembled Run and its first scene to bootstrap_policy.py")
+    parser.add_argument("--worlds-per-source", type=int, default=1,
+                        help="persistent simulation arenas per authored source (1..1024); "
+                             "each uses a different deterministic fixed seed")
     args = parser.parse_args()
     print(json.dumps(assemble(
         args.output_dir, args.native_run_configs,
         training=args.training, recovery=args.host_recovery,
         bootstrap_source=args.bootstrap_source,
+        worlds_per_source=args.worlds_per_source,
     ), sort_keys=True), flush=True)
 
 
