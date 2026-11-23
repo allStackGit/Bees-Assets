@@ -5683,7 +5683,7 @@ pub fn connect_remote_with_trust(
                 &mut pixels,WIDTH,HEIGHT,&rows,&[1,2],
             );
         } else if show_battle_menu {
-            const ROWS:&[&str]=&[
+            let rows:&[&str]=&[
                 "BEES NATIVE / ONLINE BATTLE MENU",
                 "Esc or R: return to the live battle",
                 "H or F1: open multiplayer controls",
@@ -5691,11 +5691,17 @@ pub fn connect_remote_with_trust(
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
                 "Enter: ready match  Shift+F4: claim opponent forfeit after grace",
-                "Space: pause/resume",
-                "N: single step   F12: speed 1x/1.5x/2x",
+                if peer.time_control_authorized {
+                    "Space: pause/resume authoritative battle"
+                } else if peer.spectator {
+                    "Space: pause local soundtrack only"
+                } else { "Space: pause/resume" },
+                if peer.time_control_authorized {
+                    "N: single physical tick   F12: speed 1x/1.5x/2x"
+                } else { "No shared time control for this observer seat" },
             ];
             NativeSoftwareRenderer::draw_help_panel(
-                &mut pixels,WIDTH,HEIGHT,ROWS,&[0,6],
+                &mut pixels,WIDTH,HEIGHT,rows,&[0,6],
             );
         } else if show_codex {
             let known=codex_seen.iter().enumerate()
@@ -5778,7 +5784,9 @@ pub fn connect_remote_with_trust(
                 // local soundtrack and diagnostics, but no control exists
                 // to arm a source command or release a campaign briefing.
                 let observer_help = &[
-                    "AUTHENTICATED SPECTATOR - READ ONLY",
+                    if peer.time_control_authorized {
+                        "FISH TANK - NO FLEET COMMAND AUTHORITY"
+                    } else { "AUTHENTICATED SPECTATOR - READ ONLY" },
                     "Side-filtered battlefield and original fog of war",
                     "CAMERA / DISPLAY",
                     "Click a visible ship: follow it  |  Pan: stop following",
@@ -5790,7 +5798,9 @@ pub fn connect_remote_with_trust(
                     "NETWORK / AUDIO",
                     "F5: reconnect   F8: network measurements",
                     "F7: mute   F10/F11: effects   Shift+F10/F11: music",
-                    "Space: pause local soundtrack (not the live battle)",
+                    if peer.time_control_authorized {
+                        "Space: battle pause   N: single tick   F12: speed"
+                    } else { "Space: pause local soundtrack (not the battle)" },
                     "No fleet orders, surrender or campaign acknowledgments",
                     "Press F1 or Escape to close this panel",
                 ];
