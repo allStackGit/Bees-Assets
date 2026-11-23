@@ -79,6 +79,9 @@ struct WireCounts {
     lobby_ready_rejections: u64,
     lobby_wait_frames: u64,
     reconnect_wait_frames: u64,
+    forfeit_claim_requests: u64,
+    forfeit_claim_receipts: u64,
+    forfeit_claim_rejections: u64,
     speed_requests_sent: u64,
     speed_receipts: u64,
     orders_accepted: u64,
@@ -597,6 +600,9 @@ struct PeerClient {
     lobby_ready_pending: Option<(u64,u64,u64)>,
     lobby_ready_approved: Option<(u64,u64)>,
     lobby_ready_rejected: Option<(u64,u64)>,
+    /// Exact request ID for one pending server-adjudicated opponent absence.
+    /// Never persist or replay a client-side claimed winner.
+    forfeit_pending: Option<u64>,
     /// This commander's own time-control vote, not the shared pause state.
     /// It is cleared on reconnect and World turnover.
     pause_owned: bool,
@@ -676,6 +682,7 @@ impl PeerClient {
             briefing_rejected: None,
             lobby_ready_pending: None, lobby_ready_approved: None,
             lobby_ready_rejected: None,
+            forfeit_pending: None,
             pause_owned: false, pause_pending: None, step_pending: None,
             speed_pending: None, inspection_pending: None,
             inspection_result: None, pause_episode: None,
@@ -820,6 +827,7 @@ impl PeerClient {
                         self.lobby_ready_pending = None;
                         self.lobby_ready_approved = None;
                         self.lobby_ready_rejected = None;
+                        self.forfeit_pending = None;
                         self.pause_owned = false;
                         self.pause_pending = None;
                         self.step_pending = None;
@@ -1254,6 +1262,11 @@ impl PeerClient {
                         }
                     }
                     self.metrics.acknowledgments+=1;
+                    if self.forfeit_pending == Some(request) {
+                        self.forfeit_pending = None;
+                        self.metrics.forfeit_claim_receipts += 1;
+                        if !processed { self.metrics.forfeit_claim_rejections += 1; }
+                    }
                     if processed {self.metrics.orders_accepted+=1;}
                     else {self.metrics.orders_rejected+=1;}
                     if self.held_fire_begin_request == Some(request) {
@@ -1411,6 +1424,28 @@ impl PeerClient {
         }), "Ready for the authoritative match; waiting for other side".into())?;
         self.lobby_ready_pending=Some((world,revision,id));
         self.metrics.lobby_ready_requests_sent+=1;
+        Ok(())
+    }
+
+    /// Ask the original authoritative host to decide whether the missing
+    /// opponent has exceeded its grace. No client-provided timeout or side.
+    fn request_forfeit(&mut self) -> Result<(), Box<dyn Error>> {
+        if !self.authenticated || !self.connected || self.spectator ||
+            self.forfeit_pending.is_some() {
+            return Err(invalid("forfeit requires an idle authenticated player").into());
+        }
+        let (world,revision)=self.state.as_ref().and_then(|state| {
+            if state["forfeit_claim_available"] != true { return None; }
+            Some((state["world_id"].as_u64()?,
+                  state["episode_revision"].as_u64()?))
+        }).ok_or_else(||invalid("opponent forfeit is not available"))?;
+        let request=self.next_request;
+        self.enqueue_request(json!({
+            "kind":"claim_forfeit", "world_id":world,
+            "episode_revision":revision,
+        }),"Requesting server adjudication of absent opponent".into())?;
+        self.forfeit_pending=Some(request);
+        self.metrics.forfeit_claim_requests += 1;
         Ok(())
     }
 
@@ -3663,6 +3698,14 @@ pub fn connect_remote(
             }
         }
         if !show_controls_help && !peer.spectator &&
+            !show_battle_menu && surrender_confirmation.is_none() &&
+            window.is_key_down(Key::LeftShift) &&
+            window.is_key_pressed(Key::F4,KeyRepeat::No) {
+            if let Err(error)=peer.request_forfeit() {
+                peer.notice=error.to_string();
+            }
+        }
+        if !show_controls_help && !peer.spectator &&
             window.is_key_pressed(Key::F12,KeyRepeat::No)
         {
             if let Some((world,revision))=peer.state.as_ref().and_then(|state|Some((
@@ -4152,7 +4195,9 @@ pub fn connect_remote(
                 }
             }
         } else if !menu_action_consumed && window.is_active() &&
-            window.is_key_pressed(Key::F4,KeyRepeat::No) {
+            window.is_key_pressed(Key::F4,KeyRepeat::No) &&
+            !window.is_key_down(Key::LeftShift) &&
+            !window.is_key_down(Key::RightShift) {
             surrender_confirmation=surrender_owner;
         }
         peer.input_suppressed |= surrender_confirmation.is_some();
@@ -5188,9 +5233,12 @@ pub fn connect_remote(
                 .map_or_else(String::new,|sides|
                     sides.iter().filter_map(|side|side.as_i64())
                         .map(|side|side.to_string()).collect::<Vec<_>>().join(", "));
+            let hint=if state["forfeit_claim_available"]==true {
+                " - Shift+F4: claim forfeit (host adjudicates)"
+            } else { " - reconnection grace active" };
             text::draw_at(&mut pixels,WIDTH,12,HEIGHT-96,
                 text::fit(&format!(
-                    "MATCH PAUSED: waiting for disconnected commander - connected sides: {connected}"
+                    "MATCH PAUSED: waiting for disconnected commander - connected sides: {connected}{hint}"
                 ),FIELD-22),1,[255,211,130]);
         }
         if peer.state.as_ref().is_some_and(|state|
@@ -5231,7 +5279,8 @@ pub fn connect_remote(
                 "C or F2: inspect the Fleet Codex",
                 "S: request surrender (commander only; confirmation required)",
                 "Q: disconnect from the host and close this window",
-                "Enter: ready two-player match   Space: pause/resume",
+                "Enter: ready match  Shift+F4: claim opponent forfeit after grace",
+                "Space: pause/resume",
                 "N: single step   F12: speed 1x/1.5x/2x",
             ];
             NativeSoftwareRenderer::draw_help_panel(
@@ -5305,7 +5354,8 @@ pub fn connect_remote(
                 "T: point fire   Hold J: fire   J+B or W: range+fire   X: stop",
                 "Shift+Q/W/E/R/T/Y/U/I/O/P: source tactical orders",
                 "NETWORK / AUDIO",
-                "F4: surrender   F5: reconnect   F8: network measurements",
+                "F4: surrender   Shift+F4: claim forfeiture   F5: reconnect",
+                "F8: network measurements",
                 "F7: mute   F10/F11: effects   Shift+F10/F11: music",
                 "Enter: ready two-player match   Space: shared pause",
                 "N: single tick   F12: game speed 1x/1.5x/2x",
@@ -5466,6 +5516,9 @@ pub fn connect_remote(
         "lobby_ready_rejections":peer.metrics.lobby_ready_rejections,
         "lobby_wait_frames":peer.metrics.lobby_wait_frames,
         "reconnect_wait_frames":peer.metrics.reconnect_wait_frames,
+        "forfeit_claim_requests":peer.metrics.forfeit_claim_requests,
+        "forfeit_claim_receipts":peer.metrics.forfeit_claim_receipts,
+        "forfeit_claim_rejections":peer.metrics.forfeit_claim_rejections,
         "orders_accepted":peer.metrics.orders_accepted,
         "orders_rejected":peer.metrics.orders_rejected,
         "order_ack_latency_samples":peer.metrics.order_ack_latency_samples,
