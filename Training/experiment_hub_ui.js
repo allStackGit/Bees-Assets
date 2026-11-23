@@ -3935,6 +3935,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsStage=document.createElement('select');
     const tinyBrainsCustomMaps=document.createElement('input');
     const tinyBrainsMapSelect=document.createElement('select');
+    const tinyBrainsOpponentFields=document.createElement('div');
+    tinyBrainsOpponentFields.className='hub-training-opponent-pool';
     tinyBrainsCustomMaps.type='checkbox';
     tinyBrainsMapSelect.multiple=true;
     tinyBrainsMapSelect.size=10;
@@ -4051,6 +4053,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(current.profile===profile&&current.profile_sha256===digest&&
                 Array.isArray(current.training_map_ids)
                 ?{training_map_ids:current.training_map_ids}:{}),
+            ...(current.profile===profile&&current.profile_sha256===digest&&
+                Array.isArray(current.training_opponent_ids)
+                ?{training_opponent_ids:current.training_opponent_ids}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
                 current.design_overrides?{design_overrides:current.design_overrides,
                     design_source_sha256:current.design_source_sha256}:{}),
@@ -4320,6 +4325,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw Error('Choose one or more verified training maps from the approved list.');
                 parameters.training_map_ids=selection;
             }else delete parameters.training_map_ids;
+            const available=choice.entry.opponent_catalog||[];
+            if(available.length) {
+                const chosen=[...tinyBrainsOpponentFields.querySelectorAll('input[data-training-opponent]')]
+                    .filter(input=>input.checked).map(input=>input.value);
+                if(!chosen.length||chosen.length>16||
+                    chosen.some(id=>!available.some(row=>row.id===id)))
+                    throw Error('Choose at least one installed, verified training opponent.');
+                parameters.training_opponent_ids=chosen;
+                // Pins are re-derived by the Hub, never authored by the UI.
+                delete parameters.training_opponent_pins;
+            }
         }
         for(const input of runControls) {
             const key=input.dataset.designRun;
@@ -4364,6 +4380,7 @@ document.addEventListener('DOMContentLoaded', () => {
             machine:chosen?.machine?.id||null,
             fields:chosen?.entry?.fields||null,
             map_catalog:chosen?.entry?.map_catalog||null,
+            opponent_catalog:chosen?.entry?.opponent_catalog||null,
             config_sha256:chosen?.entry?.config_sha256||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
@@ -4425,6 +4442,34 @@ document.addEventListener('DOMContentLoaded', () => {
             customLabel.append(note);
             customLabel.hidden=!catalogue.length;
             $('hub-design-environment').append(manual,customLabel);
+            const roster=document.createElement('fieldset');
+            const legend=document.createElement('legend');
+            legend.textContent='Training opponents';
+            roster.append(legend);
+            tinyBrainsOpponentFields.replaceChildren();
+            const available=entry.opponent_catalog||[];
+            const selectedOpponents=new Set(parameters.training_opponent_ids||
+                ['frozen','current']);
+            for(const row of available) {
+                const label=document.createElement('label');
+                label.className='hub-toggle-row';
+                const input=document.createElement('input');
+                input.type='checkbox';
+                input.dataset.trainingOpponent='1';
+                input.value=row.id;
+                input.checked=selectedOpponents.has(row.id);
+                input.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                label.append(input,document.createTextNode(' '+row.label));
+                tinyBrainsOpponentFields.append(label);
+            }
+            roster.append(tinyBrainsOpponentFields);
+            const hint=document.createElement('small');
+            hint.textContent='Opponent IDs and model hashes are frozen with the saved training Design. Current and adaptive frozen snapshots are training-only choices; named networks can also be inherited by independent evaluations.';
+            roster.append(hint);
+            $('hub-design-environment').append(roster);
         }
         if(project==='courier') {
             const instructions=document.createElement('p');
