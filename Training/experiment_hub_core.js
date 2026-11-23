@@ -8147,6 +8147,13 @@ class ExperimentHub {
         }
         if(parent) {
             if(project.id==='bees_native') {
+                if((parent.frozen_parameters?.wan_actors||0)>0||
+                    (frozen.wan_actors||0)>0) {
+                    if(!(parent.frozen_parameters?.wan_actors>0&&frozen.wan_actors>0)||
+                        parent.frozen_parameters.worker_payload_sha256!==frozen.worker_payload_sha256||
+                        parent.frozen_parameters.wan_key_fingerprint!==frozen.wan_key_fingerprint)
+                        throw Error('WAN checkpoint continuation must keep identical Unity content and broker key across the original lineage.');
+                }
                 for(const key of ['worker_sha256','trainer_sha256','runtime_version','seed']) {
                     if(parent.frozen_parameters?.[key]!==frozen[key])
                         throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
