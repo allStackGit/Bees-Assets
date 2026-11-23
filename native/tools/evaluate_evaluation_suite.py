@@ -59,7 +59,7 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                 result.get("model_manifest_sha256") != manifest_sha or
                 result.get("learner_side") != learner_side or
                 result.get("policy_sampling_seed") != seed or
-                file_sha256(result_path) != file_sha256(result_path)):
+                not result_path.is_file()):
             raise ValueError(f"heterogeneous holdout scenario {index} is unverified")
         results.append({
             "scenario": index,
