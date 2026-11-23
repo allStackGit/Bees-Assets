@@ -149,7 +149,12 @@ const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     ...[1,2,3,4,5,6].flatMap(players=>[
         'evaluation_score_rate_'+players+'p',
         'evaluation_timeout_rate_'+players+'p',
-    ])]);
+    ]),
+    ...[32,64,128,256].flatMap(size=>[
+        'evaluation_score_rate_map'+size,
+        'evaluation_timeout_rate_map'+size,
+    ]),
+    'evaluation_score_rate_pursuit','evaluation_score_rate_strafe']);
 
 function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot}) {
     if(process.platform!=='linux')
