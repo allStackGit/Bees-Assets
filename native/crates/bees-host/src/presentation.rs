@@ -45,7 +45,7 @@ pub use battle_menu::{
     NativeTransferMenuRow, NativeCreateSquadMenuRow, NativeDeleteSquadMenuRow,
     NativeTacticsMenuRow, NativeNameMenuRow, NativeNameTarget,
     NativeCampaignMenuStats, NativeCampaignDebrief, select_battle, select_library,
-    show_campaign_intermission, show_campaign_debrief,
+    show_audio_settings, show_campaign_intermission, show_campaign_debrief,
 };
 pub use software::{NativeCamera, NativeSoftwareRenderer, NativeRenderCounts};
 pub(crate) use software::projectile_splash;

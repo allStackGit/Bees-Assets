@@ -464,6 +464,95 @@ pub fn show_campaign_intermission(
     Ok(false)
 }
 
+/// Use the same live mixer and preferences as the battle clients.
+pub fn show_audio_settings(audio: &mut NativeGameAudio) -> Result<(), minifb::Error> {
+    let mut window = Window::new("Bees | Audio Settings", WIDTH, HEIGHT, WindowOptions {
+        resize: true,
+        scale_mode: ScaleMode::AspectRatioStretch,
+        ..WindowOptions::default()
+    })?;
+    window.set_target_fps(30);
+    let mut pixels = vec![0; WIDTH * HEIGHT];
+    let mut selected = 0usize;
+    let mut mouse_down = false;
+    const FIRST_ROW: usize = 132;
+    const STRIDE: usize = 66;
+    const BAR_START: usize = 340;
+    const BAR_END: usize = 655;
+
+    while window.is_open() && !window.is_key_pressed(Key::Escape, KeyRepeat::No) {
+        if window.is_key_pressed(Key::Up, KeyRepeat::Yes) {
+            selected = selected.saturating_sub(1);
+        } else if window.is_key_pressed(Key::Down, KeyRepeat::Yes) ||
+            window.is_key_pressed(Key::Tab, KeyRepeat::No)
+        {
+            selected = (selected + 1) % 3;
+        }
+        let left = window.get_mouse_down(MouseButton::Left);
+        let mut activate = window.is_key_pressed(Key::Enter, KeyRepeat::No) ||
+            window.is_key_pressed(Key::Space, KeyRepeat::No);
+        if left && !mouse_down {
+            if let Some((x, y)) = super::virtual_window_mouse(&window, WIDTH, HEIGHT) {
+                let y = y as usize;
+                if (125.0..675.0).contains(&x) && (FIRST_ROW..FIRST_ROW + STRIDE * 3).contains(&y) {
+                    let row = (y - FIRST_ROW) / STRIDE;
+                    if (y - FIRST_ROW) % STRIDE < 46 {
+                        selected = row;
+                        if row == 2 {
+                            activate = true;
+                        } else if (BAR_START as f32..=BAR_END as f32).contains(&x) {
+                            let ratio = (x - BAR_START as f32) / (BAR_END - BAR_START) as f32;
+                            audio.set_level(row == 0, (ratio * 10.0).round() / 10.0);
+                            if row == 1 { audio.click_ui(); }
+                        }
+                    }
+                }
+            }
+        }
+        mouse_down = left;
+        if selected == 2 {
+            if activate { audio.toggle_muted(); }
+        } else {
+            let delta = if window.is_key_pressed(Key::Left, KeyRepeat::Yes) { -0.1 }
+                else if window.is_key_pressed(Key::Right, KeyRepeat::Yes) { 0.1 }
+                else { 0.0 };
+            if delta != 0.0 {
+                audio.adjust_levels(selected == 0, delta);
+                if selected == 1 { audio.click_ui(); }
+            }
+        }
+
+        let settings = audio.measurements();
+        let levels = [settings.music_level, settings.effects_level];
+        pixels.fill(0x080e19);
+        text::draw_centered(&mut pixels, WIDTH, 51, "Audio Settings", 2, TEXT);
+        for (row, label) in ["Music", "Sound effects", "Mute all audio"].iter().enumerate() {
+            let y = FIRST_ROW + row * STRIDE;
+            for line in y..y + 46 {
+                pixels[line * WIDTH + 125..line * WIDTH + 675]
+                    .fill(if selected == row { 0x263c59 } else { 0x152234 });
+            }
+            text::draw_at(&mut pixels, WIDTH, 146, y + 14, label, 1, TEXT);
+            if let Some(&level) = levels.get(row) {
+                let end = BAR_START + ((BAR_END - BAR_START) as f32 * level) as usize;
+                for line in y + 31..y + 36 {
+                    pixels[line * WIDTH + BAR_START..line * WIDTH + BAR_END].fill(0x101a2a);
+                    pixels[line * WIDTH + BAR_START..line * WIDTH + end].fill(0x69a7d4);
+                }
+                let percent = format!("{}%", (level * 100.0).round() as u32);
+                text::draw_at(&mut pixels, WIDTH, BAR_START, y + 9, &percent, 1, TEXT);
+            } else {
+                let label = if settings.muted { "On" } else { "Off" };
+                text::draw_at(&mut pixels, WIDTH, BAR_START, y + 14, label, 1, TEXT);
+            }
+        }
+        text::draw_centered(&mut pixels, WIDTH, 385,
+            "Up / Down select   Left / Right adjust   Enter toggle mute   Esc return", 1, MUTED);
+        window.update_with_buffer(&pixels, WIDTH, HEIGHT)?;
+    }
+    Ok(())
+}
+
 pub fn select_battle(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
     fleet_rows: &[String], squad_rows: &[String],

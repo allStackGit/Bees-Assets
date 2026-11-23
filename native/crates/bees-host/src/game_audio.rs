@@ -402,12 +402,17 @@ impl NativeGameAudio {
     /// Levels affect existing sinks and every subsequently started clip.
     /// Muting never destroys the user's chosen channel levels.
     pub fn adjust_levels(&mut self, music: bool, delta: f32) -> f32 {
+        let level = if music { self.music_level } else { self.effects_level };
+        self.set_level(music, (level * 10.0).round() / 10.0 + delta)
+    }
+
+    pub fn set_level(&mut self, music: bool, value: f32) -> f32 {
         let level = if music { &mut self.music_level } else { &mut self.effects_level };
-        if delta.is_finite() {
-            *level = ((*level * 10.0).round() / 10.0 + delta)
-                .clamp(0.0, 1.0);
+        if !value.is_finite() || *level == value.clamp(0.0, 1.0) {
+            return *level;
         }
-        let updated = *level;
+        let updated = value.clamp(0.0, 1.0);
+        *level = updated;
         self.apply_levels();
         self.record_preferences();
         updated

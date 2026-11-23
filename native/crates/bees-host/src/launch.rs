@@ -6783,11 +6783,16 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             },
             unlocked: original_assets_ready,
         });
+        let audio_settings_index = rows.len();
+        rows.push(BattleMenuRow { title: "Audio Settings", status: "", unlocked: true });
         menu_audio.load_preferences(audio_preferences.clone());
         menu_audio.play_menu_music();
-        let selection = select_library(&rows, &mut selected, launch_failed);
+        let Some(index) = select_library(&rows, &mut selected, launch_failed)? else { break };
+        if index == audio_settings_index {
+            bees_host::presentation::show_audio_settings(&mut menu_audio)?;
+            continue;
+        }
         menu_audio.set_paused(true);
-        let Some(index) = selection? else { break };
         let creating_fleet = index == fleet_builder_index;
         let reusing_fleet = index == saved_fleet_index;
         let reusing_level = index == saved_level_index;
