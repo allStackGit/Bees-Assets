@@ -177,6 +177,12 @@ def author_collection(source_manifest: Path, destination: Path,
             published = publish_original_campaign(
                 stage, original_campaign_options,
             )
+            # The publisher joins the authentic career and post-campaign
+            # modes to the root menu. Keep the returned source receipts
+            # aligned with the updated immutable menu bytes.
+            suite["native_game_libraries"][0]["sha256"] = (
+                published["native_library_sha256"]
+            )
             suite["original_campaign"] = published
         sync_directory(stage)
         if destination.exists() or destination.is_symlink():
@@ -302,6 +308,47 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
     library_path = published / "library.json"
     if not catalog_path.is_file() or not library_path.is_file():
         raise ValueError("original native campaign publisher did not commit its catalog")
+    # The main native menu reads ONE library.json-style document. Mount
+    # the already-packaged original career and its source-backed unlocked
+    # modes into the same root collection as the real encounters.
+    # Prefix only library-relative config paths: the game's actual
+    # Run/scene assets and campaign persistence remain owned by the
+    # canonical author_campaign.py package.
+    menu_path = collection / "native-library.json"
+    menu = json.loads(menu_path.read_text(encoding="utf-8"))
+    campaign_menu = json.loads(library_path.read_text(encoding="utf-8"))
+    if (menu.get("library_schema") != 1 or
+            campaign_menu.get("library_schema") != 1 or
+            not isinstance(menu.get("games"), list) or
+            not isinstance(campaign_menu.get("games"), list) or
+            not campaign_menu["games"]):
+        raise ValueError("original campaign or encounter library is invalid")
+    mounted = []
+    for item in campaign_menu["games"]:
+        if (not isinstance(item, dict) or
+                not isinstance(item.get("id"), str) or not item["id"] or
+                not isinstance(item.get("config"), str) or not item["config"]):
+            raise ValueError("original authored campaign library has an invalid entry")
+        reference = Path(item["config"])
+        if (reference.is_absolute() or
+                not all(part not in ("", ".", "..") for part in reference.parts)):
+            raise ValueError("original campaign library config path must remain inside its package")
+        mounted.append({
+            **item,
+            "config": (Path("original-campaign") / reference).as_posix(),
+        })
+    all_games = [*mounted, *menu["games"]]
+    if (len(all_games) > 100 or
+            len({item.get("id") for item in all_games}) != len(all_games)):
+        raise ValueError("native root game menu has duplicate IDs or exceeds 100 entries")
+    atomic_json(menu_path, {"library_schema": 1, "games": all_games})
+    collection_receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    collections = collection_receipt.get("native_game_libraries")
+    if (not isinstance(collections, list) or not collections or
+            collections[0].get("path") != "native-library.json"):
+        raise ValueError("original campaign collection lost its pinned root game library")
+    collections[0]["sha256"] = file_sha256(menu_path)
+    atomic_json(receipt_path, collection_receipt)
     result = {
         "schema_version": 1,
         "kind": "native_original_campaign_source_collection_published",
@@ -312,6 +359,9 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
         "campaign_sha256": file_sha256(catalog_path),
         "library": "original-campaign/library.json",
         "library_sha256": file_sha256(library_path),
+        "native_library": "native-library.json",
+        "native_library_sha256": file_sha256(menu_path),
+        "native_library_games": len(all_games),
         "missions": len(mission_paths),
     }
     atomic_json(collection / "campaign-link-receipt.json", result)
