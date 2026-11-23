@@ -183,16 +183,71 @@ def source_inputs(suite_file: Path, suite: dict):
         if (not isinstance(snapshot, dict) or
                 not isinstance(snapshot.get("ships"), list)):
             raise ValueError("Native evaluation requires physical policy-controlled ships.")
+        captured_unity = (
+            snapshot.get("schema_version") == 35 and
+            snapshot.get("native_game_schema") is None
+        )
+        source_members = {}
+        if captured_unity:
+            episode = snapshot.get("policy_episode")
+            if (snapshot.get("has_policy_episode") is not True or
+                    not isinstance(episode, dict) or
+                    not isinstance(episode.get("group_participants"), list) or
+                    episode.get("episode_number", 0) <= 0):
+                raise ValueError(
+                    "Original source holdout must have authentic or explicitly "
+                    "native-authored episode and group provenance"
+                )
+            for member in episode["group_participants"]:
+                if (not isinstance(member, dict) or
+                        type(member.get("ship_id")) is not int or
+                        type(member.get("side")) is not int or
+                        type(member.get("team_id")) is not int or
+                        type(member.get("agent_id")) is not int or
+                        member["agent_id"] <= 0):
+                    raise ValueError("Original source group contains an invalid policy Agent")
+                key = member["ship_id"]
+                if key in source_members:
+                    raise ValueError("Original source group has duplicate physical Agent ownership")
+                source_members[key] = member
         teams_by_side = {}
+        bound_sources = set()
         for ship in snapshot["ships"]:
             if not isinstance(ship, dict):
                 raise ValueError("Native evaluation has an invalid source ship.")
             policy = ship.get("policy")
-            if policy is None:
-                continue
-            if not isinstance(policy, dict):
-                raise ValueError("Native evaluation has an invalid source policy controller.")
-            teams_by_side.setdefault(ship.get("side"), set()).add(policy.get("team_id"))
+            if captured_unity:
+                if policy is not None:
+                    raise ValueError("Original physical importer does not accept native-game policy fields")
+                if ship.get("has_bound_policy") is not True:
+                    continue
+                ship_id, side, team = (
+                    ship.get("entity_id"), ship.get("side"),
+                    ship.get("policy_team_id"),
+                )
+                member = source_members.get(ship_id)
+                if (ship.get("is_rl_policy_controlled") is not True or
+                        member is None or member.get("side") != side or
+                        member.get("team_id") != team or
+                        team not in (0, 1)):
+                    raise ValueError(
+                        "Original holdout policy controller differs from "
+                        "its physical registered group Agent"
+                    )
+                bound_sources.add(ship_id)
+            else:
+                if policy is None:
+                    continue
+                if not isinstance(policy, dict):
+                    raise ValueError("Native evaluation has an invalid source policy controller.")
+                side, team = ship.get("side"), policy.get("team_id")
+            if side not in (1, 2) or type(team) is not int or team not in (0, 1):
+                raise ValueError("Physical policy Agent has invalid team or faction")
+            teams_by_side.setdefault(side, set()).add(team)
+        if captured_unity and (
+                not bound_sources or
+                set(source_members) != bound_sources):
+            raise ValueError("Original holdout has detached or unbound group participants")
         if not teams_by_side.get(suite["learner_side"]):
             raise ValueError(
                 f"Native evaluation {name} has no real learner-side policy agents."
