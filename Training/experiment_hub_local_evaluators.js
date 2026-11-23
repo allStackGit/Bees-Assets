@@ -405,14 +405,39 @@ async function properties(unit) {
     return Object.fromEntries(output.trim().split(/\r?\n/)
         .map(line=>[line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
 }
+function definitionsForStatus(options) {
+    return definitions(options);
+}
 async function status(hub) {
     let options;
     try { options=localOptions(hub); }
     catch(error) {
         return {available:false,reason:String(error.message||error),entries:[]};
     }
-    const entries=[];
-    for(const id of scheduledIds(options)) {
+    const ids=scheduledIds(options),entries=[];
+    // One managed batch of systemd observations is enough for all evaluators.
+    // Status UI polling must not launch two processes per archived opponent.
+    const installed=ids.map(id=>({id,...unitFiles(options,id)}))
+        .filter(item=>fs.existsSync(item.serviceFile)&&fs.existsSync(item.timerFile));
+    let propertiesByUnit=new Map(),statusError=null;
+    if(installed.length) {
+        try {
+            const units=installed.flatMap(item=>[item.timer,item.service]);
+            const result=await systemctl(['show','--no-pager',
+                '--property=Id,LoadState,ActiveState,Result,ExecMainStatus,ExecMainExitTimestamp',
+                ...units]);
+            for(const block of result.trim().split(/\r?\n\r?\n/)) {
+                const fields=Object.fromEntries(block.split(/\r?\n/).filter(line=>
+                    line.includes('=')).map(line=>
+                    [line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
+                if(fields.Id)propertiesByUnit.set(fields.Id,fields);
+            }
+        }catch(error){statusError=error;}
+    }
+    let definitions=null,definitionError=null;
+    if(installed.length)try {definitions=definitionsForStatus(options);}
+    catch(error){definitionError=error;}
+    for(const id of ids) {
         const names=unitFiles(options,id);
         const serviceExists=fs.existsSync(names.serviceFile);
         const timerExists=fs.existsSync(names.timerFile);
@@ -422,11 +447,12 @@ async function status(hub) {
         let active=false,running=false,lastResult=null,lastError=null;
         if(installed) {
             try {
-                const defs=definitions(options);
-                approvedUnit(options,id,defs[id]);
-                const [timer,service]=await Promise.all([
-                    properties(names.timer),properties(names.service),
-                ]);
+                if(definitionError)throw definitionError;
+                if(statusError)throw statusError;
+                approvedUnit(options,id,definitions[id]);
+                const timer=propertiesByUnit.get(names.timer);
+                const service=propertiesByUnit.get(names.service);
+                if(!timer||!service)throw Error('Evaluator systemd status is incomplete.');
                 managed=timer.LoadState==='loaded'&&service.LoadState==='loaded';
                 active=timer.ActiveState==='active';
                 running=service.ActiveState==='activating'||service.ActiveState==='active';
