@@ -108,20 +108,22 @@ function projectVersion() {
     return match[1];
 }
 
-// A first Unity import generates .meta for tracked Hub tooling (including
-// standalone .NET helper projects). Only files whose metadata was ABSENT at
-// build entry can be excluded. Existing metadata, the actual source files,
-// and all Unity gameplay/C# metadata remain part of the immutable snapshot.
+// Unity generates .meta for tracked, non-game Hub tooling and external .NET
+// helper projects. Their auto-GUIDs are not source inputs for the game.
+// Exclude only metadata paths that are themselves NOT tracked in Git;
+// tracked Unity/game metadata and actual source always retain their source
+// identity, even on subsequent builds after the first Editor import.
 function initialToolMetadata() {
     const result=runSync('git',['ls-files','-z','--','Training'],{
         cwd:paths.assetsRoot,timeout:30000,maxBuffer:16*1024*1024,check:false,
     });
     if(result.status!==0)
         throw Error('Cannot inspect tracked tooling before Unity compilation.');
+    const tracked=new Set(String(result.stdout||'').split('\0').filter(Boolean));
     const ignored=new Set();
     const externalDirs=['experiment_hub_windows_owner',
         'experiment_hub_windows_service','experiment_legacy_evaluator','systemd'];
-    for(const name of String(result.stdout||'').split('\0')) {
+    for(const name of tracked) {
         const standalone=externalDirs.some(dir=>name.startsWith('Training/'+dir+'/'));
         if(!standalone&&
             !/^Training\/[^/]+\.(?:js|py|md|svg|html|json|sh|cmd|ps1)$/i.test(name)&&
@@ -138,8 +140,7 @@ function initialToolMetadata() {
         }
         for(const candidate of candidates) {
             const meta=candidate+'.meta';
-            if(!fs.existsSync(path.join(paths.assetsRoot,meta)))
-                ignored.add(meta);
+            if(!tracked.has(meta))ignored.add(meta);
         }
     }
     return ignored;
