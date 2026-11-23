@@ -93,6 +93,8 @@ pub struct RemoteSocket {
 }
 
 impl RemoteSocket {
+    pub fn is_tls(&self) -> bool { self.tls.is_some() }
+
     pub fn plain(tcp: TcpStream) -> Self {
         Self { tcp, tls: None }
     }
