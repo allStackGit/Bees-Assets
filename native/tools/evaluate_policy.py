@@ -19,6 +19,7 @@ from native_training_artifacts import (file_sha256, sync_directory, atomic_json,
                                        native_input_dependencies,
                                        check_native_input_dependencies,
                                        native_headless_environment,
+                                       native_cargo_release_args,
                                        native_manifest_model_dependencies)
 
 
@@ -345,8 +346,9 @@ def evaluate(source_path, manifest, output, learner_side, binary, policy_seed,
         cargo = shutil.which("cargo")
         if cargo is None:
             raise ValueError("cargo is unavailable; provide --rollout-binary")
-        command = [cargo, "run", "--release", "--manifest-path",
-                   str(Path(__file__).resolve().parents[1] / "Cargo.toml"),
+        project = Path(__file__).resolve().parents[1] / "Cargo.toml"
+        command = [cargo, "run", "--release", *native_cargo_release_args(project.parents[1]),
+                   "--manifest-path", str(project),
                    "-p", "bees-host", "--example", "policy_rollout", "--", str(generated)]
     else:
         command = [str(binary.resolve(strict=True)), str(generated)]

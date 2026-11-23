@@ -33,7 +33,7 @@ from native_training_artifacts import (
     verified_source_scene_cache, combined_source_scene_cache,
     native_manifest_model_dependencies, combined_rollout_lifecycle_metrics,
     verified_physics_collision_work, combined_physics_collision_work,
-    RolloutProcessSampler,
+    RolloutProcessSampler, native_cargo_release_args,
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths, verify_bundle_files
@@ -1669,7 +1669,8 @@ def main() -> None:
     else:
         project = Path(__file__).resolve().parents[1] / "Cargo.toml"
         command = [
-            "cargo", "run", "--release", "--manifest-path", str(project),
+            "cargo", "run", "--release", *native_cargo_release_args(project.parents[1]),
+            "--manifest-path", str(project),
             "-p", "bees-host", "--example", "policy_rollout", "--",
         ]
 

@@ -19,7 +19,8 @@ import tempfile
 
 import numpy as np
 
-from native_training_artifacts import atomic_json, file_sha256, sync_directory
+from native_training_artifacts import (atomic_json, file_sha256, sync_directory,
+                                       native_cargo_release_args)
 from native_training_holdout import write_native_holdout
 from policy_worker import checked_manifest, install_bees_actor, mlagents_behavior_spec
 
@@ -348,11 +349,12 @@ def bootstrap(output: Path, trainer_config: Path, seed: int, slots: list[int],
     # Generate the frozen ABI signature from Rust itself. Never duplicate the
     # long observation/action signature in Python or the training config.
     manifest = output / "manifest.json"
+    release_args = native_cargo_release_args(ROOT) if not manifest_binary.is_file() else []
     command = (
         [str(manifest_binary), str(slot_file), str(manifest)]
         if manifest_binary.is_file()
         else [
-            cargo, "run", "--locked", "--quiet", "--manifest-path",
+            cargo, "run", *(release_args or ["--locked"]), "--quiet", "--manifest-path",
             str(ROOT / "native" / "Cargo.toml"),
             "-p", "bees-host", "--example", "policy_manifest", "--",
             str(slot_file), str(manifest),

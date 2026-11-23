@@ -93,6 +93,36 @@ def read_pinned_rollout_list(filename, digest):
     return result
 
 
+def native_cargo_release_args(root: Path) -> list[str]:
+    """Keep Cargo build products out of an immutable training installation."""
+    marker = root / "manifest.json"
+    try:
+        release_bytes = marker.read_bytes()
+    except FileNotFoundError:
+        return []
+    release = json.loads(release_bytes)
+    if (not isinstance(release, dict) or
+            release.get("format") != "bees-native-game-package" or
+            release.get("training_runtime") is not True):
+        return []
+    # The manifest pins the installed workspace, lockfile, and Rust sources.
+    # Different releases cannot reuse build output with preserved mtimes.
+    args = ["--locked"]
+    if os.environ.get("CARGO_TARGET_DIR"):
+        return args
+    if os.name == "nt":
+        configured = os.environ.get("LOCALAPPDATA")
+        default = Path.home() / "AppData" / "Local"
+    else:
+        configured = os.environ.get("XDG_CACHE_HOME")
+        default = Path.home() / ".cache"
+    base = Path(configured) if configured else default
+    if not base.is_absolute():
+        base = default
+    digest = hashlib.sha256(release_bytes).hexdigest()
+    return args + ["--target-dir", str(base / "bees-native" / "training-builds" / digest)]
+
+
 def native_headless_environment():
     """Keep collector/evaluator subprocesses out of live multiplayer mode.
 
