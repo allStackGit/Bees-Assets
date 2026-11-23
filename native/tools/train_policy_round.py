@@ -37,7 +37,9 @@ from native_training_artifacts import (
 )
 from native_distributed_collection import verify_bundle, aggregate_collection_metrics
 from transfer_policy_bundle import artifact_paths, verify_bundle_files
-from native_windows_rollout_job import NativeWindowsRolloutJob
+from native_windows_rollout_job import (
+    NativeWindowsRolloutJob, stop_unassigned_windows_process,
+)
 from native_gpu_allocation import (
     parse_rollout_gpus, validate_gpu_allocation, validate_leased_gpu_inference,
     rollout_worker_environment,
@@ -631,20 +633,7 @@ def stop_parallel_rollout_workers(processes, windows_jobs=None):
                 continue
             # Fallback applies only before a job was successfully assigned.
             # An attachment error aborts collection; never report success.
-            try:
-                result = subprocess.run(
-                    ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    check=False, timeout=5,
-                )
-                if result.returncode != 0 and process.poll() is None:
-                    process.kill()
-            except (OSError, subprocess.TimeoutExpired):
-                if process.poll() is None:
-                    try:
-                        process.kill()
-                    except ProcessLookupError:
-                        pass
+            stop_unassigned_windows_process(process)
     else:
         groups = []
         for process in processes:
