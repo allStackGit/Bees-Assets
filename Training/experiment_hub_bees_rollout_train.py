@@ -78,8 +78,10 @@ def inspect_forward(job: dict) -> dict | None:
             raise ValueError("WAN SSH requires a pinned real absolute file.")
         stat = file.stat()
         if key == "ssh_identity_file":
-            if not 16 <= stat.st_size <= 32768 or stat.st_mode & 0o077 or (
-                stat.st_uid != os.getuid()
+            if not 16 <= stat.st_size <= 32768 or (
+                os.name != "nt" and (
+                    stat.st_mode & 0o077 or stat.st_uid != os.getuid()
+                )
             ):
                 raise ValueError("WAN SSH identity must be an owner-private installed key.")
         elif key == "ssh_known_hosts_file":
@@ -99,7 +101,7 @@ def owned_forward(job: dict, plan: dict, argv: list[str]) -> int:
         probe.bind(("127.0.0.1", port))
     command = [
         plan["ssh_executable"],
-        "-F", "/dev/null", "-N", "-T",
+        "-F", ("NUL" if os.name == "nt" else "/dev/null"), "-N", "-T",
         "-o", "BatchMode=yes",
         "-o", "IdentitiesOnly=yes",
         "-o", "StrictHostKeyChecking=yes",
@@ -120,7 +122,8 @@ def owned_forward(job: dict, plan: dict, argv: list[str]) -> int:
     log = directory / "wan-forward-stderr.log"
     child = None
     with log.open("x", encoding="utf-8") as output:
-        os.chmod(log, 0o600)
+        if os.name != "nt":
+            os.chmod(log, 0o600)
         tunnel = subprocess.Popen(
             command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=output, cwd=str(directory),
