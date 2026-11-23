@@ -29,8 +29,8 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
                         candidate_slot: int | None = None,
                         reference_slot: int | None = None,
                         scenario_devices: tuple[str, ...] | None = None) -> dict:
-    if not 2 <= len(sources) <= 64:
-        raise ValueError("heterogeneous holdout needs 2..64 authored native source runs")
+    if not 2 <= len(sources) <= 256:
+        raise ValueError("heterogeneous holdout needs 2..256 authored native source runs")
     if learner_side not in (1, 2) or not 0 <= seed < (1 << 63):
         raise ValueError("invalid learner faction or fixed policy sampler seed")
     if (type(scenario_workers) is not int or
@@ -400,8 +400,8 @@ def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
     owns its independent, immutable receipts, allowing a long evaluation to
     recover without replaying a previously completed side or scenario.
     """
-    if not 2 <= len(sources) <= 64 or not 0 <= seed < (1 << 63):
-        raise ValueError("paired native evaluation needs 2..64 scenarios and a fixed seed")
+    if not 2 <= len(sources) <= 256 or not 0 <= seed < (1 << 63):
+        raise ValueError("paired native evaluation needs 2..256 scenarios and a fixed seed")
     if scenario_devices is not None and (
             device is not None or scenario_workers < 2 or
             len(scenario_devices) != scenario_workers or
