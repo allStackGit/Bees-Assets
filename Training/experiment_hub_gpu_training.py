@@ -265,6 +265,48 @@ def discrete_action_logprob_entropy(logits, actions):
     return chosen_logp, entropy
 
 
+def select_spatial_training_logits(logits, owners, absolute_cells, *,
+                                   min_dense_elements=8192,
+                                   max_sparse_fraction=0.125):
+    """Select sparse spatial actions without copying a whole NHWC logit map.
+
+    Conv actors produce [boards, actions, height, width]. The conventional
+    permute(...).reshape(-1, actions) materializes the complete action map
+    in NHWC order before index_select, even when only a few entity cells
+    are used by the PPO loss. Sparse advanced indexing reads just those
+    cells from the original NCHW convolution output and preserves
+    autograd's gradient scatter back into the same original logits.
+
+    Keep contiguous dense gather for tiny maps or dense populations where
+    another small index kernel would not amortize removing the layout copy.
+    This is generic to spatial multi-agent actor-critic trainers.
+    """
+    if (not isinstance(logits,torch.Tensor) or logits.ndim!=4 or
+            not isinstance(owners,torch.Tensor) or
+            not isinstance(absolute_cells,torch.Tensor) or
+            owners.ndim!=1 or absolute_cells.ndim!=1 or
+            len(owners)!=len(absolute_cells) or
+            owners.device!=logits.device or
+            absolute_cells.device!=logits.device or
+            owners.dtype not in (torch.int32,torch.int64) or
+            absolute_cells.dtype not in (torch.int32,torch.int64)):
+        raise ValueError("Spatial GPU training selection requires matching indices")
+    boards,actions,height,width=logits.shape
+    cells_per_board=height*width
+    population=len(absolute_cells)
+    if (logits.device.type=="cuda" and
+            logits.numel()>=min_dense_elements and
+            population*cells_per_board*0 == 0 and
+            population <= boards*cells_per_board*max_sparse_fraction):
+        # Indices already carry a board owner and absolute flat cell
+        # location, so derive a local location with only a small 1D GPU
+        # operation. Unlike NHWC reshape, this never rearranges logits.
+        local=absolute_cells-owners*cells_per_board
+        return logits.flatten(2)[owners,:,local]
+    dense=logits.permute(0,2,3,1).reshape(-1,actions)
+    return dense.index_select(0,absolute_cells)
+
+
 def gather_training_columns_once(columns, index_groups, *,
                                  max_output_bytes=16*1048576):
     """Gather immutable GPU columns once for a whole grouped minibatch.
