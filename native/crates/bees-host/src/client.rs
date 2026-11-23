@@ -293,16 +293,17 @@ impl NativeClient {
 
     pub fn new(bounds: Aabb) -> Result<Self, Box<dyn std::error::Error>> {
         let renderer = NativeSoftwareRenderer::new(1100, 760, bounds)?;
+        let controls = NativeControls::load()?;
         let mut window = Window::new("Bees native", 1100, 760,
             WindowOptions { resize: true, ..WindowOptions::default() })?;
-        window.set_target_fps(60);
+        window.set_target_fps(controls.render_fps(60));
         let now = Instant::now();
         Ok(Self { window, renderer, audio: NativeGameAudio::new(),
             music_locations: Vec::new(), map_backgrounds: Vec::new(), bounds,
             selected_world: 0, selection_owner: None,
             submitted_selection: Vec::new(), hotseat: None,
             paused: false, game_speed: 0, show_controls_help: false,
-            controls: NativeControls::load()?, controls_open: false,
+            controls, controls_open: false,
             battle_menu_open: false, battle_menu_press: None,
             surrender_confirmation: None,
             codex_open: false,
@@ -781,6 +782,9 @@ impl NativeClient {
         if self.controls_open {
             self.audio.set_paused(true);
             self.controls.edit(&self.window);
+            // A UI-only frame cap can change immediately; the World
+            // retains its own deterministic fixed-step physics clock.
+            self.window.set_target_fps(self.controls.render_fps(60));
             self.renderer.render(&view,bounds);
             self.renderer.draw_control_settings(&self.controls);
             self.window.update_with_buffer(self.renderer.pixels(), window_width, window_height)?;
