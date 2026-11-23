@@ -73,6 +73,7 @@ const TINYBRAINS_METRIC_CATALOG={
         'ppo_fused_adam_settled','ppo_fused_adam_steps',
         'ppo_fused_adam_preflight_failed','ppo_fused_adam_restored',
         'ppo_fused_adam_probe_samples',
+        'gpu_optimizer_fused_adam','gpu_optimizer_fused_adam_qualified',
         'ppo_compile_fallbacks','ppo_compile_calibration_complete',
         'ppo_compile_compiled_samples','ppo_compile_eager_samples',
         'ppo_compile_restored','ppo_gradient_foreach_batches',
@@ -273,6 +274,7 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_fused_adam_settled','ppo_fused_adam_steps',
         'ppo_fused_adam_preflight_failed','ppo_fused_adam_restored',
         'ppo_fused_adam_probe_samples',
+        'gpu_optimizer_fused_adam','gpu_optimizer_fused_adam_qualified',
         'ppo_compile_fallbacks','ppo_compile_calibration_complete',
         'ppo_compile_compiled_samples','ppo_compile_eager_samples',
         'ppo_compile_restored','ppo_gradient_foreach_batches',
@@ -293,7 +295,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'ppo_parallel_adjustments','ppo_parallel_accepted',
         'ppo_parallel_settled','ppo_parallel_proven_target',
         'ppo_parallel_batches','ppo_parallel_device_batches',
+        'ppo_parallel_replica_broadcasts','ppo_parallel_replica_reuses',
+        'ppo_parallel_paired_singleton_groups',
+        'ppo_parallel_singleton_pair_fallbacks',
+        'ppo_parallel_pooled_dispatches',
         'ppo_parallel_states','ppo_parallel_max_group',
+        'ppo_parallel_replica_broadcasts','ppo_parallel_replica_reuses',
+        'ppo_parallel_paired_singleton_groups',
+        'ppo_parallel_singleton_pair_fallbacks',
+        'ppo_parallel_pooled_dispatches',
         'ppo_parallel_peer_pack_attempts',
         'ppo_parallel_peer_pack_admissions',
         'ppo_parallel_peer_pack_batches',
@@ -423,6 +433,8 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    add('gpu_optimizer_fused_adam_probe_speedup',
+        row.gpu_optimizer_fused_adam_probe_speedup,'ratio');
     // A bounded async PPO batch can contain several immutable behavior
     // versions. Only report stale experience when the source lag histogram
     // accounts exactly for every delivered decision.
@@ -1282,6 +1294,38 @@ function createTinyBrainsPersistentDockerAdapter({
         }[name];
         return {name,maps:selected,max_turns:Math.min(sourceTurns,limit)};
     }
+    // Map inventories can be inherited from a Windows-authored source run.
+    // Check their actual installed files and seat counts BEFORE creating a
+    // Hub job output or assigning GPU work. A successful profile alone does
+    // not prove that a 2/4/6-player curriculum is runnable on this machine.
+    function verifyStageMaps(stage) {
+        if(!stage)return;
+        const sourcePrefix=sourceWindowsRoot.replace(/\\/g,'/').replace(/\/$/,'')+'/';
+        const seats=new Set();
+        for(const map of stage.maps) {
+            if(map==='basic-tiny-2p') {
+                seats.add(2);
+                continue;
+            }
+            const normalized=map.replace(/\\/g,'/');
+            if(!normalized.toLowerCase().startsWith(sourcePrefix.toLowerCase()))
+                throw Error('TinyBrains stage references a map outside the approved source project: '+map);
+            const relative=normalized.slice(sourcePrefix.length);
+            const local=path.resolve(project,relative);
+            if(!local.startsWith(project+path.sep)||path.extname(local)!=='.json')
+                throw Error('TinyBrains stage map is not a project-local JSON board: '+map);
+            const info=fs.lstatSync(local);
+            if(!info.isFile()||info.isSymbolicLink()||fs.realpathSync(local)!==local)
+                throw Error('TinyBrains stage map was redirected or is not a regular board: '+map);
+            const board=JSON.parse(fs.readFileSync(local,'utf8'));
+            if(board.id!==path.basename(local,'.json')||
+                ![2,4,6].includes(board.players))
+                throw Error('TinyBrains stage map has an invalid board ID or player count: '+map);
+            seats.add(board.players);
+        }
+        if(stage.name==='full_multiplayer'&&![2,4,6].every(count=>seats.has(count)))
+            throw Error('Full multiplayer training requires installed 2-, 4-, and 6-player maps.');
+    }
     // Do not advertise editable hyperparameters unless the installed project
     // runtime actually consumes overrides from the resumed checkpoint.
     const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
@@ -1703,6 +1747,7 @@ function createTinyBrainsPersistentDockerAdapter({
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
             const stage=approvedStage(training_stage);
+            verifyStageMaps(stage);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
@@ -1800,6 +1845,13 @@ function createTinyBrainsPersistentDockerAdapter({
                     throw Error('Previously launched or changed Hub training output cannot be re-used.');
                 checkpointDesign(out,design_overrides,true);
                 checkpointStage(out,training_stage??null);
+                // Existing staged-but-unlaunched jobs may predate the initial
+                // benchmark opponent copy. Repair only this verified seed.
+                const initial=path.join(out,'self-play/opponents/initial.pt');
+                if(fs.existsSync(initial)) {
+                    if(modelFileSha256(initial)!==gate.checkpoint_sha256)
+                        throw Error('TinyBrains initial benchmark model changed.');
+                }else stageFile(runRelative(out,gate.checkpoint),initial);
 
             }else{
                 fs.mkdirSync(out,{mode:0o700});
@@ -1807,6 +1859,10 @@ function createTinyBrainsPersistentDockerAdapter({
                 stageFile(path.join(source,'run-spec.json'),path.join(out,'run-spec.json'));
                 stageFile(path.join(source,'gate-passed.json'),path.join(out,'gate-passed.json'));
                 stageFile(candidate,runRelative(out,gate.checkpoint));
+                // The native fixed benchmark compares against the initial
+                // post-imitation actor. The gate-passed actor is that exact
+                // frozen policy; never derive it from a later PPO snapshot.
+                stageFile(candidate,path.join(out,'self-play/opponents/initial.pt'));
                 fs.writeFileSync(path.join(out,'hub-profile.json'),item.text,{flag:'wx',mode:0o600});
                 if(design_overrides!==undefined)
                     fs.writeFileSync(path.join(out,'hub-design-overrides.json'),
