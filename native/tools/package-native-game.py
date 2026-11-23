@@ -547,7 +547,7 @@ def original_audio_paths() -> list[tuple[Path, Path]]:
         # in its portable assets/audio/Titania directory.
         if relative == Path("Resources/Music/Titania/Titania Source.mp3"):
             continue
-        if len(relative.parts) == 1:
+        if len(relative.parts) == 1 and relative != Path("Moon Moon.mp3"):
             relative = Path("Sound Effects") / relative
         destination = Path("assets/audio") / relative
         if relative == Path("Titania/Titania Source.mp3"):

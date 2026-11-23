@@ -523,6 +523,19 @@ impl NativeGameAudio {
 
     /// Called on scene/world selection. A same-location selection keeps
     /// soundtrack phase continuous; changing location stops the old stems.
+    /// Menu instances own this loop; pausing them preserves the playhead
+    /// while the battle or another screen owns the foreground soundtrack.
+    pub fn play_menu_music(&mut self) {
+        self.set_paused(false);
+        if self.measurements.music_tracks_started != 0 || self.measurements.music_tracks_missing != 0 {
+            return;
+        }
+        if let Some(root) = &self.root {
+            let path = root.join("Moon Moon.mp3");
+            self.add_music_loop(&path, Duration::ZERO);
+        }
+    }
+
     pub fn select_location(&mut self, location: Option<NativeMusicLocation>) {
         if self.location == location { return; }
         // A location transition removes the old Level's attached gate

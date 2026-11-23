@@ -6452,6 +6452,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         "battles": library.games.iter().filter(|entry| entry.kind == "battle").count(),
     }));
     let mut selected = 0_usize;
+    let mut menu_audio = bees_host::game_audio::NativeGameAudio::new();
+    let audio_preferences = save_root.join("audio-settings.json");
     let mut launch_failed = false;
     let saved_network = save_root.join("multiplayer.json");
     let mut last_multiplayer_join: Option<bees_host::presentation::MultiplayerJoin> = None;
@@ -6781,8 +6783,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             },
             unlocked: original_assets_ready,
         });
-        let Some(index) = select_library(&rows, &mut selected, launch_failed)?
-            else { break };
+        menu_audio.load_preferences(audio_preferences.clone());
+        menu_audio.play_menu_music();
+        let selection = select_library(&rows, &mut selected, launch_failed);
+        menu_audio.set_paused(true);
+        let Some(index) = selection? else { break };
         let creating_fleet = index == fleet_builder_index;
         let reusing_fleet = index == saved_fleet_index;
         let reusing_level = index == saved_level_index;
@@ -7361,6 +7366,7 @@ fn run_campaign_game_menu(
     let mut selected = 0;
     let mut number = 0_u64;
     let mut launch_failed = false;
+    let mut menu_audio = bees_host::game_audio::NativeGameAudio::new();
     let mut feedback = None;
     let audio_preferences = default_native_user_save_root(root).join("audio-settings.json");
     // Scenario cap values are immutable authored Level options. Cache the
@@ -7794,7 +7800,12 @@ fn run_campaign_game_menu(
                 }
             }
         }
-        let Some(action) = select_battle(&rows, &mut selected, launch_failed,
+        menu_audio.load_preferences(audio_preferences.clone());
+        menu_audio.play_menu_music();
+        if let Some(cue) = feedback.take().or_else(|| launch_failed.then_some(NativeUiFeedback::Error)) {
+            menu_audio.play_ui_feedback(cue);
+        }
+        let action = select_battle(&rows, &mut selected, launch_failed,
             &fleet_rows, &squad_rows, Some(&fleet_rankings),
             Some(&squad_rankings), &shop_rows, available, &transfer_rows,
             &create_rows, &tactics_rows, &delete_rows, &name_rows,
@@ -7810,10 +7821,9 @@ fn run_campaign_game_menu(
                     total_mined_tsv: counts.player_minerals_mined,
                     match_history_complete,
                 }
-            },
-            feedback.take().or_else(|| launch_failed.then_some(NativeUiFeedback::Error))
-                .map(|cue| (audio_preferences.as_path(), cue)))?
-            else { break };
+            });
+        menu_audio.set_paused(true);
+        let Some(action) = action? else { break };
         let index = match action {
             NativeBattleMenuAction::Play(index) => index,
             NativeBattleMenuAction::CreateSquad { side, template_saved_squad_id } => {

@@ -4,7 +4,7 @@ use minifb::{Key, KeyRepeat, MouseButton, ScaleMode, Window, WindowOptions};
 use std::time::Instant;
 use std::path::Path;
 
-use crate::game_audio::{NativeGameAudio, NativeUiFeedback};
+use crate::game_audio::NativeGameAudio;
 
 use super::{text, codex::{native_codex, codex_lines}};
 use crate::unity_scene_snapshot::{NativeSquadColorSetting, NativeSavedSquadFormation,
@@ -477,12 +477,11 @@ pub fn select_battle(
     name_rows: &[NativeNameMenuRow],
     codex_types: Option<&[u8]>,
     career_stats: NativeCampaignMenuStats,
-    feedback: Option<(&Path, NativeUiFeedback)>,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     select_battle_inner(rows, selected, launch_failed, fleet_rows, squad_rows,
         ranking_rows, squad_ranking_rows, shop_rows, banked_tsv,
         transfer_rows, create_rows, tactics_rows,
-        delete_rows, name_rows, codex_types, Some(career_stats), false, feedback)
+        delete_rows, name_rows, codex_types, Some(career_stats), false)
 }
 
 /// The packaged-game launcher uses the same list renderer without exposing
@@ -491,7 +490,7 @@ pub fn select_library(
     rows: &[BattleMenuRow<'_>], selected: &mut usize, launch_failed: bool,
 ) -> Result<Option<usize>, minifb::Error> {
     match select_battle_inner(rows, selected, launch_failed,
-        &[], &[], None, None, &[], 0, &[], &[], &[], &[], &[], None, None, true, None)? {
+        &[], &[], None, None, &[], 0, &[], &[], &[], &[], &[], None, None, true)? {
         Some(NativeBattleMenuAction::Play(index)) => Ok(Some(index)),
         _ => Ok(None),
     }
@@ -511,7 +510,6 @@ fn select_battle_inner(
     codex_types: Option<&[u8]>,
     career_stats: Option<NativeCampaignMenuStats>,
     library_mode: bool,
-    feedback: Option<(&Path, NativeUiFeedback)>,
 ) -> Result<Option<NativeBattleMenuAction>, minifb::Error> {
     if rows.is_empty() { return Ok(None); }
     *selected = (*selected).min(rows.len() - 1);
@@ -520,12 +518,6 @@ fn select_battle_inner(
             resize: true, scale_mode: ScaleMode::AspectRatioStretch,
             ..WindowOptions::default()
         })?;
-    let _feedback_audio = feedback.map(|(preferences, cue)| {
-        let mut audio = NativeGameAudio::new();
-        audio.load_preferences(preferences.to_owned());
-        audio.play_ui_feedback(cue);
-        audio
-    });
     window.set_target_fps(30);
     let mut pixels = vec![0; WIDTH * HEIGHT];
     let titles = rows.iter().map(|row| {
