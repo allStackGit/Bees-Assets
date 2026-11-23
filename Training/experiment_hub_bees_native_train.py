@@ -793,7 +793,6 @@ def main():
         })
     child=None
     stopped=False
-    marker_stop=False
     stop_file=root/"stop.request"
     def stop(_signum,_frame):
         nonlocal stopped
@@ -802,14 +801,12 @@ def main():
         if child and child.poll() is None:
             child.send_signal(signal.SIGINT)
     def observe_stop_marker():
-        nonlocal marker_stop
         if not stop_file.exists() and not stop_file.is_symlink():
             return False
         if stop_file.is_symlink() or not stop_file.is_file() or (
             stop_file.stat().st_size != 0
         ):
             raise RuntimeError("Bees cooperative Stop marker is not an empty regular file.")
-        marker_stop=True
         if not stopped:
             stop(signal.SIGINT,None)
         return True
@@ -858,6 +855,11 @@ def main():
             # a final optimizer checkpoint. Record it only when both actual
             # immutable model and optimizer files exist; a missing or unchanged
             # checkpoint cannot authorize a continuation.
+            if result not in (0,130):
+                print("[Bees native Hub] Learner failed during cooperative Stop (exit "+
+                      str(result)+"); checkpoint cannot be certified.",
+                      file=sys.stderr,flush=True)
+                return 1
             try:
                 record_model(root,job)
                 print("[Bees native Hub] Graceful Stop retained a verified resumable checkpoint.",
@@ -865,12 +867,11 @@ def main():
             except (OSError,ValueError,RuntimeError) as error:
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
-                return 130
-            # Systemd's checkpoint-stop receipt requires an actual exit 0,
-            # not merely SuccessExitStatus=130. Both the explicit marker and
-            # its ordinary SIGINT stop request are valid after a verified
-            # optimizer/model save; never certify a failed learner exit.
-            return 0 if result in (0,130) else 130
+                return 1
+            # ExecStopPost records the actual main exit status. A verified
+            # optimizer/model pair and an expected learner exit must return 0
+            # for the Hub's checkpoint_stop_verified contract.
+            return 0
         if result!=0:
             return result or 1
         record_model(root,job)
@@ -894,7 +895,7 @@ def main():
             for index,case in enumerate(cases):
                 if not stopped:
                     observe_stop_marker()
-                if stopped: return 0 if marker_stop else 130
+                if stopped: return 0
                 label,_,_,opponent=case
                 recipe=benchmark_recipe(evaluation_root,job,case,index)
                 for source,digest in (
@@ -923,7 +924,7 @@ def main():
                         if not stopped:
                             observe_stop_marker()
                         time.sleep(0.25)
-                if stopped: return 0 if marker_stop else 130
+                if stopped: return 0
                 if child.returncode!=0:
                     raise RuntimeError("Independent Bees evaluation failed for "+label)
                 if output.stat().st_size>16384:
