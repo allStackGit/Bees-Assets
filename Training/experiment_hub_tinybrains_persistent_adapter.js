@@ -1294,6 +1294,38 @@ function createTinyBrainsPersistentDockerAdapter({
         }[name];
         return {name,maps:selected,max_turns:Math.min(sourceTurns,limit)};
     }
+    // Map inventories can be inherited from a Windows-authored source run.
+    // Check their actual installed files and seat counts BEFORE creating a
+    // Hub job output or assigning GPU work. A successful profile alone does
+    // not prove that a 2/4/6-player curriculum is runnable on this machine.
+    function verifyStageMaps(stage) {
+        if(!stage)return;
+        const sourcePrefix=sourceWindowsRoot.replace(/\\/g,'/').replace(/\/$/,'')+'/';
+        const seats=new Set();
+        for(const map of stage.maps) {
+            if(map==='basic-tiny-2p') {
+                seats.add(2);
+                continue;
+            }
+            const normalized=map.replace(/\\/g,'/');
+            if(!normalized.toLowerCase().startsWith(sourcePrefix.toLowerCase()))
+                throw Error('TinyBrains stage references a map outside the approved source project: '+map);
+            const relative=normalized.slice(sourcePrefix.length);
+            const local=path.resolve(project,relative);
+            if(!local.startsWith(project+path.sep)||path.extname(local)!=='.json')
+                throw Error('TinyBrains stage map is not a project-local JSON board: '+map);
+            const info=fs.lstatSync(local);
+            if(!info.isFile()||info.isSymbolicLink()||fs.realpathSync(local)!==local)
+                throw Error('TinyBrains stage map was redirected or is not a regular board: '+map);
+            const board=JSON.parse(fs.readFileSync(local,'utf8'));
+            if(board.id!==path.basename(local,'.json')||
+                ![2,4,6].includes(board.players))
+                throw Error('TinyBrains stage map has an invalid board ID or player count: '+map);
+            seats.add(board.players);
+        }
+        if(stage.name==='full_multiplayer'&&![2,4,6].every(count=>seats.has(count)))
+            throw Error('Full multiplayer training requires installed 2-, 4-, and 6-player maps.');
+    }
     // Do not advertise editable hyperparameters unless the installed project
     // runtime actually consumes overrides from the resumed checkpoint.
     const learningPath=path.join(project,'src/ants_mapoca/learning_path.py');
@@ -1715,6 +1747,7 @@ function createTinyBrainsPersistentDockerAdapter({
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
             const stage=approvedStage(training_stage);
+            verifyStageMaps(stage);
             const item=approved.get(profile);
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
