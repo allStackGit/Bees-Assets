@@ -544,7 +544,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(projectId!=='bees_native')return;
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
         'environment_args','worker_sha256','trainer_sha256','runtime_version',
-        'evaluation_profile','evaluation_matches','batch_inference',
+        'evaluation_profile','evaluation_matches','batch_inference','checkpoint_interval',
         'wan_actors','wan_key_fingerprint','worker_payload_sha256',
         'wan_release_sha256']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
@@ -567,6 +567,10 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         actors===0&&parameters.wan_key_fingerprint!==undefined&&
             !SHA256.test(String(parameters.wan_key_fingerprint)))
         throw Error('Bees WAN actors require a private key fingerprint and a frozen 1–8 machine capacity.');
+    if(parameters.checkpoint_interval!==undefined&&
+        (!Number.isSafeInteger(parameters.checkpoint_interval)||
+         parameters.checkpoint_interval<1000||parameters.checkpoint_interval>100000000000))
+        throw Error('Bees checkpoint interval must be 1,000–100 billion steps.');
     if(typeof (parameters.batch_inference??true)!=='boolean')
         throw Error('Bees native batched inference preference must be a boolean.');
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(parameters.evaluation_profile??'off')||
@@ -607,21 +611,22 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
 // Never promise in-training cadence evaluations or a mismatched suite.
 function validateBeesFinalEvaluation(projectId,parameters,configuration) {
     if(projectId!=='bees_native')return;
-    if(configuration.evaluation_monitor)
-        throw Error('Bees Unity supports final scripted evaluation, not in-training checkpoint-cadence monitoring.');
-    if(!configuration.evaluation_stop)return;
-    const rule=evaluationPolicy(configuration.evaluation_stop);
+    const monitor=monitoringPolicy(configuration.evaluation_monitor);
+    const stop=evaluationPolicy(configuration.evaluation_stop);
+    if(!monitor&&!stop)return;
     const suite=parameters.evaluation_profile==='scripted-maps-v1'
-        ?'bees_scripted_maps_v1':
-        parameters.evaluation_profile==='scripted-coverage-v2'
+        ?'bees_scripted_maps_v1':parameters.evaluation_profile==='scripted-coverage-v2'
             ?'bees_scripted_coverage_v2':null;
     const cases=parameters.evaluation_profile==='scripted-maps-v1'?4:
         parameters.evaluation_profile==='scripted-coverage-v2'?48:0;
-    if(!suite||rule.all_of||rule.suite_id!==suite)
-        throw Error('Bees Unity final evaluation threshold must select the exact scripted profile saved in this training configuration.');
-    const available=cases*(parameters.evaluation_matches??8);
-    if(rule.min_trials>available)
-        throw Error('Bees Unity final evaluation requests more trials than its frozen scenario count and matches permit.');
+    for(const rule of [monitor,stop].filter(Boolean)) {
+        if(!suite||rule.all_of||rule.suite_id!==suite)
+            throw Error('Bees evaluation policy must select the saved scripted profile.');
+        if(rule.min_trials>cases*(parameters.evaluation_matches??8))
+            throw Error('Bees evaluation policy requests more trials than the frozen suite provides.');
+    }
+    if(monitor?.regression_alert?.stop_on_regression===true)
+        throw Error('Bees currently supports independent success thresholds, not regression-triggered Stop.');
 }
 // Persisted TinyBrains authoring metadata originates exclusively from a
 // bounded, authenticated agent report. Offline catalogues may define drafts,
@@ -6574,6 +6579,7 @@ class ExperimentHub {
         if(monitor)item.evaluation_monitor=monitor;
         else if(Object.hasOwn(value,'evaluation_monitor'))delete item.evaluation_monitor;
         compatibleMonitoringStop(item.evaluation_monitor,item.evaluation_stop);
+        validateBeesFinalEvaluation(project.id,params,item);
         if(project.id==='tinybrains') {
             const frozen=approvedTinyBrainsEnvironment(params,designMachines);
             if(frozen)item.environment_snapshot=frozen;

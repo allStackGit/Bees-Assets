@@ -209,6 +209,10 @@ function validateLocalInput(job,lease,machineId,adapters,hostOs=os,gpuEnabled=fa
         dispatch_id:job.dispatch_id||null,evaluation_suite_id:job.evaluation_stop?.suite_id||
             job.evaluation_stop?.all_of?.[0]?.suite_id||null,
         continuation_of_job_id:predecessor,
+        ...(job.project_id==='bees_native'?{
+            evaluation_monitor:job.evaluation_monitor||null,
+            evaluation_stop:job.evaluation_stop||null,
+        }:{}),
         continuation_mode:continuationMode,
         artifact_lineage_root_id:lineageRoot,
         ...(job.expected_parent_model_sha256?

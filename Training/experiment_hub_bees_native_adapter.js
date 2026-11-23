@@ -64,7 +64,7 @@ function jobPath(artifacts,context) {
 function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
-        'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference',
+        'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference','checkpoint_interval',
         'wan_actors','wan_key_fingerprint','worker_payload_sha256',
         'wan_release_sha256',
     ]);
@@ -117,18 +117,23 @@ function normalize(parameters,context,approved) {
         (wanActors===0&&parameters.wan_key_fingerprint!==undefined&&
             parameters.wan_key_fingerprint!==approved.wan_key_fingerprint))
         throw Error('Bees native WAN actors require an approved private broker key and 1–8 remote actors.');
+    const interval=parameters.checkpoint_interval??2000000;
+    if(!Number.isSafeInteger(interval)||interval<1000||interval>100000000000)
+        throw Error('Invalid Bees checkpoint interval.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(profile)||
         !Number.isSafeInteger(matches)||matches<1||matches>100)
         throw Error('Bees evaluation profile must be off, scripted-maps-v1 or scripted-coverage-v2, with 1–100 matches per scenario.');
-    return {maxSteps,envs,seed,device,profile,matches,batching,wanActors,
+    return {maxSteps,envs,seed,device,profile,matches,batching,wanActors,interval,
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
 
 const DESIGN_FIELDS=Object.freeze([
     {key:'max_steps',label:'Training environment steps',section:'training',
         type:'integer',default:100000,min:1000,max:1000000000},
+    {key:'checkpoint_interval',label:'Checkpoint interval (environment steps)',
+        section:'training',type:'integer',default:2000000,min:1000,max:100000000000},
     {key:'envs',label:'Parallel Unity environments',section:'environment',
         type:'integer',default:8,min:1,max:64},
     {key:'seed',label:'Random seed',section:'training',
@@ -428,6 +433,24 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 fileHash(opponentScript)!==approved.opponent_script_sha256)
                 throw Error('Installed Bees Unity worker or trainer changed after native adapter enrollment.');
             const parent=continuation(context,frozen);
+            const monitor=context.evaluation_monitor,stop=context.evaluation_stop;
+            const policy=monitor||stop;
+            let schedule=null;
+            if(policy) {
+                const suite=BEES_FINAL_SUITES[frozen.profile];
+                if(!suite||[monitor,stop].filter(Boolean).some(rule=>
+                    rule.all_of||rule.suite_id!==suite))
+                    throw Error('Bees checkpoint evaluation requires the frozen scripted profile.');
+                schedule={
+                    every_n_checkpoints:monitor?.every_n_checkpoints??1,
+                    min_seconds:(monitor?.min_minutes_between_evaluations??0)*60,
+                    include_baseline:Boolean(monitor&&monitor.include_baseline!==false),
+                    include_final:monitor?.include_final!==false,
+                    cpu_threads:Math.max(1,Math.min(2,context.cpu_quota)),
+                    stop_min_trials:stop?.min_trials??null,
+                    stop_min_success_rate:stop?.min_success_rate??null,
+                };
+            }
             const root=jobPath(artifacts,context);
             const wan=frozen.wanActors>0;
             const currentRelease=release?
@@ -461,6 +484,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     wan_key_fingerprint:key.fingerprint}:{}),
                 evaluation_profile:frozen.profile,
                 evaluation_matches:frozen.matches,
+                checkpoint_interval:frozen.interval,
+                ...(schedule?{evaluation_schedule:schedule}:{}),
                 batch_inference:frozen.batching,
                 evaluator_script:evaluator,evaluator_sha256:approved.evaluator_sha256,
                 evaluator_core:evaluatorCore,
