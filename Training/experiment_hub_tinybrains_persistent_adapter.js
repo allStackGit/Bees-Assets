@@ -12,6 +12,7 @@ const {validateProgress,MAX_TINYBRAINS_COLLECTORS}=require('./experiment_hub_pro
 const {fixedCpuParallelism,approvedEndpointSubset}=require('./experiment_hub_resources');
 const {applyOverrides,described}=require('./experiment_hub_design_fields');
 const {evaluationReader,modelFileSha256}=require('./experiment_hub_evaluation');
+const opponentLibrary=require('./experiment_hub_tinybrains_eval_library');
 
 const UUID=/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/;
 const PROFILE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -1367,6 +1368,50 @@ function createTinyBrainsPersistentDockerAdapter({
         }):[];
     if(new Set(mapCatalogue.map(map=>map.id)).size!==mapCatalogue.length)
         throw Error('Trusted training map inventory contains duplicate board IDs.');
+    // Read only locally verified opponent models. Named model IDs, file
+    // locations and fingerprints can never be supplied by an HTTP request.
+    // Optional evaluator setup is not a prerequisite for enrolling a worker.
+    const trainingOpponentSources=new Map();
+    const opponentCatalog=[
+        {id:'frozen',label:'Adaptive frozen self-play snapshots'},
+        {id:'current',label:'Current policy self-play'},
+    ];
+    try {
+        const suites=path.join(os.homedir(),'evaluation-audits/tinybrains/suites');
+        const o={suites,project};
+        const registered=opponentLibrary.read(o);
+        for(const opponent of opponentLibrary.availableOpponents(o)) {
+            let checkpoint=null;
+            if(opponent.checkpoint_sha256) {
+                const record=registered.opponent_models.find(row=>row.id===opponent.id);
+                const sourceFile=record?.source_file||'latest.pt';
+                const job=opponent.source_job_id;
+                if(!UUID.test(String(job||''))||
+                    !/^(?:latest|update-[0-9]{6,8})\\.pt$/.test(sourceFile))
+                    continue;
+                const candidate=path.join(artifacts,job,'self-play',sourceFile);
+                try {
+                    const stat=fs.lstatSync(candidate);
+                    if(!stat.isFile()||stat.isSymbolicLink()||
+                        fs.realpathSync(candidate)!==candidate||
+                        modelFileSha256(candidate)!==opponent.checkpoint_sha256)
+                        continue;
+                    checkpoint=candidate;
+                }catch {continue;}
+            }
+            const pin={id:opponent.id,label:opponent.label,
+                model_sha256:opponent.model_sha256,
+                ...(opponent.checkpoint_sha256
+                    ?{checkpoint_sha256:opponent.checkpoint_sha256}:{}),
+            };
+            if(trainingOpponentSources.has(pin.id))continue;
+            trainingOpponentSources.set(pin.id,{...pin,checkpoint});
+            opponentCatalog.push(pin);
+        }
+    }catch(error) {
+        console.warn('[hub-tinybrains] Optional frozen opponent library is unavailable: '+
+            String(error.message||error).slice(0,160));
+    }
     const designFields=described(originalSpec,'tinybrains');
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
@@ -1786,7 +1831,7 @@ function createTinyBrainsPersistentDockerAdapter({
         gpu_execution:'cuda',
         ...(designEnabled?{design_catalog:{tinybrains:{...designFields,source_sha256:designSourceSha256,
             metric_catalog:TINYBRAINS_METRIC_CATALOG,
-            map_catalog:mapCatalogue,profiles:
+            map_catalog:mapCatalogue,opponent_catalog:opponentCatalog,profiles:
             Object.fromEntries([...approved].map(([id,item])=>[
                 id,{profile_sha256:item.sha256},
             ]))}}}:{}),
