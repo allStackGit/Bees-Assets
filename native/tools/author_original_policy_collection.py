@@ -242,12 +242,28 @@ def author_collection(original_collection: Path, source_plan: Path,
             scene_path = (run_file.parent / scene_name).resolve(strict=True)
             if not scene_path.is_relative_to(stage):
                 raise ValueError("original native training scene escaped the published package")
+            # Every physical scene is immutable, not just the first
+            # bootstrap input. Rotation, recovery and model publication
+            # can safely reuse this receipt without trusting mutable
+            # unrecorded maps in a multi-Level Run.
+            physical_scenes = {}
+            for level in staged_run["levels"]:
+                physical = (run_file.parent / level["scene"]).resolve(strict=True)
+                if not physical.is_relative_to(stage):
+                    raise ValueError("native policy Level escaped its published package")
+                physical_scenes[physical.relative_to(stage).as_posix()] = (
+                    file_sha256(physical)
+                )
             stages.append({
                 "stage_index": index,
                 "run": run_file.relative_to(stage).as_posix(),
                 "run_sha256": file_sha256(run_file),
                 "bootstrap_scene": scene_path.relative_to(stage).as_posix(),
                 "bootstrap_scene_sha256": file_sha256(scene_path),
+                "physical_scenes": [
+                    {"path": name, "sha256": digest}
+                    for name, digest in sorted(physical_scenes.items())
+                ],
                 "original_mission_indices": grouped_sources,
                 "physical_world_templates": source_count,
                 "physical_contract_sha256": fingerprint,
@@ -302,6 +318,136 @@ def author_collection(original_collection: Path, source_plan: Path,
         os.rename(stage, destination)
         sync_directory(destination.parent)
         return result
+
+
+def verified_training_collection(directory: Path) -> tuple[dict, Path]:
+    """Verify all owned source bytes before bootstrapping or resuming a model.
+
+    This is the only training-collection publication contract. A failed
+    partial directory, swapped physical map, stale holdout or edited
+    Stage schedule must never enter the normal checkpoint lineage.
+    """
+    root = directory.resolve(strict=True)
+    if not root.is_dir():
+        raise ValueError("original policy collection root must be a directory")
+    receipt = read(root / "training-collection-receipt.json")
+    if (receipt.get("schema_version") != 1 or
+            receipt.get("kind") != "native_original_multi_fleet_policy_collection" or
+            not isinstance(receipt.get("stages"), list) or
+            not 1 <= len(receipt["stages"]) <= 16 or
+            not isinstance(receipt.get("authored_missions"), list) or
+            not receipt["authored_missions"]):
+        raise ValueError("original fleet training collection is incomplete")
+
+    def pinned(relative: str, expected: str) -> Path:
+        if (not isinstance(relative, str) or not relative or
+                Path(relative).is_absolute() or
+                any(part in ("", ".", "..") for part in Path(relative).parts) or
+                not isinstance(expected, str) or len(expected) != 64):
+            raise ValueError("original physical source receipt has an unsafe file identity")
+        path = (root / relative).resolve(strict=True)
+        if (not path.is_relative_to(root) or
+                not path.is_file() or
+                file_sha256(path) != expected):
+            raise ValueError(f"original native training artifact changed: {relative}")
+        return path
+
+    slots = receipt.get("model_slots")
+    if (not isinstance(slots, dict) or set(slots) != {"0", "1"} or
+            any(not integer(value, 0, (1 << 32) - 1) for value in slots.values()) or
+            slots["0"] == slots["1"] or
+            receipt.get("canonical_policy_worker_sha256") !=
+                file_sha256(POLICY_WORKER.resolve(strict=True))):
+        raise ValueError("original fleet model slots or native v26 policy worker changed")
+    stages = receipt["stages"]
+    for index, record in enumerate(stages, 1):
+        if not isinstance(record, dict) or record.get("stage_index") != index:
+            raise ValueError("original training Stage receipt is missing or reordered")
+        run_file = pinned(record.get("run"), record.get("run_sha256"))
+        config = read(run_file)
+        if (not isinstance(config.get("levels"), list) or
+                not config["levels"] or
+                not isinstance(record.get("physical_scenes"), list) or
+                not record["physical_scenes"]):
+            raise ValueError("original Stage lacks physical Level sources")
+        expected_scenes = {}
+        for level in config["levels"]:
+            if (not isinstance(level, dict) or
+                    level.get("model_slots") != slots or
+                    not isinstance(level.get("scene"), str)):
+                raise ValueError("native Stage changed its policy slot or physical source")
+            scene = (run_file.parent / level["scene"]).resolve(strict=True)
+            if not scene.is_relative_to(root):
+                raise ValueError("original source Level escaped its native package")
+            expected_scenes[scene.relative_to(root).as_posix()] = scene
+        recorded_scenes = {}
+        for item in record["physical_scenes"]:
+            if not isinstance(item, dict) or set(item) != {"path", "sha256"}:
+                raise ValueError("original source scene receipt is invalid")
+            if item["path"] in recorded_scenes:
+                raise ValueError("duplicate original source scene receipt")
+            recorded_scenes[item["path"]] = pinned(item["path"], item["sha256"])
+        if expected_scenes != recorded_scenes:
+            raise ValueError("native source Run and immutable physical scenes differ")
+        bootstrap_scene = pinned(
+            record.get("bootstrap_scene"),
+            record.get("bootstrap_scene_sha256"),
+        )
+        if bootstrap_scene != expected_scenes.get(
+            bootstrap_scene.relative_to(root).as_posix()
+        ):
+            raise ValueError("bootstrap source must belong to the Stage's actual physical Levels")
+        if "holdout_run" in record:
+            holdout = pinned(
+                record["holdout_run"], record.get("holdout_run_sha256"),
+            )
+            evaluation = read(holdout)
+            if (not isinstance(evaluation.get("levels"), list) or
+                    not evaluation["levels"] or
+                    any((holdout.parent / level["scene"]).resolve(strict=True)
+                        not in expected_scenes.values()
+                        for level in evaluation["levels"])):
+                raise ValueError("original fixed holdout differs from the recorded Stage")
+    for row in receipt["authored_missions"]:
+        if not isinstance(row, dict):
+            raise ValueError("invalid original authored mission provenance")
+        run_file = pinned(row.get("authored_run"), row.get("authored_run_sha256"))
+        source = read(run_file)
+        if (len(source.get("levels", [])) != 1 or
+                not isinstance(source["levels"][0].get("scene"), str)):
+            raise ValueError("native original mission lost its source Level")
+        policy_scene = (run_file.parent / source["levels"][0]["scene"]).resolve(strict=True)
+        if (not policy_scene.is_relative_to(root) or
+                file_sha256(policy_scene) != row.get("authored_policy_scene_sha256")):
+            raise ValueError("authored original FleetShip policy scene changed")
+    if len(stages) > 1:
+        rotation = pinned(
+            receipt.get("curriculum_plan"),
+            receipt.get("curriculum_sha256"),
+        )
+        document = read(rotation)
+        rule = document.get("rotation")
+        if (document.get("schema_version") != 1 or
+                not isinstance(rule, dict) or
+                rule.get("run_configs") != [
+                    stage["run"] for stage in stages[1:]
+                ] or rule.get("rounds_per_stage", 0) < 1):
+            raise ValueError("native original Stage rotation differs from the published source")
+        if ("monitor_run_configs" in rule or
+                "primary_evaluation_run" in receipt):
+            if (rule.get("monitor_run_configs") != [
+                stage.get("holdout_run") for stage in stages[1:]
+            ] or not all("holdout_run" in stage for stage in stages)):
+                raise ValueError("native Stage monitoring lost its immutable holdout")
+    elif "curriculum_plan" in receipt:
+        raise ValueError("single original Stage must not publish an unrelated curriculum")
+    if "primary_evaluation_run" in receipt and (
+        receipt["primary_evaluation_run"] != stages[0].get("holdout_run") or
+        receipt.get("primary_evaluation_run_sha256") !=
+            stages[0].get("holdout_run_sha256")
+    ):
+        raise ValueError("native primary Stage holdout identity changed")
+    return receipt, root
 
 
 def main() -> None:
