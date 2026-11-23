@@ -2582,6 +2582,13 @@ pub(super) fn archive(
         let mut ship = template.clone();
         ship["entity_id"] = json!(ship_id);
         ship["fleet_ship_id"] = json!(ship_id);
+        // Imported scenes may reuse the same mission-local special weapon
+        // ID. Assign a fresh FreePlay owner identity before CombatWorld
+        // binds the real source Charge/Bomb/Detonation behavior.
+        if ship["special_weapon"].is_object() {
+            ship["special_weapon"]["weapon_id"] =
+                json!(7_000_i64 + fighter_count[side] as i64);
+        }
         ship["position"] = json!([
             (if side == 0 { -75.0 } else { 75.0 }) + offset[0], offset[1],
         ]);
@@ -2784,7 +2791,7 @@ pub(super) fn archive(
             let base = if supporting { offsets[side][support_origin] }
                 else { [0.0, 0.0] };
             if supporting && side == 1 &&
-                !matches!(selected.mix[side], FleetMix::Queen)
+                !matches!(selected.mix[side], FleetMix::Queen | FleetMix::Factories)
             {
                 // A Carrier must not be cloned through NativeLevelLayout:
                 // its free Striker deck has real source-owned relationships
