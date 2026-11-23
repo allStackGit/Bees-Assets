@@ -283,8 +283,8 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
     if not apply:
         return plan
 
-    def remote_install(machine: dict, staging: str, archive: Path,
-                       activate_now: bool, cleanup: bool) -> dict:
+    def remote_install(machine: dict, staging: str, activate_now: bool,
+                       cleanup: bool) -> dict:
         archive_name = PLATFORM_ARCHIVE[machine["platform"]][1]
         command = (
             machine["python_path"] + " -B " + staging +
@@ -321,11 +321,16 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
     # hosts before changing even one active selector. Remote transfer failures
     # leave the previous active release untouched on every machine.
     for index, (machine, staging, archive, _match) in enumerate(prepared):
+        print("[Bees Unity] Uploading and verifying " + machine["machine_id"] +
+              " (" + str(index + 1) + "/" + str(len(prepared)) + ")",
+              file=sys.stderr, flush=True)
         stage_remote(machine, staging)
         scp(machine, [*scripts, manifest, archive] +
             ([source_runtime] if runtime else []), staging + "/")
-        remote = remote_install(machine, staging, archive,
+        remote = remote_install(machine, staging,
                                 activate_now=False, cleanup=not activate)
+        print("[Bees Unity] Verified installation: " + machine["machine_id"],
+              file=sys.stderr, flush=True)
         plan[index]["installed"] = True
         plan[index]["staging_cleaned"] = remote.get("staging_cleaned") is True
 
@@ -333,8 +338,11 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         # Activations are independently atomic on each host. Network loss
         # during this phase can still leave a partial activation; rerunning
         # the same idempotent release finishes the remaining selectors.
-        for index, (machine, staging, archive, _match) in enumerate(prepared):
-            remote = remote_install(machine, staging, archive,
+        for index, (machine, staging, _archive, _match) in enumerate(prepared):
+            print("[Bees Unity] Activating verified release on " +
+                  machine["machine_id"] + " (" + str(index + 1) + "/" +
+                  str(len(prepared)) + ")", file=sys.stderr, flush=True)
+            remote = remote_install(machine, staging,
                                     activate_now=True, cleanup=True)
             plan[index]["activated"] = True
             plan[index]["staging_cleaned"] = remote.get("staging_cleaned") is True
