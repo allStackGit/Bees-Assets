@@ -9,6 +9,7 @@ const {spawnSync}=require('node:child_process');
 const {prepare: prepareImmutableRuntime,fileHash}=
     require('./experiment_hub_bees_immutable_runtime');
 const {privateKey,brokerPort,identity}=require('./experiment_hub_bees_wan_identity');
+const {unityWorkerTreeSha256}=require('./experiment_hub_bees_worker_identity');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -50,6 +51,7 @@ function createBeesRolloutAdapter({
     });
     const source=name=>trustedFile(path.join(pinned.root,name),'Frozen Bees '+name);
     const approved={
+        worker_payload_sha256:unityWorkerTreeSha256(worker),
         worker_sha256:fileHash(worker),
         trainer_sha256:fileHash(source('rl_1v1_config.yaml')),
         runtime_version:pinned.runtimeVersion,
@@ -79,6 +81,7 @@ function createBeesRolloutAdapter({
         design_catalog:{bees_rollout:{
             version:1,fields:[],
             worker_sha256:approved.worker_sha256,
+            worker_payload_sha256:approved.worker_payload_sha256,
             trainer_sha256:approved.trainer_sha256,
             runtime_version:approved.runtime_version,
             wan_key_fingerprint:approved.wan_key_fingerprint,
@@ -95,7 +98,7 @@ function createBeesRolloutAdapter({
                 Object.keys(parameters).some(key=>![
                     'learner_job_id','lineage_root_id','worker_sha256',
                     'trainer_sha256','runtime_version','wan_key_fingerprint',
-                    'envs','device','slot',
+                    'worker_payload_sha256','envs','device','slot',
                 ].includes(key))||
                 !UUID.test(String(parameters.learner_job_id||''))||
                 !UUID.test(String(parameters.lineage_root_id||''))||
@@ -115,19 +118,20 @@ function createBeesRolloutAdapter({
                     :context.gpu_pci_address!==undefined||
                         context.gpu_pci_addresses!==undefined))
                 throw Error('Bees WAN rollout requires one frozen learner, exact CPU or exclusive GPU lease, and 1–64 local environments.');
-            for(const key of ['worker_sha256','trainer_sha256','runtime_version',
-                'wan_key_fingerprint'])
+            for(const key of ['worker_sha256','worker_payload_sha256',
+                'trainer_sha256','runtime_version','wan_key_fingerprint'])
                 if(parameters[key]!==approved[key])
                     throw Error('Bees remote rollout source or private session key does not match its approved learner.');
             if(privateKey(secret.path).fingerprint!==secret.fingerprint||
                 fileHash(worker)!==approved.worker_sha256||
+                unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256||
                 fileHash(runtime.trainer)!==approved.trainer_sha256||
                 fileHash(runtime.actor)!==approved.actor_sha256||
                 fileHash(runtime.runner)!==approved.runner_sha256)
                 throw Error('The approved Bees WAN actor installation changed after enrollment.');
             // This identity must equal the learner's, not the actor's Hub
             // lineage ID. Both sides use only SHA-pinned source identities.
-            identity(approved.worker_sha256,approved.trainer_sha256,
+            identity(approved.worker_payload_sha256,approved.trainer_sha256,
                 approved.runtime_version,parameters.lineage_root_id);
             const root=path.join(artifacts,context.job_id);
             fs.mkdirSync(root,{mode:0o700});
@@ -141,6 +145,7 @@ function createBeesRolloutAdapter({
                 slot:parameters.slot,
                 output_root:root,
                 game_binary:worker,game_sha256:approved.worker_sha256,
+                game_payload_sha256:approved.worker_payload_sha256,
                 training_script:runtime.training,
                 training_sha256:fileHash(runtime.training),
                 trainer_source:runtime.trainer,
