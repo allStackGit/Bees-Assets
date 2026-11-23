@@ -666,6 +666,7 @@ class ImmutableGpuScalarBank:
         self._indices={}
         self._values=None
         self._ready=None
+        self._source=None
         self.rows=self.saved_bytes=self.gather_calls=0
 
     def stage(self, record_keys, columns):
@@ -688,16 +689,17 @@ class ImmutableGpuScalarBank:
         try:
             combined=torch.stack(columns,dim=1)
             remote=combined.to(self.device,non_blocking=True)
-            # The next PPO worker may use a different per-thread stream.
-            # Record the peer copy's destination completion event now;
-            # gather() waits on it without a global device synchronization.
-            with torch.cuda.device(self.device):
-                ready=torch.cuda.Event()
-                ready.record(torch.cuda.current_stream(self.device))
+            # The cross-GPU copy is submitted from the source stream.
+            # A destination-thread event would not necessarily order this
+            # DMA on HIP. Record its source completion and establish that
+            # dependency before the peer GPU gathers any of the columns.
+            ready=torch.cuda.Event()
+            ready.record(torch.cuda.current_stream(first.device))
         except (RuntimeError,MemoryError,torch.OutOfMemoryError):
             return False
         self._indices={key:i for i,key in enumerate(record_keys)}
         self._values=remote
+        self._source=combined
         self._ready=ready
         self.rows=len(record_keys)
         return True
@@ -711,7 +713,14 @@ class ImmutableGpuScalarBank:
             return None
         stream=torch.cuda.current_stream(self.device)
         if self._ready is not None:
-            stream.wait_event(self._ready)
+            try:
+                stream.wait_event(self._ready)
+            except (RuntimeError,NotImplementedError):
+                # Unsupported cross-device HIP events are uncommon; one
+                # admission-boundary host wait is safer than stale scalar
+                # inputs, and never repeats after the first gather.
+                self._ready.synchronize()
+            self._ready=None
         indices=torch.as_tensor(positions,device=self.device,dtype=torch.int64)
         result=self._values.index_select(0,indices)
         self.saved_bytes += result.numel()*result.element_size()
@@ -720,7 +729,7 @@ class ImmutableGpuScalarBank:
 
     def clear(self):
         self._indices.clear()
-        self._values=self._ready=None
+        self._values=self._ready=self._source=None
         self.rows=0
 
 
