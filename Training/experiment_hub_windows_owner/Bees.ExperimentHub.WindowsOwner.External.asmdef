@@ -1,0 +1,16 @@
+{
+    "name": "Bees.ExperimentHub.WindowsOwner.External",
+    "rootNamespace": "",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "BEES_DOTNET_HOST_PROJECT_ONLY"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
