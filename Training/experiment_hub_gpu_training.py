@@ -57,6 +57,421 @@ def _storage_identity(tensor):
     return tensor.untyped_storage().data_ptr()
 
 
+def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
+                                    max_resident_bytes=2 * 1024**3,
+                                    free_fraction=0.18,
+                                    minimum_compute_bytes=2 * 1024**3):
+    """Bound reusable GPU input residency without reserving activation VRAM.
+
+    Intended for immutable rollout/input tensors consumed repeatedly during
+    one training update. Dynamic free_bytes should already honor an external
+    GPU memory lease (e.g., an allocator cap) when one exists. The cap is an
+    *allocation ceiling*, not a reservation. Callers allocate incrementally
+    and fall back to streamed inputs if device allocations fail.
+
+    A single use has no GPU cache benefit. Preserve both a fixed compute
+    reserve and at least 82% of reported free bytes for backprop, optimizer
+    state, inference and other co-located GPU jobs.
+    """
+    if (not all(type(x) is int and x >= 0 for x in
+                (free_bytes, desired_bytes, reuse_passes, max_resident_bytes,
+                 minimum_compute_bytes)) or
+            not isinstance(free_fraction, (int,float)) or
+            not 0 <= free_fraction <= 0.4):
+        raise ValueError("Invalid bounded GPU training input residency")
+    if reuse_passes < 2 or desired_bytes == 0:
+        return 0
+    return max(0, min(desired_bytes, max_resident_bytes,
+                      int(free_bytes * free_fraction),
+                      free_bytes - minimum_compute_bytes))
+
+
+def training_activation_workspace_budget(free_bytes, *,
+                                         max_bytes=4 * 1024**3,
+                                         free_fraction=0.16,
+                                         minimum_other_headroom=2 * 1024**3):
+    """Bound temporary GPU activations while keeping other GPU work viable.
+
+    A batch-width tuner may explore larger per-step work within this ceiling;
+    it is not an instruction to reserve or allocate the entire budget.
+    The same memory-headroom rule applies to any project's backward pass
+    using leased GPUs, including simultaneous inference collectors.
+    """
+    if (type(free_bytes) is not int or free_bytes < 0 or
+            type(max_bytes) is not int or max_bytes < 1 or
+            type(minimum_other_headroom) is not int or
+            minimum_other_headroom < 0 or
+            not isinstance(free_fraction,(int,float)) or
+            not 0 <= free_fraction <= 0.5):
+        raise ValueError("Invalid GPU activation workspace envelope")
+    return max(0, min(int(free_bytes*free_fraction), max_bytes,
+                      free_bytes-minimum_other_headroom))
+
+
+def discrete_action_logprob_entropy(logits, actions):
+    """Fused-softmax-friendly discrete PPO policy terms for any action count.
+
+    Avoid constructing a distribution and normalizing the same probabilities
+    again for separate log-probability/entropy paths. This is usable from
+    independent project trainers; it does not sample actions, apply clipping,
+    update weights or consume the global Torch RNG.
+    """
+    # log_softmax is a single native CUDA/HIP reduction-plus-pointwise
+    # kernel for the many small per-ant categorical distributions.
+    log_probs = torch.nn.functional.log_softmax(logits, dim=-1)
+    chosen_logp = log_probs.gather(
+        -1, actions.unsqueeze(-1)).squeeze(-1)
+    # Clamp to the finite dtype bound so masked -inf logits retain zero
+    # entropy contribution instead of generating 0 * -inf = NaN.
+    bounded = log_probs.clamp(min=torch.finfo(log_probs.dtype).min)
+    entropy = -(log_probs.exp() * bounded).sum(dim=-1)
+    return chosen_logp, entropy
+
+
+def allocate_gpu_work_rows(rows, pixel_area, device_pixel_budgets):
+    """Partition same-shape training rows across independently leased GPUs.
+
+    Return contiguous row counts, preserving observation/action order.
+    A small-memory GPU receives only the rows it can safely hold; the
+    optimizer's primary GPU retains any surplus. This avoids rejecting
+    useful parallel work simply because an equal split would not fit.
+    Returns None if fewer than two GPUs can execute the group.
+    """
+    if (type(rows) is not int or rows < 1 or
+            type(pixel_area) is not int or pixel_area < 1 or
+            not isinstance(device_pixel_budgets,(tuple,list)) or
+            not 1 <= len(device_pixel_budgets) <= 16 or
+            any(type(n) is not int or n < 0 for n in device_pixel_budgets)):
+        raise ValueError("Invalid bounded GPU row-partition request")
+    if rows < 2 or len(device_pixel_budgets) < 2:
+        return None
+    capacity = [min(rows, budget//pixel_area)
+                for budget in device_pixel_budgets[:min(rows,len(device_pixel_budgets))]]
+    if (not capacity or capacity[0] < 1 or
+            sum(capacity) < rows or sum(n>0 for n in capacity)<2):
+        return None
+    last = max(i for i,available in enumerate(capacity) if available > 0)
+    capacity = capacity[:last+1]
+    if any(n == 0 for n in capacity):
+        # Keep device ordinals a prefix so PyTorch's replica and gradient
+        # reduction machinery never needs sparse/non-contiguous device maps.
+        return None
+    remaining = rows
+    result = []
+    for i, limit in enumerate(capacity):
+        future = capacity[i+1:]
+        # Do not allocate so much to this GPU that later GPUs are left
+        # idle, but use extra headroom here if later leases cannot hold
+        # their nominal balanced share.
+        necessary = max(0, remaining-sum(future))
+        even = (remaining+len(future))//(len(future)+1)
+        assigned = min(limit,max(necessary,even))
+        if assigned < 1:
+            return None
+        result.append(assigned)
+        remaining -= assigned
+    return tuple(result) if remaining == 0 and len(result) > 1 else None
+
+
+class MeasuredIndependentTrainForwards:
+    """Qualify overlapping GPU forwards without replaying optimizer updates.
+
+    For two deterministic, independent differentiable functions on one CUDA/
+    HIP device. They may consume the same immutable observation tensor, but
+    must not share trainable parameters, mutate buffers or sample randomness.
+    A training adapter owns this object across PPO updates; no weights,
+    optimizer moments, actions or RNG state are stored here.
+
+    Qualification compares extra no-grad forwards on real board shapes.
+    Training forwards execute exactly once with autograd enabled, and CUDA's
+    stream dependency rules retain the original gradients and reductions.
+    Never assume parallel streams win for small neural networks: a measured
+    10% sustained forward improvement is required per shape.
+    """
+
+    def __init__(self, first, second, device, *,
+                 max_profiles=16, min_speedup=0.10,
+                 qualified_independent=False):
+        from collections import OrderedDict
+        if (not qualified_independent or not callable(first) or
+                not callable(second) or not isinstance(device,torch.device) or
+                device.type!="cuda" or not 1<=max_profiles<=128 or
+                not 0<=min_speedup<=0.5):
+            raise ValueError("GPU training forward overlap needs trusted independent functions")
+        self.first,self.second,self.device = first,second,device
+        self.min_speedup,self.max_profiles = min_speedup,max_profiles
+        self.profiles,self.visits = OrderedDict(),OrderedDict()
+        self.streams = None
+        self.remaining_qualifications = 0
+        self.calls = self.parallel_calls = self.qualifications = 0
+        self.fallbacks = self.available = 0
+        try:
+            self.streams = (torch.cuda.Stream(device=device),
+                            torch.cuda.Stream(device=device))
+            self.available = 1
+        except (RuntimeError,NotImplementedError,AttributeError):
+            self.streams = None
+
+    def begin_update(self, *, calibrations=1):
+        if type(calibrations) is not int or not 0<=calibrations<=8:
+            raise ValueError("GPU training forward qualification budget is invalid")
+        self.remaining_qualifications = calibrations
+
+    def _serial(self, first_input, second_input):
+        return self.first(first_input),self.second(second_input)
+
+    def _parallel(self, first_input, second_input):
+        caller = torch.cuda.current_stream(self.device)
+        left,right = self.streams
+        left.wait_stream(caller)
+        right.wait_stream(caller)
+        with torch.cuda.stream(left):
+            result_a = self.first(first_input)
+            first_input.record_stream(left)
+        with torch.cuda.stream(right):
+            result_b = self.second(second_input)
+            second_input.record_stream(right)
+        caller.wait_stream(left)
+        caller.wait_stream(right)
+        for result in (result_a,result_b):
+            for tensor in _tensor_outputs(result):
+                tensor.record_stream(caller)
+        return result_a,result_b
+
+    def _time(self, action):
+        caller = torch.cuda.current_stream(self.device)
+        caller.synchronize()
+        began = perf_counter()
+        action()
+        action()
+        caller.synchronize()
+        return (perf_counter()-began)/2
+
+    def run(self, first_input, second_input):
+        self.calls += 1
+        if (not self.available or
+                not isinstance(first_input,torch.Tensor) or
+                not isinstance(second_input,torch.Tensor) or
+                first_input.device!=self.device or
+                second_input.device!=self.device):
+            return self._serial(first_input,second_input)
+        signature = ((tuple(first_input.shape),first_input.dtype),
+                     (tuple(second_input.shape),second_input.dtype))
+        selected = self.profiles.get(signature)
+        if selected is None:
+            visits = self.visits.pop(signature,0)+1
+            if visits < 4 or self.remaining_qualifications == 0:
+                self.visits[signature] = min(visits,4)
+                if len(self.visits)>self.max_profiles*4:
+                    self.visits.popitem(last=False)
+                return self._serial(first_input,second_input)
+            self.remaining_qualifications -= 1
+            self.qualifications += 1
+            selected = False
+            try:
+                with torch.no_grad():
+                    reference = self._serial(first_input,second_input)
+                    candidate = self._parallel(first_input,second_input)
+                    if all(torch.allclose(a,b,rtol=1e-5,atol=1e-6)
+                           for a,b in zip(reference,candidate)):
+                        serial = [self._time(lambda:self._serial(
+                            first_input,second_input)) for _ in range(2)]
+                        concurrent = [self._time(lambda:self._parallel(
+                            first_input,second_input)) for _ in range(2)]
+                        selected = median(concurrent)<median(serial)*(1-self.min_speedup)
+            except (RuntimeError,ValueError,TypeError,NotImplementedError,
+                    MemoryError,torch.OutOfMemoryError):
+                self.fallbacks += 1
+            self.profiles[signature] = selected
+            if len(self.profiles)>self.max_profiles:
+                self.profiles.popitem(last=False)
+        else:
+            self.profiles.move_to_end(signature)
+        if selected:
+            try:
+                result = self._parallel(first_input,second_input)
+            except (RuntimeError,ValueError,TypeError,NotImplementedError,
+                    torch.OutOfMemoryError):
+                self.profiles[signature] = False
+                self.fallbacks += 1
+            else:
+                self.parallel_calls += 1
+                return result
+        return self._serial(first_input,second_input)
+
+    def metrics(self):
+        return dict(
+            ppo_shared_train_forward_calls=self.calls,
+            ppo_shared_train_forward_parallel_calls=self.parallel_calls,
+            ppo_shared_train_forward_qualifications=self.qualifications,
+            ppo_shared_train_forward_fallbacks=self.fallbacks,
+            ppo_shared_train_forward_profiles=len(self.profiles))
+
+
+class ImmutableGpuRowCache:
+    """Reuse immutable observation rows already transferred to another GPU.
+
+    The caller supplies stable per-update row identities; no global input
+    state, epoch order, optimizer or model state is owned here. A first
+    transfer is the normal nonblocking device copy. Later groups containing
+    only cached rows are reassembled on the destination GPU, avoiding
+    repeated PCIe/peer copies. The cache is bounded by a caller-owned GPU
+    memory lease and must be cleared at the end of the training update.
+    """
+
+    def __init__(self, device, *, max_bytes):
+        if (not isinstance(device,torch.device) or device.type!="cuda" or
+                type(max_bytes) is not int or max_bytes<0):
+            raise ValueError("Invalid leased GPU row-cache device or budget")
+        self.device,self.max_bytes = device,max_bytes
+        self.rows = {}
+        self.resident_bytes = self.hits = self.misses = self.bytes_saved = 0
+        self.copied_bytes = 0
+        self.admitted_buffers = 0
+        self.oom_evictions = 0
+        self.contiguous_view_hits = 0
+        self.partial_hits = 0
+        self.partial_bytes_saved = 0
+
+    @staticmethod
+    def _contiguous_cached_view(views):
+        """Reuse a contiguous original GPU allocation without a cat kernel."""
+        first = views[0]
+        stride = first.stride()
+        start = first.storage_offset()
+        storage = first.untyped_storage().data_ptr()
+        step = stride[0]
+        if all(row.shape == first.shape and row.stride() == stride and
+               row.untyped_storage().data_ptr() == storage and
+               row.storage_offset() == start + i*step
+               for i,row in enumerate(views)):
+            return torch.as_strided(
+                first,(len(views),*first.shape[1:]),stride)
+        return None
+
+    def fetch(self, identifiers, boards):
+        if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
+                boards.device.type!="cuda" or
+                len(identifiers)!=len(boards) or
+                len(set(identifiers))!=len(identifiers)):
+            raise ValueError("Immutable GPU row request changed shape or identity")
+        if boards.device == self.device:
+            return boards
+        keys = tuple(identifiers)
+        if keys and all(key in self.rows and
+                        self.rows[key].shape[1:] == boards.shape[1:] and
+                        self.rows[key].dtype == boards.dtype for key in keys):
+            try:
+                if len(keys)==1:
+                    result = self.rows[keys[0]]
+                else:
+                    views = [self.rows[key] for key in keys]
+                    result = self._contiguous_cached_view(views)
+                    if result is None:
+                        result = torch.cat(views,dim=0)
+                    else:
+                        self.contiguous_view_hits += 1
+            except torch.OutOfMemoryError:
+                # Optional caching cannot exhaust the remaining activation
+                # workspace and prevent a valid PPO minibatch. Evict the
+                # secondary input bank and restore ordinary peer copying.
+                self.oom_evictions += 1
+                self.clear()
+            else:
+                self.hits += len(keys)
+                self.bytes_saved += boards.numel()*boards.element_size()
+                return result
+        # Most PPO epochs reshuffle the same immutable observations, so
+        # groups frequently contain both previously copied and new rows.
+        # Reassemble on the destination only when the saved peer transfer
+        # is large enough to amortize extra index/cat kernels. Sparse or
+        # tiny batches retain the original direct-copy path.
+        cached = [
+            key in self.rows and
+            self.rows[key].shape[1:] == boards.shape[1:] and
+            self.rows[key].dtype == boards.dtype
+            for key in keys
+        ]
+        hit_indices = [index for index,present in enumerate(cached) if present]
+        missing_indices = [index for index,present in enumerate(cached) if not present]
+        row_bytes = (boards[0].numel()*boards.element_size()
+                     if len(boards) else 0)
+        if (hit_indices and missing_indices and
+                len(hit_indices)*2 >= len(keys) and
+                len(hit_indices)*row_bytes >= 512*1024):
+            try:
+                # One compact source gather and one peer transfer replace
+                # the entire batch's data movement. No Python GPU readback.
+                source_rows = boards.index_select(
+                    0,torch.as_tensor(missing_indices,device=boards.device))
+                fresh = source_rows.to(self.device,non_blocking=True)
+                result = torch.empty(
+                    boards.shape,device=self.device,dtype=boards.dtype)
+                prior = torch.cat(
+                    [self.rows[keys[i]] for i in hit_indices],dim=0)
+                result.index_copy_(
+                    0,torch.as_tensor(hit_indices,device=self.device),prior)
+                result.index_copy_(
+                    0,torch.as_tensor(missing_indices,device=self.device),fresh)
+            except torch.OutOfMemoryError:
+                # This is an optional optimization. Discard cached
+                # residency rather than prevent the required PPO forward.
+                self.oom_evictions += 1
+                self.clear()
+            else:
+                fresh_bytes = fresh.numel()*fresh.element_size()
+                self.copied_bytes += fresh_bytes
+                self.hits += len(hit_indices)
+                self.partial_hits += 1
+                self.bytes_saved += len(hit_indices)*row_bytes
+                self.partial_bytes_saved += len(hit_indices)*row_bytes
+                if self.resident_bytes+fresh_bytes <= self.max_bytes:
+                    for index,key in enumerate(missing_indices):
+                        self.rows[keys[key]] = fresh[index:index+1]
+                    self.resident_bytes += fresh_bytes
+                    self.admitted_buffers += 1
+                return result
+        self.misses += 1
+        try:
+            copied = boards.to(self.device,non_blocking=True)
+        except torch.OutOfMemoryError:
+            if not self.rows:
+                raise
+            self.oom_evictions += 1
+            self.clear()
+            copied = boards.to(self.device,non_blocking=True)
+        size = copied.numel()*copied.element_size()
+        self.copied_bytes += size
+        # Store new rows as views of one already-necessary device transfer.
+        # Charging the entire underlying storage prevents the retained
+        # slices from quietly exceeding the lease if a batch contains
+        # both cached and uncached rows.
+        if (self.resident_bytes+size <= self.max_bytes and
+                any(key not in self.rows for key in keys)):
+            for index,key in enumerate(keys):
+                if key not in self.rows:
+                    self.rows[key] = copied[index:index+1]
+            self.resident_bytes += size
+            self.admitted_buffers += 1
+        return copied
+
+    def clear(self):
+        self.rows.clear()
+        self.resident_bytes = 0
+
+    def metrics(self):
+        return dict(
+            cached_peer_rows=self.hits,
+            cached_peer_bytes_saved=self.bytes_saved,
+            cached_peer_resident_bytes=self.resident_bytes,
+            cached_peer_copied_bytes=self.copied_bytes,
+            cached_peer_buffer_allocations=self.admitted_buffers,
+            cached_peer_oom_evictions=self.oom_evictions,
+            cached_peer_contiguous_view_hits=self.contiguous_view_hits,
+            cached_peer_partial_hits=self.partial_hits,
+            cached_peer_partial_bytes_saved=self.partial_bytes_saved)
+
+
 class IndependentGpuTraining:
     """Measure-and-select execution for genuinely independent GPU learners.
 
@@ -477,6 +892,7 @@ class PersistentGpuForwardPool:
             max_workers=len(devices), thread_name_prefix="hub-gpu-forward")
         self._closed = False
         self.calls = 0
+        self.prepared_calls = 0
 
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
@@ -508,6 +924,60 @@ class PersistentGpuForwardPool:
         # exception boundary and protecting subsequent parameter updates.
         wait(futures)
         self.calls += 1
+        return [future.result() for future in futures]
+
+    @staticmethod
+    def _prepared_forward(model, factory, device, stream, producer_event,
+                          grad_enabled, autocast_enabled, autocast_dtype):
+        with (torch.set_grad_enabled(grad_enabled),
+              torch.cuda.device(device),
+              torch.cuda.stream(stream),
+              torch.autocast("cuda", enabled=autocast_enabled,
+                             dtype=autocast_dtype)):
+            # Per-device input factories may copy tensors produced on GPU 0
+            # during the current optimizer minibatch. The producer event
+            # establishes a proper cross-device dependency without waiting
+            # for GPU 2's transfer on the host or delaying GPU 1's forward.
+            if producer_event is not None:
+                stream.wait_event(producer_event)
+            return model(*factory())
+
+    def run_prepared(self, models, input_factories, devices=None):
+        """Prepare GPU inputs and launch their forwards concurrently.
+
+        Factories are side-effect-free, single-use callables that return
+        the positional inputs for one independent model. CPU records are
+        immutable and GPU source tensors remain caller-owned until this
+        call returns. Models and optimizers are NOT cloned or stepped.
+        No GPU-wide barrier occurs: a producer event is recorded on the
+        primary stream and waited on only by the secondary streams.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward preparation requires its live owner")
+        ordinals = self.devices if devices is None else tuple(devices)
+        if (not 2 <= len(ordinals) <= len(self.devices) or
+                ordinals != self.devices[:len(ordinals)] or
+                len(models)!=len(ordinals) or
+                len(input_factories)!=len(ordinals) or
+                any(not callable(factory) for factory in input_factories)):
+            raise ValueError("GPU prepared cohort must match its leased devices")
+        streams = [torch.cuda.current_stream(device) for device in ordinals]
+        producer = torch.cuda.Event()
+        producer.record(streams[0])
+        grad_enabled = torch.is_grad_enabled()
+        autocast_enabled = torch.is_autocast_enabled("cuda")
+        autocast_dtype = torch.get_autocast_dtype("cuda")
+        futures = [self._workers.submit(
+            self._prepared_forward, model, factory, device, stream,
+            producer if i else None,
+            grad_enabled, autocast_enabled, autocast_dtype)
+            for i,(model,factory,device,stream) in enumerate(zip(
+                models,input_factories,ordinals,streams))]
+        # Join Python dispatch, not GPU completion. Original tensors and
+        # autograd operations retain their device-stream dependencies.
+        wait(futures)
+        self.calls += 1
+        self.prepared_calls += 1
         return [future.result() for future in futures]
 
     def close(self):
