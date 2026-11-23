@@ -600,9 +600,11 @@ class FrozenGpuGraphs:
         if not self.enabled or any(t.device != self.device
                                    for row in args for t in row):
             raise ValueError("CUDA/HIP graph inputs and models must use one device")
-        inputs = tuple(tuple(torch.empty_like(t) for t in row) for row in args)
+        # Check the complete static input budget *before* allocating
+        # any GPU capture tensors. An OOM from empty_like here used to
+        # happen before the optional-graph headroom gate could intervene.
         static_bytes = sum(t.numel()*t.element_size()
-                           for row in inputs for t in row)
+                           for row in args for t in row)
         if static_bytes > self.max_capture_bytes // 2:
             raise MemoryError("GPU graph inputs exceed the residency envelope")
         # A graph's static input/output banks and kernel workspace occupy
@@ -617,6 +619,7 @@ class FrozenGpuGraphs:
                       min(self.max_capture_bytes, 128*1048576))
         if free_bytes is not None and free_bytes < reserve:
             raise MemoryError("Not enough GPU headroom for optional graph capture")
+        inputs = tuple(tuple(torch.empty_like(t) for t in row) for row in args)
         for row, stable in zip(args, inputs):
             for value, target in zip(row, stable):
                 target.copy_(value)
