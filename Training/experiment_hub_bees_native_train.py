@@ -858,10 +858,11 @@ def main():
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
                 return 130
-            # A cooperative Stop may report normal completion (0) or the
-            # Python interrupt convention (130) after the launcher's final
-            # save. Other failures never count as verified checkpoint Stops.
-            return 0 if marker_stop and result in (0,130) else 130
+            # Systemd's checkpoint-stop receipt requires an actual exit 0,
+            # not merely SuccessExitStatus=130. Both the explicit marker and
+            # its ordinary SIGINT stop request are valid after a verified
+            # optimizer/model save; never certify a failed learner exit.
+            return 0 if result in (0,130) else 130
         if result!=0:
             return result or 1
         record_model(root,job)
