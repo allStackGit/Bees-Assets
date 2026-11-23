@@ -12,6 +12,8 @@ const UUID=/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const SHA=/^[a-f0-9]{64}$/;
 const MIX=/^tinybrains_mix_([a-f0-9]{20})_v([1-9][0-9]*)$/;
 const HISTORY=/^tinybrains_mini_[a-f0-9]{20}$/;
+const FROZEN=/^tinybrains_frozen_[a-f0-9]{20}$/;
+const CHECKPOINT_NAME=/^(?:latest|update-[0-9]{6,8})\\.pt$/;
 const STAGES=new Set(['basic_tiny','tiny_two_player','small_two_player',
     'all_two_player','full_multiplayer']);
 const MODES=new Set(['configuration','all_77','season_76','custom']);
@@ -33,7 +35,8 @@ function privateFile(file) {
 }
 function read(o) {
     const file=privateFile(path.join(o.suites,CATALOG));
-    if(!file)return {version:1,templates:[],opponent_labels:{}};
+    if(!file)return {version:1,templates:[],opponent_labels:{},
+        opponent_models:[]};
     const data=JSON.parse(fs.readFileSync(file,'utf8'));
     if(!data||data.version!==1||!Array.isArray(data.templates)||
        data.templates.length>100||!data.opponent_labels||
@@ -42,7 +45,22 @@ function read(o) {
        Object.entries(data.opponent_labels).some(([id,name])=>
            !HISTORY.test(id)||typeof name!=='string'||name.length>80))
         throw Error('Invalid saved mixed-evaluation library.');
-    return data;
+    const models=data.opponent_models??[];
+    if(!Array.isArray(models)||models.length>40||
+        new Set(models.map(item=>item?.id)).size!==models.length||
+        models.some(item=>!item||typeof item!=='object'||
+            Object.keys(item).sort().join(',')!==
+                'checkpoint_sha256,id,label,manifest_sha256,model_sha256,ppo_updates,runtime_sha256,source_file,source_job_id'||
+            !FROZEN.test(item.id)||!SHA.test(item.checkpoint_sha256)||
+            item.id!=='tinybrains_frozen_'+item.checkpoint_sha256.slice(0,20)||
+            !SHA.test(item.model_sha256)||!SHA.test(item.manifest_sha256)||
+            !SHA.test(item.runtime_sha256)||!UUID.test(item.source_job_id)||
+            !CHECKPOINT_NAME.test(item.source_file)||
+            !Number.isSafeInteger(item.ppo_updates)||item.ppo_updates<1||
+            typeof item.label!=='string'||!item.label.trim()||
+            item.label.length>80||/[\\x00-\\x1f\\x7f]/.test(item.label)))
+        throw Error('Invalid saved frozen-opponent library.');
+    return {...data,opponent_models:models};
 }
 function saveCatalog(o,data) {
     const file=path.join(o.suites,CATALOG);
@@ -74,7 +92,7 @@ function lookupSuite(o,id) {
     return suite.suite_id===id?suite:null;
 }
 function availableOpponents(o) {
-    const labels=read(o).opponent_labels;
+    const catalog=read(o),labels=catalog.opponent_labels;
     const list=[];
     for(const id of ['nano','micro']) {
         const source=lookupSuite(o,'tinybrains_'+id+'_season_v1')||
@@ -104,6 +122,14 @@ function availableOpponents(o) {
             model_sha256:suite.opponent_model_sha256,
             manifest_sha256:suite.opponent_manifest_sha256,
             model_dir:path.join(o.suites,'opponents',id)});
+    }
+    for(const model of catalog.opponent_models) {
+        list.push({id:model.id,label:model.label,
+            checkpoint_sha256:model.checkpoint_sha256,
+            source_job_id:model.source_job_id,
+            model_sha256:model.model_sha256,
+            manifest_sha256:model.manifest_sha256,
+            model_dir:path.join(o.suites,'opponents',model.id)});
     }
     return list.filter(item=>{
         try {
@@ -383,6 +409,39 @@ function unusedVersions(o,hub) {
         !active.has(file.slice(0,-5))&&!referenced.has(file.slice(0,-5)))
         .map(file=>file.slice(0,-5)).sort();
 }
+// Register only the locally exported, hash-verified model bytes; HTTP
+// requests may choose a finished job and a label, never model paths.
+function registerFrozenOpponent(o,record) {
+    if(!record||typeof record!=='object'||!FROZEN.test(record.id)||
+        !SHA.test(record.checkpoint_sha256)||
+        record.id!=='tinybrains_frozen_'+record.checkpoint_sha256.slice(0,20)||
+        !SHA.test(record.model_sha256)||!SHA.test(record.manifest_sha256)||
+        !SHA.test(record.runtime_sha256)||!UUID.test(record.source_job_id)||
+        !CHECKPOINT_NAME.test(record.source_file)||
+        !Number.isSafeInteger(record.ppo_updates)||record.ppo_updates<1)
+        throw Error('Invalid frozen checkpoint opponent identity.');
+    const frozen={...record,label:label(record.label,'Opponent name')};
+    const dir=path.join(o.suites,'opponents',record.id);
+    if(shaFile(path.join(dir,'model.onnx'))!==record.model_sha256||
+        shaFile(path.join(dir,'manifest.json'))!==record.manifest_sha256)
+        throw Error('Saved frozen opponent weights differ from their immutable hashes.');
+    const catalog=read(o);
+    const old=catalog.opponent_models.find(item=>item.id===record.id);
+    if(old) {
+        for(const key of ['checkpoint_sha256','model_sha256','manifest_sha256',
+            'runtime_sha256','source_file','source_job_id','ppo_updates'])
+            if(old[key]!==record[key])
+                throw Error('The same frozen opponent identity has different original evidence.');
+        old.label=frozen.label;
+    }else{
+        if(catalog.opponent_models.length>=40)
+            throw Error('The frozen opponent library is full (40 models).');
+        catalog.opponent_models.push(frozen);
+    }
+    saveCatalog(o,catalog);
+    return {id:frozen.id,label:frozen.label,message:
+        'Saved '+frozen.label+' as a verified reusable frozen opponent. No evaluation service or training job was started.'};
+}
 function customSuites(o) {
     const files=fs.existsSync(o.suites)?fs.readdirSync(o.suites):[];
     const names=files.filter(file=>MIX.test(file.slice(0,-5))&&file.endsWith('.json'));
@@ -417,4 +476,4 @@ function library(o,hub) {
         maps:['basic-tiny-2p',...boards(o)]};
 }
 module.exports={read,library,customSuites,saveEvaluation,deleteEvaluation,nameOpponent,
-    referencedSuites,unusedVersions};
+    registerFrozenOpponent,referencedSuites,unusedVersions};
