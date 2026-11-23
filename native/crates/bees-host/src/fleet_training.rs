@@ -1052,7 +1052,9 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
             .join("latest-playable.json").is_file();
         let finished = completed.zip(target)
             .is_some_and(|(done, total)| done >= total);
-        statuses.push(if exited == Some(false) {
+        statuses.push(if job.join("stop.request").is_file() { 
+            "  [Graceful stop requested; last committed checkpoint retained]"
+        } else if exited == Some(false) {
             if has_playable {
                 "  [Last attempt failed; playable checkpoint retained]"
             } else {
@@ -1110,6 +1112,9 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
          "  [Inspection complete]".to_string(), true),
         ("Resume Training Job".to_string(),
          "  [Original source/checkpoint]".to_string(), can_resume),
+        ("Request Graceful Stop".to_string(),
+         "  [Finish current optimizer round, preserve checkpoint]".to_string(),
+         !done && !job.join("stop.request").exists()),
     ];
     if let Some(message) = diagnostic {
         details.push((
@@ -1299,8 +1304,18 @@ pub(super) fn inspect_training_jobs(save_root: &Path) -> Result<(), Box<dyn Erro
         title: title.as_str(), status: status.as_str(), unlocked: *enabled,
     }).collect::<Vec<_>>();
     let mut action = 0;
-    if select_library(&actions, &mut action, false)? == Some(1) {
-        resume_training_job(job)?;
+    match select_library(&actions, &mut action, false)? {
+        Some(1) => resume_training_job(job)?,
+        Some(2) => {
+            // The Python learner alone owns its live subprocesses and
+            // checkpoint commits. A tiny create-once file requests that it
+            // stop before starting its next optimizer round. No PID kill,
+            // second controller, or incomplete model publication.
+            OpenOptions::new().write(true).create_new(true)
+                .open(job.join("stop.request"))?;
+            println!("Graceful native training stop requested; the current round may finish before the learner exits.");
+        }
+        _ => {},
     }
     Ok(())
 }
@@ -1406,6 +1421,17 @@ fn resume_training_job(job: &Path) -> Result<(), Box<dyn Error>> {
     }
     let (stdout_path, stderr_path, stdout, stderr) =
         pair.ok_or_else(|| invalid("native training resume log identities exhausted"))?;
+    // An explicit resume clears only this job's cooperative stop marker.
+    // Keep it until all prerequisites and log ownership are validated;
+    // an unsuccessful resume attempt must not silently cancel the stop.
+    let stop_marker = job.join("stop.request");
+    if stop_marker.exists() {
+        let metadata = fs::symlink_metadata(&stop_marker)?;
+        if !metadata.file_type().is_file() {
+            return Err(invalid("native training stop request is not a regular file").into());
+        }
+        fs::remove_file(&stop_marker)?;
+    }
     let child = command.stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))
