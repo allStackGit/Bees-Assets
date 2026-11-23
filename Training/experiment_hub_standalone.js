@@ -340,6 +340,9 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
                 });
             if(req.method==='GET'&&route==='/api/hub/local-services')
                 return json(res,200,await localServices.status(hub));
+            if(req.method==='GET'&&route==='/api/hub/local-services/evaluator-maps')
+                return json(res,200,localServices.evaluatorMapReport(
+                    hub,url.searchParams.get('id')));
             if(req.method==='POST'&&route==='/api/hub/local-services/restart') {
                 const body=await readJson(req);
                 if(body.confirm_restart!==true)

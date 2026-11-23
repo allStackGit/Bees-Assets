@@ -287,4 +287,8 @@ async function evaluatorAction(hub,value) {
         activeEvaluatorActions.delete(project);
     }
 }
-module.exports={status,scheduleRestart,unitStatus,evaluatorAction,configureTinyBrainsCollectors};
+function evaluatorMapReport(hub,id) {
+    return localEvaluators.mapReport(hub,id);
+}
+module.exports={status,scheduleRestart,unitStatus,evaluatorAction,
+    evaluatorMapReport,configureTinyBrainsCollectors};
