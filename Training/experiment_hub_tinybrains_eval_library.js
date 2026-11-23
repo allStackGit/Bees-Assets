@@ -173,30 +173,44 @@ function mapsForStage(o,stage,mode,selectedMaps) {
 }
 function sourceDefaults(hub,config) {
     const p=config.parameters;
-    const host=hub.snapshot().machines.find(m=>m.status==='connected'&&
-        m.design_catalog?.tinybrains?.profiles?.[p.profile]?.profile_sha256===
-            p.profile_sha256);
-    if(!host)
-        throw Error('To match a saved training environment, reconnect a worker advertising its approved TinyBrains Design schema.');
-    const field=host.design_catalog.tinybrains.fields.find(f=>
-        f.key==='environment.max_turns');
-    const sourceTurn=p.design_overrides?.['environment.max_turns']??field?.default;
+    const parameterSha=crypto.createHash('sha256')
+        .update(JSON.stringify(p)).digest('hex');
+    const frozen=config.environment_snapshot;
+    const validSnapshot=frozen?.parameters_sha256===parameterSha&&
+        frozen?.profile_sha256===p.profile_sha256&&
+        SHA.test(String(frozen.source_sha256||''))&&
+        frozen.parameters&&typeof frozen.parameters==='object'&&
+        Number.isSafeInteger(frozen.parameters.max_turns)&&
+        frozen.parameters.max_turns>=1&&frozen.parameters.max_turns<=1000;
+    let parameters;
+    if(validSnapshot) {
+        // Saved Design values remain available without an agent heartbeat.
+        parameters={...frozen.parameters};
+    }else{
+        const host=hub.snapshot().machines.find(m=>m.status==='connected'&&
+            m.design_catalog?.tinybrains?.profiles?.[p.profile]?.profile_sha256===
+                p.profile_sha256);
+        if(!host||!Array.isArray(host.design_catalog.tinybrains.fields))
+            throw Error('This older Design has no frozen environment defaults. Reconnect the approved TinyBrains worker and re-save the Design once.');
+        if(p.design_source_sha256&&
+            p.design_source_sha256!==host.design_catalog.tinybrains.source_sha256)
+            throw Error('Connected TinyBrains environment schema differs from the Design source.');
+        const fields=host.design_catalog.tinybrains.fields
+            .filter(item=>item.key.startsWith('environment.')&&
+                item.section==='environment'&&item.default!==undefined);
+        parameters=Object.fromEntries(fields.map(field=>[
+            field.key.slice('environment.'.length),
+            p.design_overrides?.[field.key]??field.default,
+        ]));
+    }
+    const sourceTurn=parameters.max_turns;
     if(!Number.isSafeInteger(sourceTurn)||sourceTurn<1||sourceTurn>1000)
-        throw Error('An approved environment.max_turns default is required; reconnect the native trainer.');
+        throw Error('An approved environment.max_turns default is required.');
     const cap={basic_tiny:300,tiny_two_player:300,small_two_player:500,
         all_two_player:750,full_multiplayer:sourceTurn}[p.training_stage||'full_multiplayer'];
     if(!cap)throw Error('Saved configuration has an unknown training map stage.');
-    const environmentFields=(host?.design_catalog?.tinybrains?.fields||[])
-        .filter(item=>item.key.startsWith('environment.')&&
-            item.section==='environment'&&
-            item.default!==undefined);
-    const parameters=Object.fromEntries(environmentFields.map(field=>[
-        field.key.slice('environment.'.length),
-        p.design_overrides?.[field.key]??field.default,
-    ]));
     return {stage:p.training_stage||'full_multiplayer',
-        max_turns:Math.min(sourceTurn,cap),
-        parameters};
+        max_turns:Math.min(sourceTurn,cap),parameters};
 }
 function saveEvaluation(o,hub,value) {
     if(!value||typeof value!=='object'||Array.isArray(value)||
