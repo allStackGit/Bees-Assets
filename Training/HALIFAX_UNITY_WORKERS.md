@@ -111,6 +111,39 @@ building runs on Halifax or is independently relocated.
 The separate Halifax ROCm learner is implemented as a configured Python
 environment option, but still requires runtime qualification.
 
+## Compile current champion policy bundles on Halifax
+
+The existing Unity hot-reload builder can run under Halifax's Editor as well.
+First stage the **current, approved** Bees deployment model and matching
+\`BeesRL1v1Deployment.json\` into \`Assets/Resources/RlPolicy/\` (the same two
+resources used by the established Windows hot-release process). These files
+must contain a full deployment identity and policy ABI/signature. The separate
+native Hub \`policy-candidate/\` manifest is *not* a deployment manifest and
+cannot be substituted for it.
+
+From the Halifax Unity project's \`Assets/\` directory:
+
+\`\`\`sh
+node Training/bees_build_hot_bundles.js --platform both
+\`\`\`
+
+This invokes the existing Unity \`RlLivePolicyHotBundleBuilder\` separately
+for WindowsPlayer and LinuxPlayer, verifies the compiled bundle and sidecar
+against the staged deployment manifest and model bytes, and creates
+\`../Builds/OfflineHotBundles/<build-id>/\` with the two platform-specific
+folders and an unsigned, unpublished build manifest. Windows and Linux
+Build Support must be installed for the selected targets.
+
+Copy the platform folder with \`bees-rl-policy.bundle\` and
+\`bees-rl-policy.metadata.json\` to the machine owning the authoritative
+continual-learning store. **Only that owner** should run the existing
+\`bees_continual_hot_bundle.py\` publisher with its configured
+\`--root\`, \`--bundle-metadata\`, and \`--distribution-root\` arguments.
+It rechecks the deployment, model hash and policy ABI before publication.
+This workflow allows Unity compilation on Halifax without requiring
+a Windows Unity Editor for that step; the running Windows manager remains
+the authority for its current network and distribution.
+
 ## View and control Bees from the Halifax Experiment Hub
 
 The current native Hub remains the scheduler for TinyBrains and Courier. To
