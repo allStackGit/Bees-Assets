@@ -10,7 +10,8 @@ const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {prepare: prepareImmutableRuntime}=require('./experiment_hub_bees_immutable_runtime');
 const {privateKey,brokerPort}=require('./experiment_hub_bees_wan_identity');
-const {unityWorkerTreeSha256}=require('./experiment_hub_bees_worker_identity');
+const {unityWorkerTreeSha256,pinnedWorkerRelease}=
+    require('./experiment_hub_bees_worker_identity');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -65,6 +66,7 @@ function normalize(parameters,context,approved) {
         'max_steps','envs','device','seed','hyperparameters','environment_args',
         'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference',
         'wan_actors','wan_key_fingerprint','worker_payload_sha256',
+        'wan_release_sha256',
     ]);
     if(!parameters||typeof parameters!=='object'||Array.isArray(parameters)||
         Object.keys(parameters).some(key=>!allowed.has(key)))
@@ -110,7 +112,8 @@ function normalize(parameters,context,approved) {
     if(!Number.isSafeInteger(wanActors)||wanActors<0||wanActors>8||
         (wanActors>0&&(!approved.wan_key_fingerprint||
             parameters.wan_key_fingerprint!==approved.wan_key_fingerprint||
-            parameters.worker_payload_sha256!==approved.worker_payload_sha256))||
+            parameters.worker_payload_sha256!==approved.worker_payload_sha256||
+            parameters.wan_release_sha256!==approved.wan_release_sha256))||
         (wanActors===0&&parameters.wan_key_fingerprint!==undefined&&
             parameters.wan_key_fingerprint!==approved.wan_key_fingerprint))
         throw Error('Bees native WAN actors require an approved private broker key and 1–8 remote actors.');
@@ -175,7 +178,7 @@ const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
     'evaluation_score_rate_pursuit','evaluation_score_rate_strafe']);
 
 function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifactRoot,
-    wanKeyPath=null,wanBrokerPort=55051}) {
+    wanKeyPath=null,wanBrokerPort=55051,releaseManifestPath=null}) {
     if(process.platform!=='linux')
         throw Error('The first native Bees Unity training adapter requires the Linux ROCm supervisor.');
     const project=fs.realpathSync(projectRoot);
@@ -213,9 +216,13 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         throw Error('Bees native adapter requires an installed Python 3.10 ML-Agents 1.1.0 learner with PyTorch and TensorBoard.');
     const key=wanKeyPath?privateKey(wanKeyPath):null;
     const port=brokerPort(wanBrokerPort);
+    const release=releaseManifestPath?
+        pinnedWorkerRelease(releaseManifestPath,worker):null;
+    const payload=key?unityWorkerTreeSha256(worker):null;
     const approved={
         ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
-        worker_payload_sha256:key?unityWorkerTreeSha256(worker):null,
+        worker_payload_sha256:payload,
+        wan_release_sha256:key?(release?.release_sha256??payload):null,
         worker_sha256:fileHash(worker),
         runtime_version:pinned.runtimeVersion,
         trainer_sha256:fileHash(trainer),
@@ -303,7 +310,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             runtime_version:approved.runtime_version,
             trainer_sha256:approved.trainer_sha256,
             ...(key?{wan_key_fingerprint:key.fingerprint,
-                worker_payload_sha256:approved.worker_payload_sha256}:{}),
+                worker_payload_sha256:approved.worker_payload_sha256,
+                wan_release_sha256:approved.wan_release_sha256}:{}),
             fields:DESIGN_FIELDS.map(field=>({...field})),
             metric_catalog:{base:[...METRICS]}}},
         gpu_verify_args(parameters,context) {
@@ -338,7 +346,9 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             fs.mkdirSync(root,{mode:0o700});
             const wan=frozen.wanActors>0;
             if(wan&&(privateKey(key.path).fingerprint!==key.fingerprint||
-                unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256))
+                unityWorkerTreeSha256(worker)!==approved.worker_payload_sha256||
+                release&&pinnedWorkerRelease(releaseManifestPath,worker).release_sha256!==
+                    approved.wan_release_sha256))
                 throw Error('Bees WAN private key or complete Unity player changed after enrollment.');
             const job={
                 schema_version:wan?3:2,job_id:context.job_id,
@@ -357,6 +367,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 expected_gpu_pci:context.gpu_pci_address??null,
                 ...(wan?{wan_actors:frozen.wanActors,
                     game_payload_sha256:approved.worker_payload_sha256,
+                    wan_release_sha256:approved.wan_release_sha256,
                     wan_broker_port:port,
                     wan_key_file:key.path,
                     wan_key_fingerprint:key.fingerprint}:{}),
