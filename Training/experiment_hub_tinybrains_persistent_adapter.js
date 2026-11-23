@@ -106,13 +106,20 @@ const TINYBRAINS_METRIC_CATALOG={
         'ppo_gpu_index_uploads_saved','ppo_gpu_index_upload_bytes',
         'gpu_execution_shared_inference_calls',
         'gpu_execution_shared_inference_selected',
+        'gpu_execution_shared_inference_stream_calls',
+        'gpu_execution_shared_inference_graph_calls',
         'gpu_execution_shared_inference_calibrations',
         'gpu_execution_shared_inference_fallbacks',
         'gpu_execution_shared_learner_calls',
         'gpu_execution_shared_learner_selected',
+        'gpu_execution_shared_learner_stream_calls',
+        'gpu_execution_shared_learner_graph_calls',
+        'gpu_execution_shared_learner_refreshes',
         'gpu_execution_shared_learner_calibrations',
         'gpu_execution_shared_learner_fallbacks',
         'gpu_execution_shared_learner_admitted',
+        'gpu_execution_shared_reporting_collectors',
+        'gpu_execution_shared_total_collectors',
     ],
     remote_rollouts:[
         'remote_policy_snapshot_seconds','remote_opponent_snapshot_seconds',
@@ -377,13 +384,20 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         // frozen-opponent groups regardless of detailed PPO profiling.
         'gpu_execution_shared_inference_calls',
         'gpu_execution_shared_inference_selected',
+        'gpu_execution_shared_inference_stream_calls',
+        'gpu_execution_shared_inference_graph_calls',
         'gpu_execution_shared_inference_calibrations',
         'gpu_execution_shared_inference_fallbacks',
         'gpu_execution_shared_learner_calls',
         'gpu_execution_shared_learner_selected',
+        'gpu_execution_shared_learner_stream_calls',
+        'gpu_execution_shared_learner_graph_calls',
+        'gpu_execution_shared_learner_refreshes',
         'gpu_execution_shared_learner_calibrations',
         'gpu_execution_shared_learner_fallbacks',
-        'gpu_execution_shared_learner_admitted'])
+        'gpu_execution_shared_learner_admitted',
+        'gpu_execution_shared_reporting_collectors',
+        'gpu_execution_shared_total_collectors'])
         add(name,row[name],'count');
     add('local_gpu_pending_at_local_end',
         row.local_gpu_collectors_pending_at_local_end,'count');
@@ -668,10 +682,15 @@ function recordedTinyBrainsMetrics(row,updateWall) {
             worker.rollout_opponent_grouped_fallbacks,'count');
         for(const name of ['gpu_execution_shared_inference_calls',
             'gpu_execution_shared_inference_selected',
+            'gpu_execution_shared_inference_stream_calls',
+            'gpu_execution_shared_inference_graph_calls',
             'gpu_execution_shared_inference_calibrations',
             'gpu_execution_shared_inference_fallbacks',
             'gpu_execution_shared_learner_calls',
             'gpu_execution_shared_learner_selected',
+            'gpu_execution_shared_learner_stream_calls',
+            'gpu_execution_shared_learner_graph_calls',
+            'gpu_execution_shared_learner_refreshes',
             'gpu_execution_shared_learner_calibrations',
             'gpu_execution_shared_learner_fallbacks',
             'gpu_execution_shared_learner_admitted'])
