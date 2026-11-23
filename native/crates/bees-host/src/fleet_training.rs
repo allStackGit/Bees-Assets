@@ -273,7 +273,7 @@ fn append_training_arguments(
     command.arg("--evaluation-every").arg(evaluation_every.to_string());
     if !recipe["evaluation_physics_workers"].is_null() {
         let n = recipe["evaluation_physics_workers"].as_u64()
-            .filter(|n| (1..=8).contains(n))
+            .filter(|n| (1..=128).contains(n) && *n <= holdout_worlds)
             .ok_or_else(|| invalid("invalid in-game native holdout worker allocation"))?;
         command.arg("--evaluation-physics-workers").arg(n.to_string());
     }
@@ -847,6 +847,13 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
     let Some(holdout_worlds) = choose_count(
         "Fixed-seed native holdout arenas", &[8, 16, 32, 64, 128],
     )? else { return Ok(()); };
+    // Local holdout physics capacity is chosen separately from training
+    // collectors. Hub reservations are not silently transferred to this host.
+    let holdout_worker_options = [1, 2, 4, 8, 16, 32].into_iter()
+        .filter(|count| *count <= holdout_worlds).collect::<Vec<_>>();
+    let Some(evaluation_physics_workers) = choose_count(
+        "Holdout CPU physics workers", &holdout_worker_options,
+    )? else { return Ok(()); };
 
     // Resolve and validate before allocating a permanent job name. GPU
     // availability and the Python environment are validated by the existing
@@ -879,10 +886,9 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "self_play_refresh_every": refresh_every,
         "early_stop_patience": early_stop_patience,
         "evaluation_every": evaluation_every,
-        // The fixed holdout has eight persistent arenas. Reuse up to eight
-        // CPUs from the player's chosen local allocation; Experiment Hub
-        // collector capacity is remote, not implicitly available here.
-        "evaluation_physics_workers": workers.map(|n| n.min(8)).unwrap_or(1),
+        // Holdout allocation is a separate explicit local choice. A Hub
+        // collector's leased CPU capacity is never presumed available here.
+        "evaluation_physics_workers": evaluation_physics_workers,
         "evaluation_inference_device": evaluation_inference_device,
         "trainer_config": trainer_config,
         "trainer_config_sha256": trainer_config_sha256,
@@ -953,6 +959,7 @@ pub(super) fn choose_and_train(save_root: &Path) -> Result<(), Box<dyn Error>> {
         "early_stop_patience": early_stop_patience,
         "evaluation_every": evaluation_every,
         "holdout_worlds": holdout_worlds,
+        "evaluation_physics_workers": evaluation_physics_workers,
         "policy_reinforcements": policy_reinforcements,
         "stdout": stdout_path,
         "stderr": stderr_path,
