@@ -209,6 +209,9 @@ if(enabled('bees_rollout')) {
             identityFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE'),
             knownHostsFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE'),
             sshPort,
+            ...(process.env.EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE?{
+                sshExecutable:required('EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE'),
+            }:{}),
             brokerPort:port('EXPERIMENT_HUB_BEES_WAN_BROKER_PORT',55051),
         }:null,
     });
