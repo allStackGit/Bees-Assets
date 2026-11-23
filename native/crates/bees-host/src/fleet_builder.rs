@@ -2042,6 +2042,36 @@ pub(super) fn archive(
     // This is the same native FogOfWarVision switch consumed by the
     // actual Level; camera and policy perception read that shared state.
     scene["activate_fog_of_war"] = json!(selected.fog_of_war);
+    for side in 0..2 {
+        let Some(source) = &selected.source_fighter[side] else { continue };
+        let FleetMix::SourceClass(kind) = selected.mix[side] else {
+            return Err(invalid("original fighter source has no matching class choice").into());
+        };
+        if source["ship_type"] != kind || source["side"] != side + 1 ||
+            source["policy"].is_object() || source["special"].is_object() ||
+            source["special_weapon"].is_object() {
+            return Err(invalid("original FreePlay source class is not an ordinary physical fighter").into());
+        }
+        let id = 11_i64 + side as i64;
+        let ships = scene["ships"].as_array_mut()
+            .ok_or_else(|| invalid("native FreePlay source lost its physical roster"))?;
+        let starter = ships.iter_mut().find(|ship| ship["entity_id"] == id &&
+            ship["side"] == side + 1
+        ).ok_or_else(|| invalid("native FreePlay starter fighter is missing"))?;
+        let position = starter["position"].clone();
+        let rotation = starter["rotation_degrees"].clone();
+        let controlled = !selected.ai_both &&
+            selected.player_side.is_none_or(|player| player == side as i32 + 1);
+        let mut ship = source.clone();
+        ship["entity_id"] = json!(id);
+        ship["fleet_ship_id"] = json!(id);
+        ship["persistent_fleet"] = json!(true);
+        ship["position"] = position;
+        ship["rotation_degrees"] = rotation;
+        ship["formation_offset"] = json!([0.0, 0.0]);
+        ship["user_controlled"] = json!(controlled);
+        *starter = ship;
+    }
     let squads = scene["squads"].as_array_mut()
         .ok_or_else(|| invalid("built-in fleet template has no squads"))?;
     if squads.len() != 2 || squads[0]["item_id"] != 101 ||
@@ -3113,6 +3143,18 @@ pub(super) fn archive(
         if selected.arena_size.is_none() { "source" }
         else if selected.lethal_borders { "lethal" } else { "solid" },
     ));
+    // Source hull classes can have identical menu/mix labels but very
+    // different health, sight, weapons and terminal outcomes. Include
+    // their actual immutable class IDs in every saved game identity.
+    if selected.source_fighter.iter().any(Option::is_some) {
+        let id = run["run_id"].as_str()
+            .ok_or_else(|| invalid("source fighter has no immutable run identity"))?;
+        let a = selected.source_fighter[0].as_ref()
+            .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(21);
+        let b = selected.source_fighter[1].as_ref()
+            .and_then(|ship| ship["ship_type"].as_u64()).unwrap_or(13);
+        run["run_id"] = json!(format!("{id}-original-classes-{a}v{b}"));
+    }
     let id = run["run_id"].as_str()
         .ok_or_else(|| invalid("planetary art selection needs a saved run identity"))?
         .to_owned();
@@ -3149,7 +3191,9 @@ pub(super) fn archive(
             selected.specialist_squad_sizes[0], selected.specialist_squad_sizes[1],
         ));
     }
-    if support_count[1] > 0 && !matches!(selected.mix[1], FleetMix::Queen) {
+    if support_count[1] > 0 &&
+        !matches!(selected.mix[1], FleetMix::Queen | FleetMix::Factories)
+    {
         let id = run["run_id"].as_str()
             .ok_or_else(|| invalid("Carrier fleet is missing its saved source ID"))?;
         run["run_id"] = json!(format!("{id}-deck{}", selected.carrier_deck));
