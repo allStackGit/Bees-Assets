@@ -13,6 +13,7 @@ from collections import Counter
 import json
 import math
 from pathlib import Path
+import time
 
 from evaluate_policy import evaluate, terminal_matchup
 from native_training_artifacts import (
@@ -110,6 +111,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
         **({"parallel_assignments": 2} if parallel_assignments == 2 else {}),
     }
+    gate_started = time.monotonic()
     with session_lock(output):
         recipe_path = output / "gate-config.json"
         if recipe_path.exists():
@@ -118,6 +120,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         else:
             atomic_json(recipe_path, recipe)
         def execute_assignment(index, candidate_route, incumbent_route):
+            assignment_started = time.monotonic()
             # Each process owns its independent native World, scene and
             # model-output directory. Both use the one physical source and
             # identical fixed-seed policy sampling contract.
@@ -164,7 +167,9 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                 "counts": dict(counts),
                 "candidate_forward_latency": timing,
             }
-            return counts, per_scene, timing, comparison
+            return counts, per_scene, timing, comparison, (
+                time.monotonic() - assignment_started
+            )
 
         assignments = ((first, second), (second, first))
         if parallel_assignments == 2:
@@ -184,10 +189,12 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         comparisons = []
         latency_calls = 0
         latency_max = 0
+        assignment_occupied_seconds = []
         # Aggregate in the pinned assignment order, never completion order.
         # This keeps the published promotion decision independent of host
         # thread scheduling and Windows/Linux process launch timing.
-        for counts, per_scene, timing, comparison in measured:
+        for counts, per_scene, timing, comparison, occupied in measured:
+            assignment_occupied_seconds.append(occupied)
             total.update(counts)
             for scene, row in per_scene.items():
                 scenes.setdefault(scene, Counter()).update(row)
@@ -202,6 +209,12 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         receipt = {
             **recipe, "kind": "native_continual_incumbent_gate_complete",
             "assignments": comparisons, "counts": dict(total),
+            "requested_parallel_assignment_processes": parallel_assignments,
+            "current_invocation_wall_seconds": time.monotonic() - gate_started,
+            "sum_independent_assignment_invocation_wall_seconds": sum(
+                assignment_occupied_seconds
+            ),
+            "per_assignment_invocation_wall_seconds": assignment_occupied_seconds,
             "by_scene_sha256": {key: dict(row) for key, row in scenes.items()},
             "score_rate": score, "head_to_head_passed": score >= threshold,
             "candidate_inference_calls": latency_calls,
