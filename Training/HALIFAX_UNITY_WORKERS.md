@@ -45,7 +45,38 @@ Close the project in the Unity Editor before a batch build. An active
 project lock is checked on Linux as well as Windows. Unity logs appear
 under ../Logs/Build/.
 
-IMPORTANT: These worker archives are deliberately UNPUBLISHED. The command
-does not modify the active Bees release, run lineage, checkpoints, worker
-installations, or Experiment Hub registry. Distribution through the Bees
-release protocol and the Hub still requires a separate integration.
+IMPORTANT: Compiling workers does not change the active Bees release, run,
+checkpoints, remote installations or Experiment Hub.
+
+## Deploy through the existing Windows Bees cluster
+
+Build both platforms from a clean, committed Unity source revision on Halifax:
+
+```sh
+node Training/bees_build_workers.js --platform both
+```
+
+Copy worker-build-manifest.json, rl-windows.zip and rl-linux.zip together
+from the generated OfflineWorkers/<build-id>/ folder to a private incoming
+folder on the Windows central Bees machine (for example Exeter). Sync that
+machine's Bees-Assets checkout to the exact source commit before importing.
+Keep its matching Unity Packages/manifest.json and ProjectSettings.
+
+From the existing Windows Bees Unity project root:
+
+```powershell
+.\Assets\bees.ps1 build -OfflineWorkers 'B:\Bees\Incoming\offline-unity-ID\worker-build-manifest.json'
+.\Assets\bees.ps1 start
+.\Assets\bees.ps1 status -Once
+```
+
+The importer refuses uncommitted sources, mismatched commit/version/packages,
+missing platforms, changed archive hashes and unsafe archive entries.
+It copies both worker builds into immutable release storage, runs the normal
+Bees run compatibility checks and compiled Windows environment validation,
+then stages/distributes the release using the existing Bees control plane.
+Use -NewRun only when an intentionally fresh training lineage is required.
+
+This is a transitional route using the existing Windows Bees learner and
+worker deployment. It does not register Bees execution in the separate
+Halifax native-only Hub, or make the ROCm Bees learner operational.
