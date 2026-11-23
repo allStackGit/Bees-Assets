@@ -134,7 +134,8 @@ def required_source(scene: dict) -> tuple[dict, list[float], list[float]]:
 
 
 def canonical_original_ai(source: dict, bounds: dict,
-                          level: dict, tactics: str) -> list[dict]:
+                          level: dict, tactics: str,
+                          deferred_hivemind: bool) -> list[dict]:
     """Use the existing native game command author; never emulate Ship AI."""
     script_path = Path(__file__).resolve().with_name("author-battle.py")
     spec = importlib.util.spec_from_file_location("bees_native_battle_author", script_path)
@@ -181,7 +182,7 @@ def canonical_original_ai(source: dict, bounds: dict,
         if (squad.get("user_controlled") is True or
                 squad["item_id"] in scripted or
                 (squad.get("is_hivemind_controlled") is True and
-                 source.get("activate_hivemind") is True)):
+                 (source.get("activate_hivemind") is True or deferred_hivemind))):
             continue
         members = [ship for ship in normalized["ships"]
                    if ship["entity_id"] in squad["member_ids"]]
@@ -203,7 +204,7 @@ def native_game_run(
     scene: dict, matrix: dict, palette: dict, contract: dict, seed: int,
     max_rounds: int, cell: float, workers: int | None,
     navigation_workers: int | None, hivemind: dict | None,
-    ai_tactics: str | None,
+    ai_tactics: str | None, deferred_hivemind: bool,
 ) -> dict:
     bounds, half_extents, ships = required_source(scene)
     stage = collision_stage(matrix, palette, scene)
@@ -233,7 +234,33 @@ def native_game_run(
                 not isinstance(row.get("orders"), list) or not row["orders"]):
             raise ValueError("Authored source AI queue has an unknown, repeated or empty squad owner")
         scripted.add(row["squad_item_id"])
-    if bool(scene.get("activate_hivemind")) != (hivemind is not None):
+    if deferred_hivemind:
+        # These four source campaign episodes deliberately delay the
+        # first HiveMind command until their original narrative/event
+        # release. The catalog's ID/map are source-authored, not inferred
+        # from the Level name or a synthetic mission template.
+        deferred_original_missions = {4: 1, 9: 3, 10: 3, 11: 3}
+        mission_id = scene.get("source_level_options_id")
+        if (scene.get("activate_hivemind") is not False or
+                hivemind is None or
+                mission_id not in deferred_original_missions or
+                scene.get("source_level_map_index") !=
+                    deferred_original_missions[mission_id] or
+                not isinstance(hivemind, dict) or
+                hivemind.get("issue_source_commands") is not True):
+            raise ValueError("Deferred HiveMind requires the exact original source prelude and real server")
+        viewer = (scene.get("targeting_context") or {}).get("user_side")
+        if (viewer not in (1, 2) or
+                not any(s.get("side") == viewer and s.get("user_controlled") is True
+                        for s in scene["squads"]) or
+                not any(s.get("side") == 3 - viewer and
+                        s.get("is_hivemind_controlled") is True and
+                        isinstance(s.get("opponent_id_decimal"), str) and
+                        s["opponent_id_decimal"].isdigit() and
+                        int(s["opponent_id_decimal"]) > 0
+                        for s in scene["squads"])):
+            raise ValueError("Deferred HiveMind lacks authentic player and source server squad owners")
+    elif bool(scene.get("activate_hivemind")) != (hivemind is not None):
         raise ValueError("Original HiveMind activation must match a supplied authentic network connection")
     if hivemind is not None and not isinstance(hivemind, dict):
         raise ValueError("Native HiveMind source must be an existing native host configuration")
@@ -272,7 +299,9 @@ def native_game_run(
         **({"collision_asteroid_timer": timer} if timer is not None else {}),
     }
     if ai_tactics is not None:
-        generated = canonical_original_ai(scene, bounds, level, ai_tactics)
+        generated = canonical_original_ai(
+            scene, bounds, level, ai_tactics, deferred_hivemind,
+        )
         if generated:
             level["scripted_queues"] = list(script) + generated
     return {
@@ -306,7 +335,7 @@ def author(output: Path, source_path: Path, matrix_path: Path,
            palette_path: Path, contract_path: Path | None, seed: int,
            max_rounds: int, cell: float, physics_workers: int | None,
            navigation_workers: int | None, hive_path: Path | None,
-           ai_tactics: str | None) -> dict:
+           ai_tactics: str | None, deferred_hivemind: bool = False) -> dict:
     source_path, matrix_path, palette_path = (
         path.resolve(strict=True) for path in
         (source_path, matrix_path, palette_path)
@@ -324,10 +353,11 @@ def author(output: Path, source_path: Path, matrix_path: Path,
     run = native_game_run(
         scene, matrix, palette, mission, seed, max_rounds, cell,
         physics_workers, navigation_workers, hive, ai_tactics,
+        deferred_hivemind,
     )
     identity = hashlib.sha256(json.dumps(
         [originals_sha, seed, max_rounds, cell, physics_workers,
-         navigation_workers, ai_tactics], sort_keys=True,
+         navigation_workers, ai_tactics, deferred_hivemind], sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     run["run_id"] = "native-unity-" + identity[:20]
@@ -355,6 +385,7 @@ def author(output: Path, source_path: Path, matrix_path: Path,
             "source_pool_item_count": scene["source_pool_item_count"],
             "source_collision_asteroid_timer": run["levels"][0].get("collision_asteroid_timer"),
             "native_source_ai_tactics": ai_tactics,
+            "native_deferred_hivemind": deferred_hivemind,
             "native_scripted_squads": [
                 row["squad_item_id"] for row in run["levels"][0].get("scripted_queues", [])
             ],
@@ -396,12 +427,16 @@ def main() -> None:
                                  "in-and-out", "mixed"),
                         help="explicitly enable the game's canonical scripted AI "
                              "on original non-player, non-HiveMind squads with no authored queue")
+    parser.add_argument("--deferred-hivemind", action="store_true",
+                        help="preserve original Neptune/Uranus campaign prelude until "
+                             "mission narrative releases its authenticated server commands")
     args = parser.parse_args()
     print(json.dumps(author(
         args.output_directory, args.unity_scene, args.physics_matrix,
         args.stage_palette, args.level_contract, args.seed, args.max_rounds,
         args.broadphase_cell_size, args.physics_workers,
         args.navigation_workers, args.hivemind_config, args.source_ai_tactics,
+        deferred_hivemind=args.deferred_hivemind,
     ), sort_keys=True), flush=True)
 
 
