@@ -8,6 +8,7 @@ incumbent gate, not authority to publish a champion: competency and
 historical-model gates must also pass before deployment.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from collections import Counter
 import json
 import math
@@ -50,7 +51,7 @@ def pinned_model(manifest, checkpoint, slot):
 def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
          incumbent_manifest, incumbent_checkpoint, incumbent_slot,
          promotion_config, output, binary, seed, physics_workers, device,
-         *, minimum_matches=None):
+         *, minimum_matches=None, parallel_assignments=1):
     source, candidate_manifest, candidate_checkpoint, incumbent_manifest, incumbent_checkpoint, promotion_config = (
         path.resolve(strict=True) for path in (
             source, candidate_manifest, candidate_checkpoint, incumbent_manifest,
@@ -76,6 +77,13 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
             type(latency_limit) not in (int, float) or not math.isfinite(latency_limit) or
             latency_limit <= 0):
         raise ValueError("invalid continual-learning incumbent gate")
+    if parallel_assignments not in (1, 2) or type(parallel_assignments) is not int:
+        raise ValueError("incumbent gate accepts only one or two native evaluation processes")
+    if parallel_assignments == 2 and (binary is None or device != "cpu"):
+        raise ValueError(
+            "parallel incumbent gate requires a fixed native rollout binary "
+            "and explicit CPU inference; GPU evaluation remains externally scheduled"
+        )
     run = document(source)
     allocations = [set(level.get("model_slots", {}).values()) for level in run["levels"]]
     if not allocations or len(allocations[0]) != 2 or any(
@@ -100,6 +108,7 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
         "maximum_inference_batch_milliseconds": latency_limit,
         "policy_seed": seed, "physics_workers": physics_workers, "device": device,
         "rollout_binary_sha256": file_sha256(binary) if binary else None,
+        **({"parallel_assignments": 2} if parallel_assignments == 2 else {}),
     }
     with session_lock(output):
         recipe_path = output / "gate-config.json"
@@ -108,12 +117,10 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                 raise ValueError("native champion gate inputs changed")
         else:
             atomic_json(recipe_path, recipe)
-        total = Counter()
-        scenes = {}
-        comparisons = []
-        latency_calls = 0
-        latency_max = 0
-        for index, (candidate_route, incumbent_route) in enumerate(((first, second), (second, first))):
+        def execute_assignment(index, candidate_route, incumbent_route):
+            # Each process owns its independent native World, scene and
+            # model-output directory. Both use the one physical source and
+            # identical fixed-seed policy sampling contract.
             home = output / f"assignment-{index}"
             home.mkdir(exist_ok=True)
             manifest = home / "manifest.json"
@@ -128,8 +135,6 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
             else:
                 atomic_json(manifest, model_doc)
             weights = native_manifest_model_dependencies(manifest)
-            # Reuse the native evaluator's durable receipt after interruption.
-            # An incomplete attempt is retained and never mistaken for success.
             attempts = sorted(p for p in home.glob("attempt-*") if p.is_dir())
             completed = [p for p in attempts if (p / "evaluation-result.json").is_file()]
             if len(completed) > 1:
@@ -143,23 +148,52 @@ def gate(source, candidate_manifest, candidate_checkpoint, candidate_slot,
                                        recipe["source_sha256"], 1, seed, device)
             if native_manifest_model_dependencies(manifest) != weights:
                 raise ValueError("native champion assignment weights changed")
-            counts, per_scene = terminal_matchup(directory, result, candidate_route, incumbent_route)
-            timing = result.get("policy_forward_latency", {}).get("by_slot", {}).get(str(candidate_route))
+            counts, per_scene = terminal_matchup(
+                directory, result, candidate_route, incumbent_route,
+            )
+            timing = result.get("policy_forward_latency", {}).get("by_slot", {}).get(
+                str(candidate_route)
+            )
             if not timing:
                 raise ValueError("native champion gate has no complete candidate inference latency")
-            latency_calls += timing["calls"]
-            latency_max = max(latency_max, timing["max_nanoseconds"])
-            total.update(counts)
-            for scene, row in per_scene.items():
-                scenes.setdefault(scene, Counter()).update(row)
-            comparisons.append({
+            comparison = {
                 "candidate_slot": candidate_route, "incumbent_slot": incumbent_route,
                 "receipt": str(directory / "evaluation-result.json"),
                 "receipt_sha256": file_sha256(directory / "evaluation-result.json"),
                 "journal_sha256": file_sha256(directory / "events.jsonl"),
                 "counts": dict(counts),
                 "candidate_forward_latency": timing,
-            })
+            }
+            return counts, per_scene, timing, comparison
+
+        assignments = ((first, second), (second, first))
+        if parallel_assignments == 2:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [
+                    pool.submit(execute_assignment, index, candidate_route, incumbent_route)
+                    for index, (candidate_route, incumbent_route) in enumerate(assignments)
+                ]
+                measured = [future.result() for future in futures]
+        else:
+            measured = [
+                execute_assignment(index, candidate_route, incumbent_route)
+                for index, (candidate_route, incumbent_route) in enumerate(assignments)
+            ]
+        total = Counter()
+        scenes = {}
+        comparisons = []
+        latency_calls = 0
+        latency_max = 0
+        # Aggregate in the pinned assignment order, never completion order.
+        # This keeps the published promotion decision independent of host
+        # thread scheduling and Windows/Linux process launch timing.
+        for counts, per_scene, timing, comparison in measured:
+            total.update(counts)
+            for scene, row in per_scene.items():
+                scenes.setdefault(scene, Counter()).update(row)
+            latency_calls += timing["calls"]
+            latency_max = max(latency_max, timing["max_nanoseconds"])
+            comparisons.append(comparison)
         if (total["matches"] != expected or total["matches"] < minimum or
                 any(row["candidate_as_bee"] != row["candidate_as_human"]
                     for row in scenes.values())):
@@ -189,13 +223,16 @@ def main():
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--physics-workers", type=int)
     parser.add_argument("--inference-device", choices=("cpu", "cuda:0"))
+    parser.add_argument("--parallel-assignments", action="store_true",
+                        help="run both canonical faction assignments on separate CPU native processes")
     args = parser.parse_args()
     if not 0 <= args.policy_seed < (1 << 63):
         parser.error("policy seed must fit nonnegative int63")
     result = gate(args.source, args.candidate_manifest, args.candidate_checkpoint,
                   args.candidate_slot, args.incumbent_manifest, args.incumbent_checkpoint,
                   args.incumbent_slot, args.promotion_config, args.output,
-                  args.rollout_binary, args.policy_seed, args.physics_workers, args.inference_device)
+                  args.rollout_binary, args.policy_seed, args.physics_workers, args.inference_device,
+                  parallel_assignments=2 if args.parallel_assignments else 1)
     print(json.dumps(result, sort_keys=True), flush=True)
 
 
