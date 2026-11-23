@@ -2414,7 +2414,7 @@ def main():
         # The game or a local operator can request a graceful stop without
         # signalling the optimizer or interrupting a distributed collector.
         # A committed round is always finished before this is consulted.
-        operator_stop_file = root / "stop.request"
+        operator_stop_file = root.parent.parent / "stop.request"
         stopped_by_operator = False
         for index in range(first_pending_round, args.rounds + 1):
             if operator_stop_file.is_file():
