@@ -6922,14 +6922,16 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             Some(tokens.keys().next()
                 .expect("validated nonempty side token map").parse::<i32>()?)
         } else { None };
-        if tokens.len() == 2 && tokens.contains_key("1") && tokens.contains_key("2") {
+        if tokens.len() == 2 || single_remote_side.is_some() {
             let saved = recorded_library::list_fleet_builds(save_root)?
                 .into_iter().take(32).filter_map(|recording| {
                     let recorded_library::RecordedSource::QuickBattle(source) =
                         recording.source else { return None };
                     // The replay library already bounded files, proved the
                     // original terminal footer and excludes symlink sources.
-                    // Inspect only the source scene's player permissions.
+                    // Use the saved scene's real command permissions; an
+                    // old AI or HiveMind match must never gain a second
+                    // remote human seat merely because it is replayable.
                     let scene: Value = serde_json::from_slice(&fs::read(
                         source.with_file_name("replay-source-scene.json"),
                     ).ok()?).ok()?;
@@ -6937,7 +6939,31 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     let commands_side = |side| squads.iter().any(|squad|
                         squad["side"] == side && squad["user_controlled"] == true &&
                         squad["can_accept_input"] == true);
-                    if !commands_side(1) || !commands_side(2) {
+                    if let Some(human) = single_remote_side {
+                        let ai = 3 - human;
+                        if !commands_side(human) || commands_side(ai) {
+                            return None;
+                        }
+                        // Existing saved matches may be policy-controlled,
+                        // or a human opponent may have been removed later.
+                        // Require genuine original scripted commands in the
+                        // saved source, not just a non-user squad flag.
+                        let run: Value = serde_json::from_slice(
+                            &fs::read(&source).ok()?,
+                        ).ok()?;
+                        if !run["hivemind"].is_null() { return None; }
+                        let queues = run["levels"][0]["scripted_queues"].as_array()?;
+                        let scripted = queues.iter().any(|queue| {
+                            let Some(id) = queue["squad_item_id"].as_i64() else {
+                                return false;
+                            };
+                            queue["orders"].as_array().is_some_and(|orders| !orders.is_empty()) &&
+                            squads.iter().any(|squad|
+                                squad["item_id"] == id && squad["side"] == ai
+                            )
+                        });
+                        if !scripted { return None; }
+                    } else if !commands_side(1) || !commands_side(2) {
                         return None;
                     }
                     Some((recording.title, source))
@@ -6954,14 +6980,18 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                     unlocked: true,
                 });
                 rows.extend(saved.iter().map(|(title, _)| BattleMenuRow {
-                    title, status: "  [Reuse player-controlled fleet]",
+                    title, status: if single_remote_side.is_some() {
+                        "  [Reuse authentic commander and scripted-AI squads]"
+                    } else {
+                        "  [Reuse two player-controlled factions]"
+                    },
                     unlocked: true,
                 }));
                 let mut selected = 0;
                 match select_library(&rows, &mut selected, false)? {
                     None => None,
                     Some(0) => fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory, sources)?,
+                    single_remote_side, save_root, original_queen, original_factory, sources)?,
                     Some(index) => {
                         saved_host_fleet = Some(saved[index - 1].1.clone());
                         None
@@ -7020,7 +7050,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             // trace. Neither a prior result nor a prior command is replayed.
             let output = new_library_battle_output(save_root, &settings.game_id)?;
             let start = QuickBattleStart::capture(&source, true)?
-                .ok_or_else(|| invalid("saved two-player fleet has no native hosted start"))?;
+                .ok_or_else(|| invalid("saved fleet has no native hosted start"))?;
             save_native_quick_battle_start(&output, &start)?;
             println!("{}", json!({
                 "kind": "native_saved_fleet_host_ready",
