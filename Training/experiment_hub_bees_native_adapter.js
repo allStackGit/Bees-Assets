@@ -388,12 +388,25 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             if(report.model_sha256!==receipt.sha256||
                 fileHash(summary)!==digest)
                 throw Error('Bees final evaluation does not belong to the final model.');
+            const definition=JSON.stringify({
+                suite_id:suite,
+                profile:job.evaluation_profile,
+                matches_per_case:job.evaluation_matches,
+                seed:job.seed,
+                game_sha256:job.game_sha256,
+                evaluator_sha256:job.evaluator_sha256,
+                evaluator_core_sha256:job.evaluator_core_sha256,
+                opponent_script_sha256:job.opponent_script_sha256,
+                runtime_sha256:job.runtime_version,
+            });
             return {
                 schema_version:1,suite_id:suite,
+                suite_sha256:crypto.createHash('sha256').update(definition,'utf8').digest('hex'),
+                suite_definition_canonical:definition,
                 dispatch_id:context.dispatch_id,
                 checkpoint_sha256:receipt.sha256,
                 trials:matches,successes:report.total_wins,
-                runtime_sha256:approved.runtimeVersion,
+                runtime_sha256:job.runtime_version,
                 evaluated_at:fs.statSync(summary).mtime.toISOString(),
                 metrics:{
                     score_rate:{value:score,unit:'ratio'},
