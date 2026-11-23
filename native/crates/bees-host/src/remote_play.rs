@@ -610,6 +610,13 @@ pub struct NativeRemotePlayRecoveryCheckpoint {
     schema_version: u32,
     host_session_id: String,
     side_credentials_sha256: [u8; 32],
+    // This checkpoint's exact authoritatively selected seat class. Older
+    // checkpoints lack these fields and recover under the original World
+    // permissions, never under a client-provided role.
+    #[serde(default)]
+    spectator_only_host: Option<bool>,
+    #[serde(default)]
+    spectator_credentials_sha256: Option<[u8; 32]>,
     next_peer: u64,
     connected_peers: usize,
     held_fire: Vec<HeldFireLease>,
@@ -975,6 +982,9 @@ impl NativeRemotePlay {
             schema_version: 1,
             host_session_id: self.host_session_id.clone(),
             side_credentials_sha256: credential_digest(&self.side_tokens),
+            spectator_only_host: Some(self.spectator_only_host),
+            spectator_credentials_sha256: self.spectator_only_host
+                .then(|| credential_digest(&self.spectator_tokens)),
             next_peer: self.next_peer,
             connected_peers: self.peers.iter().filter(|peer| !peer.closed).count(),
             held_fire,
@@ -1002,7 +1012,16 @@ impl NativeRemotePlay {
             saved.next_peer == u64::MAX ||
             saved.connected_peers > MAX_PEERS ||
             saved.held_fire.len() > saved.connected_peers ||
+            (self.spectator_only_host &&
+                (!saved.held_fire.is_empty() || !saved.pending_releases.is_empty())) ||
             saved.side_credentials_sha256 != credential_digest(&self.side_tokens) ||
+            saved.spectator_only_host.is_some_and(|prior|
+                prior != self.spectator_only_host) ||
+            saved.spectator_credentials_sha256.is_some() &&
+                !self.spectator_only_host ||
+            saved.spectator_only_host == Some(true) &&
+                saved.spectator_credentials_sha256 !=
+                    Some(credential_digest(&self.spectator_tokens)) ||
             saved.held_fire.len() > MAX_PLAYER_PEERS ||
             saved.pending_releases.len() > MAX_ORDERS_PER_POLL
         {
