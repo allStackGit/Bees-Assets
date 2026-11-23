@@ -176,7 +176,9 @@ function sourceDefaults(hub,config) {
     const host=hub.snapshot().machines.find(m=>m.status==='connected'&&
         m.design_catalog?.tinybrains?.profiles?.[p.profile]?.profile_sha256===
             p.profile_sha256);
-    const field=host?.design_catalog?.tinybrains?.fields?.find(f=>
+    if(!host)
+        throw Error('To match a saved training environment, reconnect a worker advertising its approved TinyBrains Design schema.');
+    const field=host.design_catalog.tinybrains.fields.find(f=>
         f.key==='environment.max_turns');
     const sourceTurn=p.design_overrides?.['environment.max_turns']??field?.default;
     if(!Number.isSafeInteger(sourceTurn)||sourceTurn<1||sourceTurn>1000)
