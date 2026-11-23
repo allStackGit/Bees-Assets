@@ -267,6 +267,9 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
 
     return {
         executable:python,cwd:project,stop_policy:'interrupt-main',
+        checkpoint_stop_file(context) {
+            return path.join(jobPath(artifacts,context),'stop.request');
+        },
         design_catalog:{bees_native:{version:1,
             worker_sha256:approved.worker_sha256,
             runtime_version:approved.runtime_version,
