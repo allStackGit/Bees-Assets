@@ -10,6 +10,7 @@ from collections import Counter
 import json
 import math
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -370,9 +371,31 @@ def evaluation_execution_evidence(final_report):
             type(rows) is not int or rows < 0 or
             (calls == 0 and rows != 0)):
         raise ValueError("Invalid native evaluation GPU inference evidence.")
+    pci = final_report.get("gpu_pci_address")
+    backend = final_report.get("gpu_pci_backend", "hip" if pci else None)
+    uuid = final_report.get("gpu_cuda_uuid")
+    if backend not in (None, "hip", "cuda") or (
+            backend is not None and pci is None):
+        raise ValueError("invalid native evaluation GPU PCI backend")
+    if pci is not None and (
+            not isinstance(pci, str) or not re.fullmatch(
+                r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]", pci)):
+        raise ValueError("invalid native evaluation physical GPU PCI address")
+    if uuid is not None and (
+            not isinstance(uuid, str) or not re.fullmatch(
+                r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}", uuid)):
+        raise ValueError("invalid native evaluation physical CUDA UUID")
+    if pci is not None and uuid is not None or (
+            calls == 0 and (pci is not None or uuid is not None)):
+        raise ValueError("native evaluation GPU hardware evidence conflicts with forwards")
+    identity = (
+        f"{backend}_pci:{pci}" if pci is not None else
+        f"cuda_uuid:{uuid}" if uuid is not None else None
+    )
     return {
         "gpu_forward_calls": calls, "gpu_forward_rows": rows,
         "model_execution": execution,
+        **({"gpu_device_identity": identity} if identity else {}),
     }
 
 def verified_evaluation_device(execution, requested):
@@ -428,6 +451,8 @@ def verified_evaluation_device(execution, requested):
         "scope": "completed_resident_backend_forwards",
         "completed_gpu_forward_calls": execution["gpu_forward_calls"],
         "completed_gpu_forward_rows": execution["gpu_forward_rows"],
+        **({"gpu_device_identity": execution["gpu_device_identity"]}
+           if "gpu_device_identity" in execution else {}),
     }
 
 
