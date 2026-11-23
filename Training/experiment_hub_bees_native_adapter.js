@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {prepare: prepareImmutableRuntime}=require('./experiment_hub_bees_immutable_runtime');
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
@@ -165,18 +166,18 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         throw Error('Bees native artifacts must be outside the Unity checkout.');
     const python=trustedFile(pythonPath,'Bees native Python',true);
     const worker=trustedFile(workerExecutable,'Bees Linux dedicated worker',true);
-    const trainer=trustedFile(path.join(project,'Training','rl_1v1_config.yaml'),
-        'Bees trainer YAML');
-    const training=trustedFile(path.join(project,'Training','bees_mlagents_learn.py'),
-        'Bees ML-Agents learner');
-    const runner=trustedFile(path.join(__dirname,'experiment_hub_bees_native_train.py'),
-        'Bees native Hub runner');
-    const evaluator=trustedFile(path.join(project,'Training','bees_experiment_benchmark.py'),
-        'Bees immutable scripted benchmark evaluator');
-    const evaluatorCore=trustedFile(path.join(project,'Training','bees_continual_evaluate.py'),
-        'Bees native evaluation runtime');
-    const opponentScript=trustedFile(path.join(project,'Training','bees_experiment_scripted.py'),
-        'Bees scripted opponent library');
+    // Native Hub source is captured once at enrollment using the same
+    // immutable, content-addressed package used by Bees' legacy control
+    // plane. A later Git checkout edit cannot change queued job behavior.
+    const pinned=prepareImmutableRuntime({
+        project,python,artifactRoot:artifacts,workerSha:fileHash(worker),
+    });
+    const trainer=trustedFile(pinned.trainer,'Frozen Bees trainer YAML');
+    const training=trustedFile(pinned.training,'Frozen Bees ML-Agents learner');
+    const runner=trustedFile(pinned.runner,'Frozen Bees native Hub runner');
+    const evaluator=trustedFile(pinned.evaluator,'Frozen Bees benchmark evaluator');
+    const evaluatorCore=trustedFile(pinned.evaluatorCore,'Frozen Bees evaluation runtime');
+    const opponentScript=trustedFile(pinned.opponentScript,'Frozen Bees scripted opponent library');
     if(path.basename(worker)!=='Bees RL Training.x86_64')
         throw Error('Bees native Hub requires the dedicated Linux Unity worker.');
     const probe=spawnSync(python,['-c',
@@ -188,6 +189,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         throw Error('Bees native adapter requires an installed Python 3.10 ML-Agents 1.1.0 learner with PyTorch and TensorBoard.');
     const approved={
         worker_sha256:fileHash(worker),
+        runtime_version:pinned.runtimeVersion,
         trainer_sha256:fileHash(trainer),
         training_sha256:fileHash(training),
         evaluator_sha256:fileHash(evaluator),
@@ -227,6 +229,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         executable:python,cwd:project,stop_policy:'interrupt-main',
         design_catalog:{bees_native:{version:1,
             worker_sha256:approved.worker_sha256,
+            runtime_version:approved.runtime_version,
             trainer_sha256:approved.trainer_sha256,
             fields:DESIGN_FIELDS.map(field=>({...field})),
             metric_catalog:{base:[...METRICS]}}},
@@ -249,6 +252,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             jobPath(artifacts,context);
             const frozen=normalize(parameters,context,approved);
             if(fileHash(worker)!==approved.worker_sha256||
+                fs.readFileSync(path.join(pinned.root,'bees-runtime-version.txt'),'utf8').trim()!==
+                    approved.runtime_version||
                 fileHash(trainer)!==approved.trainer_sha256||
                 fileHash(training)!==approved.training_sha256||
                 fileHash(evaluator)!==approved.evaluator_sha256||
@@ -260,6 +265,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             const job={
                 schema_version:1,job_id:context.job_id,
                 game_binary:worker,game_sha256:approved.worker_sha256,
+                runtime_version:approved.runtime_version,
                 training_script:training,training_sha256:approved.training_sha256,
                 trainer_source:trainer,trainer_sha256:approved.trainer_sha256,
                 output_root:root,num_envs:frozen.envs,max_steps:frozen.maxSteps,
