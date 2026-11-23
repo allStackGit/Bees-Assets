@@ -4448,6 +4448,17 @@ document.addEventListener('DOMContentLoaded', () => {
             (project==='tinybrains'
                 ?' These defaults come from the frozen source run specification. Unchanged settings continue with the imported optimizer checkpoint, which may have different current values.'
                 :'');
+        const designFieldValue=field=>{
+            if(project!=='bees_native')
+                return parameters.design_overrides?.[field.key]??field.default;
+            let value=parameters;
+            for(const segment of field.key.split('.')) {
+                if(value==null||!Object.hasOwn(value,segment))
+                    return field.default;
+                value=value[segment];
+            }
+            return value;
+        };
         for(const field of entry.fields) {
             const label=document.createElement('label');
             const input=document.createElement('input');
@@ -4455,8 +4466,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(field.type==='boolean') {
                 label.className='hub-design-checkbox';
                 input.type='checkbox';
-                input.checked=parameters.design_overrides?.[field.key]??
-                    field.default;
+                input.checked=designFieldValue(field);
                 const text=document.createElement('span');
                 text.className='hub-design-checkbox-text';
                 text.textContent=field.label;
@@ -4466,7 +4476,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const select=document.createElement('select');
                 select.dataset.designKey=field.key;
                 select.replaceChildren(...field.options.map(option=>new Option(option,option)));
-                const current=parameters.design_overrides?.[field.key]??field.default;
+                const current=designFieldValue(field);
                 select.value=field.options.includes(current)?current:field.default;
                 select.addEventListener('change',()=>{
                     try{readDesignControls();feedback('hub-config-message','');}
@@ -4484,8 +4494,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 input.type='number';
                 input.step=field.type==='integer'?'1':'any';
                 input.min=String(field.min);input.max=String(field.max);
-                input.value=String(parameters.design_overrides?.[field.key]??
-                    field.default);
+                input.value=String(designFieldValue(field));
             }
             const hint=document.createElement('small');
             hint.textContent=field.key+' · default '+String(field.default)+
@@ -4522,6 +4531,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const parameters=JSON.parse($('hub-config-json').value);
             const chosen=designDefinition(parameters);
             if(!chosen)throw Error('No matching approved project defaults.');
+            if(project==='bees_native') {
+                $('hub-config-json').value=JSON.stringify(projectDefaultParameters(),null,2);
+                renderDesignEditor(true);
+                return;
+            }
             delete parameters.design_overrides;
             delete parameters.design_source_sha256;
             delete parameters.training_schema_sha256;
