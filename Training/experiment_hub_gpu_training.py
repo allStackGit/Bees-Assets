@@ -876,6 +876,8 @@ class PinnedGpuStaging:
         self._pending = deque()
         self._pending_bytes = 0
         self._free_pinned = []
+        self._free_events = []
+        self.events_allocated = self.events_reused = 0
         self._pinned_total_bytes = 0
         self._known_banks = set()
         self._closed = False
@@ -906,6 +908,7 @@ class PinnedGpuStaging:
             self._pending.popleft()
             self._pending_bytes -= size
             self._free_pinned.append(pinned)
+            self._free_events.append(event)
 
     def _checkout(self, source):
         self._reap_completed()
@@ -933,6 +936,7 @@ class PinnedGpuStaging:
             pinned,event,size = self._pending.popleft()
             event.synchronize()
             self._pending_bytes -= size
+            self._free_events.append(event)
             if pinned.dtype==source.dtype and pinned.numel()==source.numel():
                 self.pinned_reuses += 1
                 if pinned.shape!=source.shape:
@@ -983,16 +987,24 @@ class PinnedGpuStaging:
         if identity not in self._known_banks:
             self._copy_stream.wait_stream(torch.cuda.current_stream(self.device))
             self._known_banks.add(identity)
+        event = None
         try:
             with torch.cuda.stream(self._copy_stream):
                 destination.copy_(pinned,non_blocking=True)
-                event = torch.cuda.Event()
+                if self._free_events:
+                    event = self._free_events.pop()
+                    self.events_reused += 1
+                else:
+                    event = torch.cuda.Event()
+                    self.events_allocated += 1
                 event.record(self._copy_stream)
             destination.record_stream(self._copy_stream)
         except (RuntimeError,NotImplementedError):
             # A partially submitted DMA must finish before its host
             # staging buffer is released or rewritten by another request.
             self._copy_stream.synchronize()
+            if event is not None:
+                self._free_events.append(event)
             self._free_pinned.append(pinned)
             destination.copy_(source)
             self.direct_bytes += nbytes
@@ -1046,6 +1058,7 @@ class PinnedGpuStaging:
             pinned,event,size = self._pending.popleft()
             self._pending_bytes -= size
             self._free_pinned.append(pinned)
+            self._free_events.append(event)
         self._pending_bytes = 0
         self._known_banks.clear()
 
@@ -1064,6 +1077,7 @@ class PinnedGpuStaging:
         self.finish_update()
         self._closed = True
         self._free_pinned.clear()
+        self._free_events.clear()
         self._pinned_total_bytes = 0
         self._copy_stream = None
 
