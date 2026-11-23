@@ -599,8 +599,10 @@ def publish_policy_candidate(root: Path, job: dict) -> Path:
             "model_size_bytes": candidate_model.stat().st_size,
             "optimizer_checkpoint_sha256": checkpoint_digest,
             "unity_worker_sha256": job["game_sha256"],
-            **({"unity_worker_payload_sha256": job["game_payload_sha256"]}
-               if job["schema_version"] == 3 else {}),
+            **({
+                "unity_worker_payload_sha256": job["game_payload_sha256"],
+                "wan_release_sha256": job["wan_release_sha256"],
+            } if job["schema_version"] == 3 else {}),
             "trainer_sha256": job["trainer_sha256"],
             "runtime_version": job["runtime_version"],
             "seed": job["seed"],
