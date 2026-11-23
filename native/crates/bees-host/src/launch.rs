@@ -12985,6 +12985,7 @@ fn run_battle(
             "scout_alarm_frames": client.scout_alarm_frames,
             "pluto_scout_hint_frames": client.pluto_scout_hint_frames,
             "pluto_scout_selection_marker_frames": client.pluto_scout_selection_marker_frames,
+            "pluto_tutorial_control_highlights": client.pluto_tutorial_control_highlights,
             "camera_wheel_pans": client.camera_wheel_pans,
             "camera_boundary_clamps": client.camera_boundary_clamps,
             "camera_zoom_clamps": client.camera_zoom_clamps,

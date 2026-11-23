@@ -186,6 +186,7 @@ pub struct NativeRenderCounts {
     pub minimap_briefing_mining_markers: usize,
     pub minimap_extraction_exit_markers: usize,
     pub numbered_squad_rows: usize,
+    pub pluto_tutorial_control_highlights: usize,
     pub special_ready_ships: usize,
     /// Real game/policy Striker loaded indicators drawn for visible hulls.
     pub striker_bomb_indicators: usize,
@@ -273,6 +274,7 @@ pub struct NativeSoftwareRenderer {
     pub show_minimap: bool,
     pub opening_hud_locked: bool,
     pub(crate) show_campaign_tooltips: bool,
+    pub(crate) pluto_control_tip_focus: Option<super::campaign_dialogue::PlutoControlTipFocus>,
     pub hide_terminal_banner: bool,
     pub pluto_finale_reveal: bool,
     /// Only affects the window; training runs keep the same headless world.
@@ -1237,7 +1239,7 @@ impl NativeSoftwareRenderer {
             sprite_raster_blended_pixels: 0,
             selection_box: None, show_weapon_ranges: false,
             show_minimap: true, opening_hud_locked: false, hide_terminal_banner: false,
-            show_campaign_tooltips: true,
+            show_campaign_tooltips: true, pluto_control_tip_focus: None,
             pluto_finale_reveal: false, show_shooting_menu: false,
             focused_shooting_strategy: 1,
             active_tactical_action: None, locked_selection_all: false,
@@ -3609,7 +3611,8 @@ impl NativeSoftwareRenderer {
         if self.show_minimap && !self.opening_hud_locked {
             self.draw_minimap(view, bounds, &mut counts);
         }
-        counts.numbered_squad_rows = self.draw_squad_shortcuts(view);
+        counts.numbered_squad_rows =
+            self.draw_squad_shortcuts(view, &mut counts.pluto_tutorial_control_highlights);
         counts.special_ready_ships = self.draw_special_readiness(view);
         self.chasing_selection_all = !self.selection.squads().is_empty() &&
             self.selection.squads().iter().all(|&owner|
@@ -3631,6 +3634,7 @@ impl NativeSoftwareRenderer {
             let show_beacon = self.selection_has_beacon_enabled_scout(view);
             counts.tactical_buttons_drawn = self.draw_tactical_bar(
                 self.show_campaign_tooltips && gunship_attack_prompt == Some(true), show_beacon,
+                &mut counts.pluto_tutorial_control_highlights,
             );
             counts.selected_command_rows = self.draw_selected_command_status(view);
             self.draw_selected_priority(view);
@@ -3910,7 +3914,9 @@ impl NativeSoftwareRenderer {
     /// actual schema-29 Unity export, not an index assigned by the renderer.
     /// It is omitted for legacy scenes lacking authoritative squad numbers.
     /// Only user-controlled ships are listed; enemy roster data stays private.
-    fn draw_squad_shortcuts(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
+    fn draw_squad_shortcuts(
+        &mut self, view: &NativeRenderWorldView<'_>, tutorial_highlights: &mut usize,
+    ) -> usize {
         if self.width < 560 || self.height < 360 { return 0; }
         let visible = self.squad_tab_capacity();
         let maximum = self.squad_tab_count(view).saturating_sub(visible);
@@ -3948,6 +3954,12 @@ impl NativeSoftwareRenderer {
                 rect.top + 2,
                 &label, 1, if selected { [255, 241, 194] }
                     else { [182, 211, 239] });
+            if self.pluto_control_tip_focus == Some(super::campaign_dialogue::PlutoControlTipFocus::Squads) &&
+                view.player_authority.player_permissions(owner).is_some_and(|permission| permission.can_accept_input)
+            {
+                tactical_hud::draw_tutorial_highlight(&mut self.pixels, self.width, rect);
+                *tutorial_highlights += 1;
+            }
             row += 1;
             if row == visible { break; }
         }
@@ -4066,7 +4078,9 @@ impl NativeSoftwareRenderer {
         scouts_ready + barges_ready + charges_ready + strikers_ready
     }
 
-    fn draw_tactical_bar(&mut self, prompt_attack_on_sight: bool, show_beacon: bool) -> usize {
+    fn draw_tactical_bar(
+        &mut self, prompt_attack_on_sight: bool, show_beacon: bool, tutorial_highlights: &mut usize,
+    ) -> usize {
         let has_selection = !self.selection.squads().is_empty();
         let mut drawn = 0usize;
         for (index, action) in tactical_hud::ACTIONS.iter().copied().enumerate() {
@@ -4122,6 +4136,13 @@ impl NativeSoftwareRenderer {
             } else { [101, 114, 132] };
             text::draw_at(&mut self.pixels, self.width, x, y,
                 label, 1, tone);
+            if has_selection &&
+                self.pluto_control_tip_focus == Some(super::campaign_dialogue::PlutoControlTipFocus::Tactics) &&
+                matches!(action, super::HudAction::Circle | super::HudAction::Shooting)
+            {
+                tactical_hud::draw_tutorial_highlight(&mut self.pixels, self.width, rect);
+                *tutorial_highlights += 1;
+            }
             drawn += 1;
         }
         drawn

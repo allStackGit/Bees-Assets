@@ -158,6 +158,25 @@ pub struct HudRect {
     pub bottom: usize,
 }
 
+/// Mark the actual clickable HUD bounds without changing hit testing.
+pub(super) fn draw_tutorial_highlight(pixels: &mut [u32], stride: usize, rect: HudRect) {
+    if stride == 0 || rect.left >= rect.right || rect.top >= rect.bottom ||
+        rect.right > stride || rect.bottom > pixels.len() / stride
+    {
+        return;
+    }
+    const COLOR: u32 = 0xdce25f;
+    for y in [rect.top, rect.bottom - 1] {
+        let start = y * stride;
+        pixels[start + rect.left..start + rect.right].fill(COLOR);
+    }
+    for y in rect.top + 1..rect.bottom - 1 {
+        let start = y * stride;
+        pixels[start + rect.left] = COLOR;
+        pixels[start + rect.right - 1] = COLOR;
+    }
+}
+
 impl HudRect {
     pub fn contains(self, x: f32, y: f32) -> bool {
         x.is_finite() && y.is_finite() &&

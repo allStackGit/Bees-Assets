@@ -742,6 +742,21 @@ pub(crate) fn campaign_tooltip_end(cue: CampaignCue, index: usize) -> Option<usi
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PlutoControlTipFocus {
+    Tactics,
+    Squads,
+}
+
+#[cfg(feature = "client")]
+pub(crate) fn pluto_control_tip_focus(cue: CampaignCue, index: usize) -> Option<PlutoControlTipFocus> {
+    match (cue, index) {
+        (CampaignCue::PlutoReinforcementsScoutSelected, 0) => Some(PlutoControlTipFocus::Tactics),
+        (CampaignCue::PlutoReinforcementsScoutSelected, 1..=4) => Some(PlutoControlTipFocus::Squads),
+        _ => None,
+    }
+}
+
 #[cfg(feature = "client")]
 pub(super) fn draw_campaign_tooltip(
     pixels: &mut [u32], stride: usize, field_width: usize,

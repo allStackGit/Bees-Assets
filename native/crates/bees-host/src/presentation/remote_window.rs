@@ -163,6 +163,7 @@ struct WireCounts {
     scout_alarm_frames: u64,
     pluto_scout_hint_frames: u64,
     pluto_scout_selection_marker_frames: u64,
+    pluto_tutorial_control_highlights: u64,
     ship_type_multiselections: u64,
     selection_drag_preview_frames: u64,
     weapon_range_draws: u64,
@@ -2139,6 +2140,11 @@ fn selection_has_beacon_enabled_scout(state: Option<&Value>, selected: &[i64]) -
 // Side-panel squad rows are the same authoritative source-order projection
 // used to draw names and selection highlights. Noncontrollable squads stay
 // visible in the roster but cannot enter a player command through a tab.
+fn remote_squad_tab_rect(index: usize) -> HudRect {
+    let top = 147 + index * 22;
+    HudRect { left: FIELD + 14, top, right: WIDTH - 14, bottom: top + 21 }
+}
+
 fn remote_squad_tab_hit(state: &Value,x: f32,y: f32, offset: usize) -> Option<i64> {
     if !x.is_finite()||!y.is_finite()||
         x<(FIELD+14) as f32||x>=(WIDTH-14) as f32 {
@@ -2146,9 +2152,7 @@ fn remote_squad_tab_hit(state: &Value,x: f32,y: f32, offset: usize) -> Option<i6
     }
     state["squads"].as_array()?.iter().filter(|s|s["owned"]==true)
         .skip(offset).take(12).enumerate().find_map(|(index,squad)| {
-            let top=150+index*22;
-            (y>=top as f32-3.0&&y<top as f32+18.0&&
-                squad["controllable"]==true)
+            (remote_squad_tab_rect(index).contains(x, y) && squad["controllable"]==true)
                 .then(||squad["owner"]["squad_id"].as_i64()).flatten()
         })
 }
@@ -2422,12 +2426,20 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     dialogue_elapsed_seconds: f32, show_campaign_tooltips: bool,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     show_minimap: bool,
-    combat_hud_draws: &mut [u64; 10], obstacle_hull_draws: &mut u64,
+    combat_hud_draws: &mut [u64; 11], obstacle_hull_draws: &mut u64,
     map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
     minimap_objective_markers: &mut u64,
     fog_masked_pixels: &mut u64,
     fog_source_texture_pixels: &mut u64) {
+    use super::campaign_dialogue::PlutoControlTipFocus;
+    let pluto_tip_focus = state.filter(|_| show_campaign_tooltips).and_then(|state| {
+        let cue = &state["campaign_dialogue"]["cue"];
+        if cue != "PlutoReinforcementsScoutSelected" { return None; }
+        super::campaign_dialogue::pluto_control_tip_focus(
+            CampaignCue::PlutoReinforcementsScoutSelected, dialogue_line,
+        )
+    });
     let gunship_attack_prompt = state.and_then(|state| {
         let gunship = state["campaign_dialogue"]["gunship_attack_prompt"].as_i64()?;
         let actor_selected = squad_for_ship(state, gunship, i64::from(side))
@@ -2807,8 +2819,15 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
             let label=format!("{} {} {} ({}){}",if selected.contains(&id) {">"} else {" "},
                 number,class,squad["members"].as_array().map_or(0,Vec::len),
                 if squad["controllable"]==true {""} else {" [orders off]"});
-            text::draw_at(pixels, WIDTH, FIELD+14, 150+index*22,
-                text::fit(&label,WIDTH-FIELD-24),1,
+            let rect = remote_squad_tab_rect(index);
+            if pluto_tip_focus == Some(PlutoControlTipFocus::Squads) &&
+                squad["controllable"] == true && squad["source_number"].as_u64().is_some()
+            {
+                super::tactical_hud::draw_tutorial_highlight(pixels, WIDTH, rect);
+                combat_hud_draws[10] += 1;
+            }
+            text::draw_at(pixels, WIDTH, rect.left + 2, rect.top + 3,
+                text::fit(&label, rect.right - rect.left - 4),1,
                 if selected.contains(&id){TEXT}else{MUTED});
         }
         // The authoritative host supplies real FleetShip health/TSV and
@@ -3194,6 +3213,12 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         outline(pixels,rect.left as i32,rect.top as i32,
             (rect.right-rect.left) as i32,(rect.bottom-rect.top) as i32,
             if attack_prompt { RED } else if active { GOLD } else { 0x456782 });
+        if !selected.is_empty() && pluto_tip_focus == Some(PlutoControlTipFocus::Tactics) &&
+            matches!(action, HudAction::Circle | HudAction::Shooting)
+        {
+            super::tactical_hud::draw_tutorial_highlight(pixels, WIDTH, rect);
+            combat_hud_draws[10] += 1;
+        }
         text::draw_at(pixels,WIDTH,rect.left+4,rect.top+7,
             action.label(),1,if active || attack_prompt { TEXT } else { MUTED });
     }
@@ -5168,7 +5193,7 @@ pub fn connect_remote_with_trust(
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
         let mut fog_textured = 0_u64;
-        let mut combat_hud_draws = [0_u64; 10];
+        let mut combat_hud_draws = [0_u64; 11];
         let hud_started=Instant::now();
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
@@ -5405,6 +5430,7 @@ pub fn connect_remote_with_trust(
         peer.metrics.destination_marker_draws += combat_hud_draws[7];
         peer.metrics.scout_alarm_frames += combat_hud_draws[8];
         peer.metrics.scout_beacon_charge_bar_draws += combat_hud_draws[9];
+        peer.metrics.pluto_tutorial_control_highlights += combat_hud_draws[10];
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
@@ -5753,6 +5779,7 @@ pub fn connect_remote_with_trust(
         "scout_alarm_frames":peer.metrics.scout_alarm_frames,
         "pluto_scout_hint_frames":peer.metrics.pluto_scout_hint_frames,
         "pluto_scout_selection_marker_frames":peer.metrics.pluto_scout_selection_marker_frames,
+        "pluto_tutorial_control_highlights":peer.metrics.pluto_tutorial_control_highlights,
         "ship_type_multiselections":peer.metrics.ship_type_multiselections,
         "selection_drag_preview_frames":peer.metrics.selection_drag_preview_frames,
         "weapon_range_draws":peer.metrics.weapon_range_draws,
