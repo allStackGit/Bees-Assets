@@ -367,7 +367,11 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             // enforced by readProgress. No raw JSON observation may create a
             // success claim independently of that existing verified summary.
             const progress=this.readProgress(context);
-            if(!progress||fileHash(summary)!==digest)
+            // Do not publish a final evaluation stop signal while the runner
+            // is still packaging its immutable policy candidate. It would
+            // interrupt the final artifact step of an otherwise finished run.
+            if(progress?.metrics?.policy_candidate_ready?.value!==1)return null;
+            if(fileHash(summary)!==digest)
                 throw Error('Bees final evaluation changed while being verified.');
             const report=JSON.parse(fs.readFileSync(summary,'utf8'));
             const matches=progress.metrics?.evaluation_matches?.value;
