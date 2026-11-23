@@ -43,14 +43,14 @@ class QualifiedPpoActionTerms:
     A failed compilation never changes training state or disables eager PPO.
     """
 
-    def __init__(self, *, min_speedup=.10, min_rows=256):
+    def __init__(self, *, min_speedup=.10, min_rows=8):
         if not 0<=min_speedup<=.5 or type(min_rows) is not int or min_rows<1:
             raise ValueError("Invalid PPO GPU compilation qualification")
         self.min_speedup = min_speedup
         self.min_rows = min_rows
         self.selected = {}
         self.speedups = {}
-        self.row_ranges = {}
+        self.admitted_shapes = {}
 
     @staticmethod
     def _key(device, dtype, action_count):
@@ -112,11 +112,14 @@ class QualifiedPpoActionTerms:
                     not torch.allclose(reference_grad,trial_grad,
                                        rtol=3e-4,atol=3e-5)):
                 return False
-            # Short action cohorts are launch-bound while larger groups
-            # may favor fused arithmetic. Qualify both independently and
-            # select only sizes for which GPU forward+backward really wins.
+            # PPO has many tiny shape groups as well as large battles.
+            # Qualified execution is selected by actual action count,
+            # not a fixed 256-action cutoff that leaves small workloads
+            # forever eager. Use dynamic code generation but compare
+            # real forward + backward work at four representative sizes.
             results=[]
-            for rows in sorted(set((min(256,sample_rows),sample_rows))):
+            sizes=sorted(set((16,64,256,sample_rows)))
+            for rows in sizes:
                 case=(inputs if rows==sample_rows else
                       self._sample(device,dtype,action_count,rows))
                 if rows!=sample_rows:
@@ -131,33 +134,23 @@ class QualifiedPpoActionTerms:
                             rtol=3e-4,atol=3e-5)):
                         results.append((rows,False,0.))
                         continue
-                ordinary_times,compiled_times=[],[]
+                eager_times,compiled_times=[],[]
                 for order in range(4):
-                    options=((ppo_action_terms,ordinary_times),
+                    options=((ppo_action_terms,eager_times),
                              (candidate,compiled_times))
                     if order%2:
                         options=options[::-1]
                     for fn,times in options:
                         times.append(self._seconds(fn,case,clip,device))
-                eager=median(ordinary_times)
+                eager=median(eager_times)
                 fused=median(compiled_times)
                 gain=(1-fused/eager if eager>0 else -1.)
                 results.append((rows,gain>=self.min_speedup,gain))
-            admitted=[row for row,winning,_ in results if winning]
+            admitted={row for row,winning,_ in results if winning}
             if not admitted:
                 return False
-            if len(admitted)==len(results):
-                allowed=(self.min_rows,None)
-            elif admitted[0]==max(row for row,_,_ in results):
-                # Large cohorts win but small ones don't: keep eager for
-                # smaller launch-bound work, including unmeasured middles.
-                allowed=(max(admitted),None)
-            else:
-                # Small cohorts win but big ones don't: don't extrapolate
-                # a CUDA graph/codegen win into long ant populations.
-                allowed=(self.min_rows,min(admitted))
             self.selected[key]=candidate
-            self.row_ranges[key]=allowed
+            self.admitted_shapes[key]=(tuple(sizes),admitted)
             self.speedups[key]=max(
                 gain for _,winning,gain in results if winning)
             return True
@@ -170,9 +163,12 @@ class QualifiedPpoActionTerms:
     def __call__(self, logits, actions, old_logp, advantages, clip):
         key=self._key(logits.device,logits.dtype,logits.shape[-1])
         compiled=self.selected.get(key)
-        low,high=self.row_ranges.get(key,(self.min_rows,None))
-        if (compiled is None or len(logits)<low or
-                (high is not None and len(logits)>high) or
+        candidate_sizes,winners=self.admitted_shapes.get(key,((),set()))
+        rows=len(logits)
+        closest=(min(candidate_sizes,key=lambda size:abs(size-rows))
+                 if candidate_sizes else None)
+        if (compiled is None or rows<self.min_rows or
+                closest not in winners or
                 old_logp.dtype!=logits.dtype or
                 advantages.dtype!=logits.dtype):
             return ppo_action_terms(
@@ -184,7 +180,7 @@ class QualifiedPpoActionTerms:
             # live policy or optimizer. No gradients have been accumulated
             # by this pure forward when fallback is selected.
             self.selected[key]=None
-            self.row_ranges.pop(key,None)
+            self.admitted_shapes.pop(key,None)
             return ppo_action_terms(
                 logits,actions,old_logp,advantages,clip)
 
