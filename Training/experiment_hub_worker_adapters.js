@@ -242,6 +242,8 @@ if(enabled('bees_rollout')) {
         forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
         releaseManifestPath:beesManifest(),
         ...beesTrainingArchive(),
+        enableWindowsCuda:process.platform==='win32'&&
+            process.env.EXPERIMENT_HUB_BEES_WAN_CUDA==='1',
         sshForward:sshEnabled?{
             learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
             tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
