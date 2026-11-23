@@ -7,6 +7,7 @@ are authoritative for resumption.
 """
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from collections import defaultdict
 from contextlib import contextmanager, nullcontext
 import json
@@ -884,13 +885,14 @@ def evaluation_attempt_exists(directory):
 
 
 def evaluate_monitor_suites(directory, manifest, recipe, *, due):
-    """Run independent, immutable monitoring suites for this exact model.
+    """Evaluate independent native Stage monitors for this checkpoint.
 
-    Each suite gets its own interrupted-attempt ledger and source hash.
-    The primary holdout alone owns best-checkpoint and stopping decisions;
-    a monitor is evidence, not an implicit change of training objective.
+    Every worker uses the existing holdout evaluator and its own immutable
+    attempt directory. Only the primary holdout governs early stopping;
+    monitored scenarios contribute objective selection evidence under the
+    same pinned receipt and seed rules, regardless of completion order.
     """
-    evaluated = {}
+    scheduled = []
     for number, suite in enumerate(recipe.get("monitor_evaluations", []), 1):
         suite_id = f"monitor-{number:03d}"
         home = directory / suite_id
@@ -898,11 +900,27 @@ def evaluate_monitor_suites(directory, manifest, recipe, *, due):
             continue
         if not home.exists():
             home.mkdir()
-        if not home.is_dir():
-            raise ValueError(f"native monitor suite output is not a directory: {home}")
+        if not home.is_dir() or home.is_symlink():
+            raise ValueError(f"native monitor suite output is not an owned directory: {home}")
         derived = {**recipe, "evaluation_config": suite}
-        evaluated[suite_id] = ensure_evaluation(home, manifest, derived)
-    return evaluated
+        scheduled.append((suite_id, home, derived))
+
+    parallel = recipe.get("monitor_evaluation_parallelism", 1)
+    if parallel <= 1 or len(scheduled) <= 1:
+        return {
+            suite_id: ensure_evaluation(home, manifest, derived)
+            for suite_id, home, derived in scheduled
+        }
+    # Bounded concurrent subprocesses run the same trusted native binary
+    # on distinct authored physical Levels; no shared gameplay/simulation
+    # state and no implicit GPU placement. Futures are harvested in stable
+    # source order to preserve checkpoint selection determinism.
+    with ThreadPoolExecutor(max_workers=min(parallel, len(scheduled))) as pool:
+        tasks = [
+            (suite_id, pool.submit(ensure_evaluation, home, manifest, derived))
+            for suite_id, home, derived in scheduled
+        ]
+        return {suite_id: task.result() for suite_id, task in tasks}
 
 
 def measured_distributed_collection_windows(completed):
@@ -1738,6 +1756,8 @@ def main():
                         help="primary fixed-seed Levels used for checkpoint selection and stopping")
     parser.add_argument("--monitor-evaluation-run-config", type=Path, action="append", default=[],
                         help="additional fixed-seed suite monitored against every evaluated checkpoint; repeatable")
+    parser.add_argument("--parallel-monitor-suites", type=int, default=1,
+                        help="concurrent CPU-only monitoring evaluations (1..16); needs a frozen native rollout binary")
     parser.add_argument("--checkpoint-selection", choices=(
                             "primary", "mean", "worst", "mean-scene", "worst-scene",
                             "mission", "mission-mean-scene", "mission-worst-scene",
@@ -1849,6 +1869,14 @@ def main():
         parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
+    if (not 1 <= args.parallel_monitor_suites <= 16 or
+            args.parallel_monitor_suites > 1 and (
+                args.rollout_binary is None or args.evaluation_inference_device != "cpu"
+            )):
+        parser.error(
+            "parallel monitors require 2..16 CPU-only native evaluation processes, "
+            "--rollout-binary and --evaluation-inference-device cpu"
+        )
     if (args.checkpoint_selection in ("mean", "worst") and
             not args.monitor_evaluation_run_config and args.curriculum_plan is None):
         parser.error("mean/worst suite ranking requires additional monitoring suites")
@@ -2026,6 +2054,9 @@ def main():
             )
     if (len(args.monitor_evaluation_run_config) + len(automatic_monitors) > 16):
         parser.error("no more than 16 independently pinned monitoring suites")
+    if args.parallel_monitor_suites > max(
+            1, len(args.monitor_evaluation_run_config) + len(automatic_monitors)):
+        parser.error("parallel monitor workers cannot exceed the issued monitoring suite count")
     if (args.checkpoint_selection in ("mean", "worst") and
             not automatic_monitors and not args.monitor_evaluation_run_config):
         parser.error("mean/worst ranking needs pinned additional source Stage holdouts")
@@ -2103,6 +2134,8 @@ def main():
         if len(set(hashes)) != len(hashes):
             parser.error("primary and monitoring evaluation suites must have distinct pinned source bytes")
         recipe["monitor_evaluations"] = suites
+        if args.parallel_monitor_suites > 1:
+            recipe["monitor_evaluation_parallelism"] = args.parallel_monitor_suites
     if args.checkpoint_selection != "primary":
         recipe["checkpoint_selection"] = args.checkpoint_selection
     if args.early_stop_patience is not None:
