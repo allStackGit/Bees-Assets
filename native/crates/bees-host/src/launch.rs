@@ -6967,7 +6967,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
         } else { None };
         if tokens.len() == 2 || single_remote_side.is_some() {
             let saved = recorded_library::list_fleet_builds(save_root)?
-                .into_iter().take(32).filter_map(|recording| {
+                .into_iter().filter_map(|recording| {
                     let recorded_library::RecordedSource::QuickBattle(source) =
                         recording.source else { return None };
                     // The replay library already bounded files, proved the
@@ -7016,7 +7016,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
                         false
                     };
                     Some((recording.title, source, spectator_fleet))
-                }).collect::<Vec<_>>();
+                }).take(32).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
                     single_remote_side, save_root, original_queen, original_factory, sources)?
