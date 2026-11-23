@@ -38,6 +38,7 @@ function trustedFile(raw,label,executable=false) {
 function createBeesRolloutAdapter({
     projectRoot,pythonPath,workerExecutable,artifactRoot,
     keyPath,forwardPort,sshForward=null,releaseManifestPath=null,
+    runtimeArchive=null,runtimeSha256=null,runtimeVersion=null,runtimeBuildId=null,
 }) {
     if(!['linux','win32'].includes(process.platform))
         throw Error('Bees WAN remote actors require Linux or Windows native supervision.');
@@ -104,6 +105,7 @@ function createBeesRolloutAdapter({
     }
     const pinned=prepareImmutableRuntime({
         project,python,artifactRoot:artifacts,workerSha:fileHash(worker),
+        runtimeArchive,runtimeSha256,runtimeVersion,runtimeBuildId,
     });
     const source=name=>trustedFile(path.join(pinned.root,name),'Frozen Bees '+name);
     const payload=release?.worker_payload_sha256??unityWorkerTreeSha256(worker);
