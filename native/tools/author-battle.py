@@ -556,8 +556,12 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
         # The original ordinary Guard follows the actual protected squad.
         # Specialist bombing, mining, scouting and Carrier/Queen lifecycles
         # remain under their own real gameplay commands.
-        if (example["ship_type"] not in (0, 4, 5, 9, 10, 17, 18, 19, 22)
-                and example.get("turrets")
+        mining_specialist = (
+            example["ship_type"] in (4, 9) and
+            scene.get("activate_mining") and scene.get("mining_asteroids")
+        )
+        if (example["ship_type"] not in (0, 5, 10, 17, 18, 19, 22)
+                and not mining_specialist and example.get("turrets")
                 and example["base_speed"] > 0):
             return [{"kind": "guard",
                      "friendly_squad_item_id": protected_squad["item_id"]}]
