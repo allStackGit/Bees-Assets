@@ -2635,7 +2635,8 @@ fn run_session(
     mission: Option<CampaignMission<'_>>,
 ) -> Result<(), Box<dyn Error>> {
     run_session_with_queen_access(
-        config_path, play, view, output, capture, replay_inputs, mission, None, None,
+        config_path, play, view, output, capture, replay_inputs, mission,
+        None, None, &[Vec::new(), Vec::new()],
     )
 }
 
@@ -2647,7 +2648,7 @@ fn run_session_with_queen_access(
     config_path: &Path, play: bool, view: bool, output: Option<PathBuf>,
     capture: Option<PathBuf>, mut replay_inputs: Option<PathBuf>,
     mission: Option<CampaignMission<'_>>, original_queen: Option<&Value>,
-    original_factory: Option<&Value>,
+    original_factory: Option<&Value>, fighters: &[Vec<Value>; 2],
 ) -> Result<(), Box<dyn Error>> {
     let mut config_path = config_path.canonicalize()?;
     let mut replay_number = 0_u64;
@@ -2688,7 +2689,7 @@ fn run_session_with_queen_access(
                 .ok_or_else(||invalid("squad maker requires a native game library"))?;
             let Some(choice)=fleet_builder::choose_for_preferred_side(
                 save_root, restart.preferred_player_side,
-                original_queen, original_factory,
+                original_queen, original_factory, fighters,
             )? else {
                 // Cancelling Squad Maker returns to the library rather
                 // than restoring the already-retired CombatWorld.
@@ -5828,7 +5829,9 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
     library: &NativeLibrary, games: &[PathBuf],
     trained: &[trained_library::TrainedGame],
     freeplay_unlocked: bool, original_queen: Option<&Value>,
-    original_factory: Option<&Value>) -> Result<(), Box<dyn Error>> {
+    original_factory: Option<&Value>, fighters: &[Vec<Value>; 2])
+    -> Result<(), Box<dyn Error>>
+{
     let settings:NativeSavedHost=serde_json::from_slice(&fs::read(settings_path)?)?;
     if settings.game_id == fleet_builder::GAME_ID && !freeplay_unlocked {
         return Err(invalid(
@@ -6029,7 +6032,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
                 }).collect::<Vec<_>>();
             if saved.is_empty() {
                 fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory)?
+                    None, save_root, original_queen, original_factory, fighters)?
             } else {
                 use bees_host::presentation::{select_library, BattleMenuRow};
                 let mut rows = Vec::with_capacity(saved.len() + 1);
@@ -6046,7 +6049,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
                 match select_library(&rows, &mut selected, false)? {
                     None => None,
                     Some(0) => fleet_builder::choose_multiplayer(
-                    None, save_root, original_queen, original_factory)?,
+                    None, save_root, original_queen, original_factory, fighters)?,
                     Some(index) => {
                         saved_host_fleet = Some(saved[index - 1].1.clone());
                         None
@@ -6055,7 +6058,7 @@ fn run_library_host(settings_path: &Path, save_root: &Path,
             }
         } else {
             fleet_builder::choose_multiplayer(
-                single_remote_side, save_root, original_queen, original_factory)?
+                single_remote_side, save_root, original_queen, original_factory, fighters)?
         }
     } else { None };
     if custom_fleet && generated_recovery.is_none() &&
@@ -6371,6 +6374,21 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         // never the zero-movement, 100-HP policy demonstration hull.
         // Discover its canonical source only from original campaign
         // mission catalogs; leave an unmodified sandbox game alone.
+        let original_fighters = if freeplay_unlocked {
+            original_freeplay_finales.iter().find_map(|(id, _)|
+                library.games.iter().enumerate().find(|(_, game)|
+                    game.id == *id && game.kind == "campaign"
+                ).and_then(|(index, _)| match
+                    fleet_builder::original_campaign_fighters(&games[index])
+                {
+                    Ok(classes) => Some(classes),
+                    Err(error) => {
+                        eprintln!("Original combat fleet class sources unavailable: {error}");
+                        None
+                    },
+                })
+            ).unwrap_or([Vec::new(), Vec::new()])
+        } else { [Vec::new(), Vec::new()] };
         let original_factory = if freeplay_unlocked {
             original_freeplay_finales.iter().find_map(|(id, _)|
                 library.games.iter().enumerate().find(|(_, game)|
@@ -6592,10 +6610,11 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                         "source": source, "run": output, "remote_host": false,
                     }));
                     return run_session_with_queen_access(&source, true, true,
-                        Some(output), None, None, None, original_queen.as_ref(), original_factory.as_ref());
+                        Some(output), None, None, None, original_queen.as_ref(), original_factory.as_ref(), &original_fighters);
                 }
                 let Some(choice) = fleet_builder::choose(
                     save_root, original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters,
                 )? else {
                     return Ok::<(), Box<dyn Error>>(());
                 };
@@ -6614,6 +6633,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 run_session_with_queen_access(
                     &source, true, true, Some(output), None, None, None,
                     original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters,
                 )
             })()
         } else if reusing_fleet {
@@ -6644,7 +6664,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                     // Existing interrupted game owns its frozen start and
                     // must be completed before another new fleet is minted.
                     return run_session_with_queen_access(&recovery_source, true, true,
-                        Some(output), None, None, None, original_queen.as_ref(), original_factory.as_ref());
+                        Some(output), None, None, None, original_queen.as_ref(), original_factory.as_ref(), &original_fighters);
                 }
                 let output = new_library_battle_output(save_root, fleet_builder::GAME_ID)?;
                 let start = QuickBattleStart::capture(source, false)?
@@ -6658,6 +6678,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                 run_session_with_queen_access(
                     source, true, true, Some(output), None, None, None,
                     original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters,
                 )
             })()
         } else if reusing_level {
@@ -6721,7 +6742,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         } else if benchmarking_fleet {
             (|| {
                 let Some(choice) = fleet_builder::choose_benchmark(
-                    original_queen.as_ref(), original_factory.as_ref())? else {
+                    original_queen.as_ref(), original_factory.as_ref(),
+                    &original_fighters)? else {
                     return Ok::<(), Box<dyn Error>>(());
                 };
                 let output = new_library_battle_output(save_root, "fleet-benchmark")?;
@@ -6799,7 +6821,8 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games,&trained,
-                freeplay_unlocked, original_queen.as_ref(), original_factory.as_ref())
+                freeplay_unlocked, original_queen.as_ref(), original_factory.as_ref(),
+                &original_fighters)
         } else if let Some(trained_index) = trained_index {
             // A selected trained model can still run the exact original
             // AI-vs-AI rollout, or become a human opponent on either
