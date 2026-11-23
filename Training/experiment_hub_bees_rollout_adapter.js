@@ -17,6 +17,7 @@ const SHA=/^[0-9a-f]{64}$/;
 const TAILNET=/^100\.(?:6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.(?:0|[1-9][0-9]{0,2})\.(?:0|[1-9][0-9]{0,2})$/;
 const SSH_USER=/^[a-z_][a-z0-9_-]{0,31}$/;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
+const CUDA_UUID=/^GPU-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const SAFE=/^[a-zA-Z0-9_./:@=+\-,]+$/;
 const safeLocal=value=>process.platform==='win32'
     ?typeof value==='string'&&value.length>0&&value.length<=1024&&
@@ -39,9 +40,13 @@ function createBeesRolloutAdapter({
     projectRoot,pythonPath,workerExecutable,artifactRoot,
     keyPath,forwardPort,sshForward=null,releaseManifestPath=null,
     runtimeArchive=null,runtimeSha256=null,runtimeVersion=null,runtimeBuildId=null,
+    enableWindowsCuda=false,
 }) {
     if(!['linux','win32'].includes(process.platform))
         throw Error('Bees WAN remote actors require Linux or Windows native supervision.');
+    if(typeof enableWindowsCuda!=='boolean'||
+        enableWindowsCuda&&process.platform!=='win32')
+        throw Error('Bees CUDA actors require an explicitly opted-in Windows GPU runtime.');
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
     if(!safeLocal(project)||!safeLocal(artifacts)||
@@ -127,6 +132,14 @@ function createBeesRolloutAdapter({
     });
     if(py.error||py.status!==0)
         throw Error('Bees remote actor requires Python 3.10 with ML-Agents 1.1.0, torch, and TensorBoard.');
+    if(enableWindowsCuda) {
+        const gpu=spawnSync(python,['-B','-c',
+            'import torch; assert torch.version.cuda and torch.cuda.is_available()'],{
+            cwd:project,encoding:'utf8',windowsHide:true,timeout:20000,maxBuffer:16384,
+        });
+        if(gpu.error||gpu.status!==0)
+            throw Error('Bees Windows CUDA actor needs a functioning installed PyTorch CUDA backend.');
+    }
     const runtime=Object.freeze({
         training:source('bees_mlagents_learn.py'),
         trainer:source('rl_1v1_config.yaml'),
@@ -138,6 +151,7 @@ function createBeesRolloutAdapter({
     });
     return {
         executable:python,cwd:project,stop_policy:'terminate-group',
+        ...(enableWindowsCuda?{gpu_execution:'cuda'}:{}),
         design_catalog:{bees_rollout:{
             version:1,fields:[],
             worker_sha256:approved.worker_sha256,
@@ -179,10 +193,15 @@ function createBeesRolloutAdapter({
                 parameters.envs>context.cpu_quota||
                 !['cpu','cuda'].includes(parameters.device)||
                 (parameters.device==='cuda'
-                    ?process.platform!=='linux'||
-                        !PCI.test(String(context.gpu_pci_address||''))||
-                        context.gpu_mode!=='exclusive'||context.gpu_pci_addresses!==undefined
+                    ?!PCI.test(String(context.gpu_pci_address||''))||
+                        context.gpu_mode!=='exclusive'||
+                        context.gpu_pci_addresses!==undefined||
+                        (process.platform==='win32'
+                            ?!enableWindowsCuda||
+                                !CUDA_UUID.test(String(context.gpu_cuda_uuid||''))
+                            :context.gpu_cuda_uuid!==undefined)
                     :context.gpu_pci_address!==undefined||
+                        context.gpu_cuda_uuid!==undefined||
                         context.gpu_pci_addresses!==undefined))
                 throw Error('Bees WAN rollout requires one frozen learner, exact CPU or exclusive GPU lease, and 1–64 local environments.');
             for(const key of ['worker_sha256','worker_payload_sha256',
@@ -233,6 +252,7 @@ function createBeesRolloutAdapter({
                 torch_threads:Math.min(context.cpu_quota,parameters.envs),
                 device:parameters.device,
                 expected_gpu_pci:context.gpu_pci_address??null,
+                expected_gpu_cuda_uuid:context.gpu_cuda_uuid??null,
                 auth_token_file:secret.path,
                 auth_token_fingerprint:secret.fingerprint,
                 broker_port:tunnelPort,
