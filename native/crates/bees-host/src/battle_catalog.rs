@@ -689,14 +689,16 @@ impl CampaignProgress<'_> {
         self.created_squads.iter().any(|squad|
             squad.side == side && squad.saved_squad_id == id) &&
         !self.retired_squad_ids.contains(&id) &&
-        // A child squad still inherits this template's tactics and class;
-        // its parent cannot disappear from the active fleet editor.
         !self.created_squads.iter().any(|squad|
-            squad.template_saved_squad_id == id) &&
-        // Purchases are the current folded state of every immutable
-        // transfer receipt, not the initial purchased squad assignment.
-        // Historical battle membership does not prevent a retired squad
-        // from retaining its old career statistics.
+            squad.template_saved_squad_id == id)
+    }
+
+    /// After the shared campaign editor has moved every current FleetShip
+    /// into reserve, one tombstone may be committed. Selection eligibility
+    /// above remains independent of current squad occupancy because deleting
+    /// an occupied created squad first transfers its members to reserve.
+    pub fn can_commit_saved_squad_retirement(&self, side: i32, id: i64) -> bool {
+        self.can_retire_saved_squad(side, id) &&
         !self.purchases.iter().any(|(_, ship)| ship.saved_squad_id == id) &&
         !self.authored_roster.values().any(|owner|
             owner.current_saved_squad_id == id)
@@ -1525,7 +1527,7 @@ impl BattleCatalog {
     ) -> io::Result<()> {
         let campaign_id = self.campaign_id.as_deref()
             .ok_or_else(|| invalid("SavedSquad deletion requires a native campaign"))?;
-        if !progress.can_retire_saved_squad(side, saved_squad_id) {
+        if !progress.can_commit_saved_squad_retirement(side, saved_squad_id) {
             return Err(invalid("retired SavedSquad must be created, unreferenced and have all ships in reserve"));
         }
         commit_campaign_edit(output, "squad-retire-", "retirement.json",
@@ -2328,7 +2330,7 @@ impl BattleCatalog {
             let edit: CampaignSquadRetirement = serde_json::from_slice(&bytes)
                 .map_err(|error| invalid(format!("invalid SavedSquad retirement: {error}")))?;
             if edit.campaign_id != *campaign ||
-                !progress.can_retire_saved_squad(edit.side, edit.saved_squad_id)
+                !progress.can_commit_saved_squad_retirement(edit.side, edit.saved_squad_id)
             {
                 return Err(invalid("stale or nonempty retired SavedSquad receipt"));
             }
