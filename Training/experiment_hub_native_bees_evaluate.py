@@ -26,16 +26,28 @@ from evaluate_policy import evaluate as evaluate_native_policy
 
 
 def read_suite(file: Path) -> dict:
-    suite = json.loads(read_bounded(file, 8192))
+    suite = json.loads(read_bounded(file, 32768))
     keys = {
-        "suite_id", "run_config", "run_config_sha256", "scene_sha256",
+        "suite_id", "run_config", "run_config_sha256",
         "reference_manifest", "reference_manifest_sha256",
         "policy_worker_sha256", "rollout_binary_sha256",
         "learner_slot", "learner_side", "policy_seed", "trials",
     }
+    scene_keys = {"scene_sha256", "scene_sha256_by_path"}
+    selected = set(suite) & scene_keys if isinstance(suite, dict) else set()
     if (not isinstance(suite, dict) or
+            len(selected) != 1 or
             set(suite) - {"success_metric", "inference_device", "physics_workers",
-                          "policy_runtime_sources_sha256"} != keys or
+                          "policy_runtime_sources_sha256"} != keys | selected or
+            ("scene_sha256" in selected and
+             (not isinstance(suite["scene_sha256"], str) or
+              not SHA256.fullmatch(suite["scene_sha256"]))) or
+            ("scene_sha256_by_path" in selected and
+             (not isinstance(suite["scene_sha256_by_path"], dict) or
+              not 1 <= len(suite["scene_sha256_by_path"]) <= 64 or
+              any(not isinstance(name, str) or not name or "\x00" in name or
+                  not isinstance(digest, str) or not SHA256.fullmatch(digest)
+                  for name, digest in suite["scene_sha256_by_path"].items()))) or
             ("policy_runtime_sources_sha256" in suite and
              (not isinstance(suite["policy_runtime_sources_sha256"], str) or
               not SHA256.fullmatch(suite["policy_runtime_sources_sha256"]))) or
@@ -141,39 +153,56 @@ def source_inputs(suite_file: Path, suite: dict):
     )
     if suite.get("success_metric", expected_metric) != expected_metric:
         raise ValueError("Native fixed suite's scoring identity differs from its authored Levels")
-    # Holdouts commonly reuse one scene across hundreds of native worlds.
-    # Read and parse that physical roster exactly once, then validate only
-    # each world's small model routing table. No world-sized JSON copies.
-    scenes = set()
+    # One native Run may host multiple different, authentically authored
+    # scene files. Validate each scene exactly once, regardless of its
+    # number of seeded Worlds, and preserve its own policy team routing.
+    # A scene path is named relative to the frozen Run, NOT the suite's
+    # folder; the exact raw name is part of the suite identity.
+    scenes_by_name = {}
     for level in config["levels"]:
-        if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
+        name = level.get("scene")
+        if not isinstance(name, str) or not name:
             raise ValueError("Every native evaluation Level needs an authored scene.")
-        scenes.add((run_file.parent / level["scene"]).resolve(strict=True))
-    if len(scenes) != 1:
-        raise ValueError("Native evaluation requires one frozen physical scene.")
-    scene = next(iter(scenes))
-    if file_sha256(scene) != suite["scene_sha256"]:
-        raise ValueError("Native evaluation scene differs from its frozen suite.")
-    snapshot = json.loads(read_bounded(scene, 8 * 1024 * 1024))
-    if not isinstance(snapshot.get("ships"), list):
-        raise ValueError("Native evaluation requires physical policy-controlled ships.")
-    teams_by_side = {}
-    for ship in snapshot["ships"]:
-        if not isinstance(ship, dict):
-            raise ValueError("Native evaluation has an invalid source ship.")
-        policy = ship.get("policy")
-        if policy is None:
-            continue
-        if not isinstance(policy, dict):
-            raise ValueError("Native evaluation has an invalid source policy controller.")
-        teams_by_side.setdefault(ship.get("side"), set()).add(policy.get("team_id"))
-    if not teams_by_side.get(suite["learner_side"]):
-        raise ValueError("Native evaluation learner side has no real policy agents.")
+        scenes_by_name[name] = (run_file.parent / name).resolve(strict=True)
+    if "scene_sha256" in suite:
+        if len(scenes_by_name) != 1:
+            raise ValueError("Legacy single-scene suite cannot admit another physical map")
+        scene = next(iter(scenes_by_name.values()))
+        if file_sha256(scene) != suite["scene_sha256"]:
+            raise ValueError("Native evaluation scene differs from its frozen suite.")
+    else:
+        expected_scenes = suite["scene_sha256_by_path"]
+        if set(scenes_by_name) != set(expected_scenes):
+            raise ValueError("Native holdout physical scene manifest differs from its frozen suite")
+        for name, scene in scenes_by_name.items():
+            if file_sha256(scene) != expected_scenes[name]:
+                raise ValueError(f"Native holdout physical scene changed: {name}")
+    teams_by_scene = {}
+    for name, scene in scenes_by_name.items():
+        snapshot = json.loads(read_bounded(scene, 8 * 1024 * 1024))
+        if (not isinstance(snapshot, dict) or
+                not isinstance(snapshot.get("ships"), list)):
+            raise ValueError("Native evaluation requires physical policy-controlled ships.")
+        teams_by_side = {}
+        for ship in snapshot["ships"]:
+            if not isinstance(ship, dict):
+                raise ValueError("Native evaluation has an invalid source ship.")
+            policy = ship.get("policy")
+            if policy is None:
+                continue
+            if not isinstance(policy, dict):
+                raise ValueError("Native evaluation has an invalid source policy controller.")
+            teams_by_side.setdefault(ship.get("side"), set()).add(policy.get("team_id"))
+        if not teams_by_side.get(suite["learner_side"]):
+            raise ValueError(
+                f"Native evaluation {name} has no real learner-side policy agents."
+            )
+        teams_by_scene[name] = teams_by_side
     for level in config["levels"]:
         routed = level.get("model_slots")
         if not isinstance(routed, dict):
             raise ValueError("Every native evaluation Level requires explicit model slots.")
-        for side, teams in teams_by_side.items():
+        for side, teams in teams_by_scene[level["scene"]].items():
             for team in teams:
                 model_slot = routed.get(str(team))
                 if type(model_slot) is not int or model_slot not in reference_slots:
@@ -189,12 +218,12 @@ def source_inputs(suite_file: Path, suite: dict):
             policy_runtime_sources_sha256(worker) !=
             suite["policy_runtime_sources_sha256"]):
         raise ValueError("Native v26 actor or sampler implementation changed.")
-    return run_file, reference, scene, worker, expected_metric
+    return run_file, reference, tuple(scenes_by_name.values()), worker, expected_metric
 
 
 def evaluate(checkpoint: Path, checkpoint_digest: str, source_manifest: Path,
              suite_file: Path, suite: dict, work: Path, rollout_binary: Path) -> int:
-    run_file, reference_path, scene, worker, metric = source_inputs(suite_file, suite)
+    run_file, reference_path, scenes, worker, metric = source_inputs(suite_file, suite)
     rollout_binary = rollout_binary.resolve(strict=True)
     if file_sha256(rollout_binary) != suite["rollout_binary_sha256"]:
         raise ValueError("Native evaluation executable changed from the frozen benchmark.")
@@ -429,12 +458,14 @@ def create_suite_main(arguments) -> int:
             not isinstance(config.get("levels"), list) or not config["levels"] or
             not isinstance(config.get("policy_worker"), str)):
         parser.error("requires a native-authored policy run with fixed seeded Levels")
-    scenes = {
-        (run.parent / level["scene"]).resolve(strict=True)
-        for level in config["levels"]
-    }
-    if len(scenes) != 1:
-        parser.error("use one physical native scene per independent suite")
+    scenes = {}
+    for level in config["levels"]:
+        if not isinstance(level, dict) or not isinstance(level.get("scene"), str):
+            parser.error("each native holdout Level needs a physical scene")
+        name = level["scene"]
+        scenes[name] = (run.parent / name).resolve(strict=True)
+    if not 1 <= len(scenes) <= 64:
+        parser.error("native holdout supports 1..64 distinct physical scenes per Stage")
     episodes = config.get("episodes_per_world", 1)
     if type(episodes) is not int or not 1 <= episodes <= 10000:
         parser.error("native evaluation episodes_per_world must be 1..10000")
@@ -450,7 +481,12 @@ def create_suite_main(arguments) -> int:
         "suite_id": args.suite_id,
         "run_config": relative(run),
         "run_config_sha256": file_sha256(run),
-        "scene_sha256": file_sha256(next(iter(scenes))),
+        **({"scene_sha256": file_sha256(next(iter(scenes.values())))}
+           if len(scenes) == 1 else {
+               "scene_sha256_by_path": {
+                   name: file_sha256(scene) for name, scene in sorted(scenes.items())
+               }
+           }),
         "reference_manifest": relative(reference),
         "reference_manifest_sha256": file_sha256(reference),
         "policy_worker_sha256": normalized_python_source_sha256(worker),
@@ -519,7 +555,9 @@ def main():
         receipts = args.receipt_root.resolve(strict=True)
         references = source_inputs(args.suite.resolve(strict=True), suite)
         protected = [checkpoint.parent, manifest.parent,
-                     *[p.parent for p in references[:4]]]
+                     references[0].parent, references[1].parent,
+                     references[3].parent,
+                     *[scene.parent for scene in references[2]]]
         if (not scratch.is_dir() or not receipts.is_dir() or
                 scratch == receipts or
                 scratch.is_relative_to(receipts) or receipts.is_relative_to(scratch) or
