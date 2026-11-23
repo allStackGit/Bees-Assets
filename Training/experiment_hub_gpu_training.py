@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections import deque
 from contextlib import contextmanager
 from math import isfinite
+from numbers import Integral
 from concurrent.futures import ThreadPoolExecutor, wait
 from threading import current_thread
 from statistics import median
@@ -216,7 +217,7 @@ def sum_consecutive_training_segments(terms, counts, owner, *,
             owner.device!=terms.device or owner.numel()!=len(terms) or
             not isinstance(counts,(list,tuple)) or
             sum(counts)!=len(terms) or any(
-                type(c) is not int or c<0 for c in counts)):
+                not isinstance(c,Integral) or c<0 for c in counts)):
         raise ValueError("Training segment sizes do not match ordered contributions")
     use_segment = (terms.device.type=='cuda' and
                    len(terms)>=min_parallel_rows and
