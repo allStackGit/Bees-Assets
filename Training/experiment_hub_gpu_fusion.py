@@ -605,6 +605,18 @@ class FrozenGpuGraphs:
                            for row in inputs for t in row)
         if static_bytes > self.max_capture_bytes // 2:
             raise MemoryError("GPU graph inputs exceed the residency envelope")
+        # A graph's static input/output banks and kernel workspace occupy
+        # additional VRAM until the cache evicts it. Refuse opportunistic
+        # capture when the GPU's remaining headroom is already needed by
+        # active optimizers or other leased collector jobs.
+        try:
+            free_bytes, _ = torch.cuda.mem_get_info(self.device)
+        except (RuntimeError, NotImplementedError):
+            free_bytes = None
+        reserve = max(64*1048576, 4*static_bytes,
+                      min(self.max_capture_bytes, 128*1048576))
+        if free_bytes is not None and free_bytes < reserve:
+            raise MemoryError("Not enough GPU headroom for optional graph capture")
         for row, stable in zip(args, inputs):
             for value, target in zip(row, stable):
                 target.copy_(value)
