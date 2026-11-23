@@ -153,8 +153,8 @@ async function restartActivity(hub,kind) {
     return machine
         ?{count:jobs.filter(job=>!job.assigned_machine_id||
             job.assigned_machine_id===machine).length,
-            scope:'local'}
-        :{count:jobs.length,scope:'all'};
+            scope:'local',machine_id:machine}
+        :{count:jobs.length,scope:'all',machine_id:null};
 }
 async function unitStatus(kind,{runCommand=run,platform=process.platform,
     pid=process.pid}={}) {
