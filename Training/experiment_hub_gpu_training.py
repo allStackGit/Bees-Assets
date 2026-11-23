@@ -90,6 +90,35 @@ def immutable_training_input_budget(free_bytes, desired_bytes, reuse_passes, *,
                       free_bytes - minimum_compute_bytes))
 
 
+def upload_cast_training_observations(destination, source, *, staging=None):
+    """Upload compact observations and convert into the cached GPU dtype.
+
+    When actor and critic both require FP32, integer board banks may be
+    retained as FP32 for repeated epochs. Converting on the host first
+    multiplies PCIe transfer volume by up to four; instead DMA the original
+    int8/int16 tensor and perform its exact-value conversion on the GPU.
+    The optional pinned staging pool owns the in-flight host buffer and
+    enqueues the destination's producer-stream dependency.
+    """
+    if (not isinstance(destination,torch.Tensor) or
+            destination.device.type!="cuda" or
+            not isinstance(source,torch.Tensor) or
+            source.shape!=destination.shape or
+            source.requires_grad):
+        raise ValueError("GPU cached conversion requires matching immutable tensors")
+    if source.device.type=="cpu":
+        if staging is not None:
+            uploaded=staging.upload(source.contiguous())
+        else:
+            uploaded=source.to(destination.device)
+    elif source.device==destination.device:
+        uploaded=source
+    else:
+        uploaded=source.to(destination.device,non_blocking=True)
+    destination.copy_(uploaded)
+    return source.numel()*source.element_size()
+
+
 def cached_training_compute_dtype(source_dtype, source_bytes, cache_budget,
                                   reuse_passes, *,
                                   exact_fp32_consumer=False,
