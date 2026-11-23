@@ -29,12 +29,116 @@ def board_seats(board):
     return seats
 
 
+# New mixed suites never accept browser-provided paths. Opponent directories
+# are derived from the approved private suite root and immutable identities.
+MIXED_SUITE = re.compile(r"tinybrains_mix_[a-f0-9]{20}_v[1-9][0-9]*")
+FROZEN_OPPONENT = re.compile(r"tinybrains_mini_[a-f0-9]{20}")
+MIXED_MAX_GAMES = 2048
+
+
+def mixed_model_dir(suite_root, identity):
+    from ants_mapoca.runtime import STARTER
+    if identity in ("nano", "micro"):
+        return STARTER / f"models/{identity}-bc"
+    return suite_root / "opponents" / identity
+
+
+def mixed_pins_ok(pool, suite_root):
+    if not isinstance(pool, list) or not 1 <= len(pool) <= 16:
+        raise ValueError("Mixed suite must have 1–16 approved opponents.")
+    names = set()
+    for item in pool:
+        if (not isinstance(item, dict)
+                or set(item) != {"id", "label", "model_sha256",
+                                 "manifest_sha256", "checkpoint_sha256"}
+                or not isinstance(item["id"], str)
+                or not (item["id"] in ("nano", "micro", "tinybrains_mini_batch128_v1")
+                        or FROZEN_OPPONENT.fullmatch(item["id"]))
+                or not isinstance(item["label"], str)
+                or not 1 <= len(item["label"]) <= 80
+                or any(ord(ch) < 32 for ch in item["label"])
+                or any(not SHA256.fullmatch(str(item[key])) for key in
+                       ("model_sha256", "manifest_sha256"))
+                or (item["id"] in ("nano", "micro")
+                    and item["checkpoint_sha256"] is not None)
+                or (item["id"] not in ("nano", "micro")
+                    and not SHA256.fullmatch(str(item["checkpoint_sha256"])))):
+            raise ValueError("Invalid frozen mixed-opponent identity.")
+        if item["id"] in names:
+            raise ValueError("Duplicate mixed-opponent entry.")
+        names.add(item["id"])
+        model_dir = mixed_model_dir(suite_root, item["id"])
+        if (model_dir.resolve(strict=True) != model_dir or
+                not model_dir.is_dir() or model_dir.is_symlink()):
+            raise ValueError("Mixed-opponent directory is unavailable or redirected.")
+        for name, key in (("model.onnx", "model_sha256"),
+                          ("manifest.json", "manifest_sha256")):
+            file = model_dir / name
+            if file.is_symlink() or not file.is_file():
+                raise ValueError("Frozen mixed-opponent model file is redirected.")
+            with file.open("rb") as stream:
+                if hashlib.file_digest(stream, "sha256").hexdigest() != item[key]:
+                    raise ValueError("Frozen mixed-opponent model fingerprint changed.")
+
+
+def validate_mixed_suite(file, suite):
+    required = {"suite_id", "maps", "seeds", "max_turns",
+                "opponents", "rotations", "schema_version"}
+    optional = {"runtime_sha256", "environment_source"}
+    if (set(suite) - required - optional or not required <= set(suite)
+            or suite["schema_version"] != 2
+            or not isinstance(suite["suite_id"], str)
+            or not MIXED_SUITE.fullmatch(suite["suite_id"])):
+        raise ValueError("Invalid immutable mixed evaluation definition.")
+    maps, seeds = suite["maps"], suite["seeds"]
+    if (not isinstance(maps, list) or not 1 <= len(maps) <= 128
+            or any(not isinstance(m, str) or not MAP.fullmatch(m) for m in maps)
+            or len(maps) != len(set(maps))
+            or not isinstance(seeds, list) or not 1 <= len(seeds) <= 16
+            or any(type(v) is not int or not 0 <= v < 2**32 for v in seeds)
+            or len(seeds) != len(set(seeds))
+            or type(suite["max_turns"]) is not int
+            or not 1 <= suite["max_turns"] <= 1000
+            or type(suite["rotations"]) is not int
+            or not 1 <= suite["rotations"] <= 8):
+        raise ValueError("Invalid mixed evaluation map, seed or turn controls.")
+    if (suite.get("runtime_sha256") is not None and
+            not SHA256.fullmatch(str(suite["runtime_sha256"]))):
+        raise ValueError("Invalid mixed suite runtime pin.")
+    if "environment_source" in suite:
+        source = suite["environment_source"]
+        if (not isinstance(source, dict)
+                or set(source) != {"configuration_id", "revision", "sha256", "stage"}
+                or not UUID.fullmatch(str(source["configuration_id"]))
+                or type(source["revision"]) is not int or source["revision"] < 1
+                or not SHA256.fullmatch(str(source["sha256"]))
+                or source["stage"] not in ("basic_tiny", "tiny_two_player",
+                                           "small_two_player", "all_two_player",
+                                           "full_multiplayer")):
+            raise ValueError("Invalid evaluation environment source identity.")
+    games = sum(board_seats(board) for board in maps) * len(seeds) * suite["rotations"]
+    if games > MIXED_MAX_GAMES:
+        raise ValueError("Mixed suite exceeds 2048 games; reduce seeds or rotations.")
+    mixed_pins_ok(suite["opponents"], Path(file).parent)
+    return suite
+
+
+def mixed_roster(pool, map_index, seed_index, seat, seats, rotation):
+    # N rotations guarantee each opponent visits every opposing seat N times
+    # across otherwise identical map/seed/candidate-seat combinations.
+    start = (map_index + seed_index + seat + rotation) % len(pool)
+    return [pool[(start + offset) % len(pool)] for offset in range(seats - 1)]
+
+
 def suite_trials(suite):
-    return sum(board_seats(board) for board in suite["maps"]) * len(suite["seeds"])
+    return (sum(board_seats(board) for board in suite["maps"]) * len(suite["seeds"])
+            * suite.get("rotations", 1))
 
 
 def read_suite(file):
-    suite = json.loads(read_bounded(file, 8192))
+    suite = json.loads(read_bounded(file, 32768))
+    if isinstance(suite, dict) and "opponents" in suite:
+        return validate_mixed_suite(file, suite)
     required = {"suite_id", "maps", "seeds", "max_turns"}
     optional = {"runtime_sha256", "opponent", "opponent_model_sha256",
                 "opponent_manifest_sha256", "opponent_dir",
@@ -117,27 +221,47 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
             raise ValueError("Checkpoint did not match the pinned SHA-256.")
     candidate = work / "candidate"
     export(pinned, candidate)
-    opponent = suite.get("opponent", "nano")
-    if opponent == "mini":
+    mixed = "opponents" in suite
+    opponent = suite.get("opponent", "mixed" if mixed else "nano")
+    if mixed:
+        from pathlib import Path as _Path
+        suite_root = _Path(__file__).resolve().parent
+        # Evaluation suites are read from the private local suites directory.
+        # The verified model roots are embedded as path-free source names;
+        # resolve them only against an approved fixed evaluator suite root.
+        suite_root = _Path.home() / "evaluation-audits/tinybrains/suites"
+        frozen = {item["id"]: mixed_model_dir(suite_root, item["id"])
+                  for item in suite["opponents"]}
+    if not mixed and opponent == "mini":
         fixed = Path(suite["opponent_dir"])
         if (fixed.resolve(strict=True) != fixed or not fixed.is_dir()
                 or any((fixed / name).is_symlink()
                        for name in ("model.onnx", "manifest.json"))):
             raise ValueError("Frozen Mini opponent directory is redirected or missing.")
-    else:
+    elif not mixed:
         fixed = STARTER / f"models/{opponent}-bc"
-    verify_opponent(suite, fixed)
+    if mixed:
+        mixed_pins_ok(suite["opponents"], suite_root)
+    else:
+        verify_opponent(suite, fixed)
     replay_root = work / "replays"
     match_file = work / "match.json"
     wins = trials = 0
-    for board in suite["maps"]:
+    for map_index, board in enumerate(suite["maps"]):
         seats = board_seats(board)
-        for seed in suite["seeds"]:
-            # One independent trial for every possible candidate seat. All
-            # other seats use separate instances of the fixed opponent.
-            for seat in range(seats):
-                models = [candidate if index == seat else fixed
-                          for index in range(seats)]
+        for seed_index, seed in enumerate(suite["seeds"]):
+            # Every candidate seat is evaluated once per configured rotation.
+            for scheduled in range(seats * suite.get("rotations", 1)):
+                rotation, seat = divmod(scheduled, seats)
+                roster = (mixed_roster(suite["opponents"], map_index, seed_index,
+                                       seat, seats, rotation) if mixed else [])
+                assigned = iter(roster)
+                seats_opponents = ([None if index == seat else next(assigned)
+                                    for index in range(seats)] if mixed else [])
+                models = ([candidate if index == seat else frozen[seats_opponents[index]["id"]]
+                           for index in range(seats)] if mixed else
+                          [candidate if index == seat else fixed
+                           for index in range(seats)])
                 match = f"heldout-{trials}"
                 dump(match_file, {
                     "game": "ants", "vars": {"max_turns": suite["max_turns"]},
@@ -145,7 +269,8 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                         "id": match, "seed": seed, "map": board, "seat_count": seats,
                         "seats": [{"seat": index, "weights": str(model / "model.onnx"),
                                    "manifest": str(model / "manifest.json"),
-                                   "label": "candidate" if index == seat else opponent}
+                                   "label": "candidate" if index == seat else (
+                                       seats_opponents[index]["id"] if mixed else opponent)}
                                   for index, model in enumerate(models)],
                     }],
                 })
@@ -169,9 +294,13 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                                "candidate_seat": seat,
                                "placement": 1 + sum(rank < ranks[seat] for rank in ranks),
                                "opponent": opponent, "outcome": outcome,
+                               "opponent_roster": [row["id"] for row in roster] if mixed else [opponent] * (seats - 1),
                                "ranks": ranks, "scores": replay.get("scores"),
                                "turns": replay.get("turns")})
-    verify_opponent(suite, fixed)
+    if mixed:
+        mixed_pins_ok(suite["opponents"], suite_root)
+    else:
+        verify_opponent(suite, fixed)
     return wins, trials
 
 
