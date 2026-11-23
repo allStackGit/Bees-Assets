@@ -900,17 +900,53 @@ function powershellExecutable() {
     }
 }
 
+function linuxProcessIdentity(pid) {
+    // Linux /proc start ticks and boot UUID form a stable PID-birth identity,
+    // including across PID reuse and reboots. The shared state field is named
+    // process_start_utc for Windows compatibility; on Linux it stores this
+    // opaque identity, not a wall-clock timestamp.
+    const proc = path.join('/proc', String(pid));
+    try {
+        const statLine = () => {
+            const line = fs.readFileSync(path.join(proc, 'stat'), 'utf8');
+            const closing = line.lastIndexOf(')');
+            if (closing < 0) return null;
+            const fields = line.slice(closing + 2).trim().split(/\s+/);
+            const startTicks = fields[19]; // /proc/<pid>/stat field 22
+            if (!/^[0-9]+$/.test(String(startTicks || '')) ||
+                ['Z', 'X', 'x'].includes(fields[0])) return null;
+            return startTicks;
+        };
+        const firstTicks = statLine();
+        if (!firstTicks) return null;
+        const bootId = fs.readFileSync('/proc/sys/kernel/random/boot_id', 'utf8').trim();
+        if (!/^[0-9a-f-]{36}$/.test(bootId)) return null;
+        const argv = fs.readFileSync(path.join(proc, 'cmdline'), 'utf8').split('\0');
+        const argv0 = argv[0];
+        if (!argv0 || !path.isAbsolute(argv0)) return null;
+        const executable = path.resolve(argv0);
+        // Python virtualenv and system binaries can be symlinks. Confirm that
+        // argv0 still resolves to the kernel-observed executable, not a
+        // similarly named process supplied by another owner.
+        if (fs.realpathSync.native(executable) !==
+            fs.realpathSync.native(path.join(proc, 'exe'))) return null;
+        if (statLine() !== firstTicks) return null;
+        return {
+            pid,
+            process_start_utc: 'linux-proc:' + bootId + ':' + firstTicks,
+            executable_path: executable,
+        };
+    } catch (_) {
+        // Inaccessible or exited processes never qualify as owned.
+        return null;
+    }
+}
+
 function getProcessIdentity(pid) {
     const id = Number(pid);
     if (!Number.isInteger(id) || id <= 0) return null;
-    if (process.platform !== 'win32') {
-        try {
-            process.kill(id, 0);
-            return { pid: id, process_start_utc: '', executable_path: '' };
-        } catch (_) {
-            return null;
-        }
-    }
+    if (process.platform === 'linux') return linuxProcessIdentity(id);
+    if (process.platform !== 'win32') return null;
     const ps = powershellExecutable();
     const script =
         '$p=Get-Process -Id ' + id + ' -ErrorAction SilentlyContinue;' +
@@ -970,7 +1006,31 @@ function getStateReferencedLivePid(state) {
 }
 
 function findManagedProcessByOwnerToken(expectedExecutable, ownerToken, label) {
-    if (!ownerToken || process.platform !== 'win32') return null;
+    if (!ownerToken) return null;
+    if (process.platform === 'linux') {
+        const matches = [];
+        for (const item of fs.readdirSync('/proc', { withFileTypes: true })) {
+            if (!item.isDirectory() || !/^[0-9]+$/.test(item.name)) continue;
+            const pid = Number(item.name);
+            let argv;
+            try {
+                argv = fs.readFileSync(path.join('/proc', item.name, 'cmdline'), 'utf8')
+                    .split('\0').filter(Boolean);
+            } catch (_) {
+                continue;
+            }
+            if (!argv.includes(String(ownerToken))) continue;
+            const identity = getProcessIdentity(pid);
+            if (identity && samePath(identity.executable_path, expectedExecutable)) {
+                matches.push(identity);
+            }
+        }
+        if (matches.length > 1) {
+            throw Error('Multiple ' + label + ' processes claim the managed owner token. Refusing ambiguous recovery.');
+        }
+        return matches[0] || null;
+    }
+    if (process.platform !== 'win32') return null;
     const ps = powershellExecutable();
     const env = {
         ...process.env,
