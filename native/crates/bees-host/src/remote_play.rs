@@ -1151,6 +1151,15 @@ impl NativeRemotePlay {
                             }
                             peer.side = Some(side);
                             peer.spectator = spectator;
+                            if !spectator && self.forfeit_absence
+                                .is_some_and(|(absent,_)| absent == side)
+                            {
+                                // A live authenticated rejoin clears the
+                                // previous absence even if its new TCP seat
+                                // disconnects again during this same poll.
+                                self.forfeit_absence = None;
+                                self.forfeit_announced = false;
+                            }
                             if spectator {
                                 active_spectators += 1;
                             } else { active_players += 1; }
