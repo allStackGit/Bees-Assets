@@ -296,7 +296,6 @@ def select_spatial_training_logits(logits, owners, absolute_cells, *,
     population=len(absolute_cells)
     if (logits.device.type=="cuda" and
             logits.numel()>=min_dense_elements and
-            population*cells_per_board*0 == 0 and
             population <= boards*cells_per_board*max_sparse_fraction):
         # Indices already carry a board owner and absolute flat cell
         # location, so derive a local location with only a small 1D GPU
