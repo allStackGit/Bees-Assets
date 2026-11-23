@@ -7323,6 +7323,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
                                 title: "Share only side-1.token or side-2.token with the matching player",
                                 status: "", unlocked: false,
                             },
+                            BattleMenuRow {
+                                title: "Read-only viewers use spectator-1.token or spectator-2.token",
+                                status: "", unlocked: false,
+                            },
                             BattleMenuRow { title: &folder, status: "", unlocked: false },
                         ];
                         let mut selected = 0;
