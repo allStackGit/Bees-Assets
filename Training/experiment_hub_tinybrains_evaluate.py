@@ -334,10 +334,12 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *,
     by_map = {board: {"win": 0, "loss": 0, "draw": 0,
                       "placement_sum": 0, "top_half": 0, "trials": 0}
               for board in suite["maps"]}
-    # These are CONDITIONAL outcomes in matches containing an opponent,
-    # not head-to-head wins over that individual player.
+    # Keep conditional game outcomes and direct pairwise placement separate.
+    # One six-player game contains five correlated pairwise comparisons,
+    # never five statistically independent matches.
     by_opponent = {item["id"]: {"games": 0, "seats": 0,
-        "win": 0, "loss": 0, "draw": 0}
+        "win": 0, "loss": 0, "draw": 0,
+        "pair_win": 0, "pair_loss": 0, "pair_draw": 0}
         for item in suite.get("opponents", [])}
 
     def observe(result):
@@ -362,11 +364,25 @@ def evaluate_with_metrics(checkpoint, digest, suite, work, *,
         row["trials"] += 1
         if by_opponent:
             roster = result["opponent_roster"]
+            ranks = result["ranks"]
+            candidate_seat = result["candidate_seat"]
+            other_seats = [seat for seat in range(players) if seat != candidate_seat]
+            if (len(roster) != players - 1 or
+                    len(ranks) != players or
+                    type(candidate_seat) is not int or
+                    not 0 <= candidate_seat < players or
+                    any(opponent not in by_opponent for opponent in roster)):
+                raise ValueError("Mixed evaluation seat/roster coverage differs from match.")
             for opponent in set(roster):
                 entry = by_opponent[opponent]
                 entry["games"] += 1
                 entry["seats"] += roster.count(opponent)
                 entry[outcome] += 1
+            for seat, opponent in zip(other_seats, roster):
+                key = ("pair_win" if ranks[candidate_seat] < ranks[seat]
+                       else "pair_loss" if ranks[candidate_seat] > ranks[seat]
+                       else "pair_draw")
+                by_opponent[opponent][key] += 1
 
     with pinned_runtime("tinybrains", suite, use_current=current_runtime) as runtime_sha256:
         wins, trials = _evaluate(checkpoint, digest, suite, work, on_result=observe)
