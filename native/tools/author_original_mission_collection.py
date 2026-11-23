@@ -56,6 +56,7 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
     base = source_manifest.parent
     absolute = lambda name: (base / name).resolve(strict=True)
     collision_matrix = absolute(configuration["physics_matrix"])
+    collision_matrix_sha = file_sha256(collision_matrix)
     destination = destination.resolve()
     if (not destination.parent.is_dir() or
             destination.exists() or destination.is_symlink()):
@@ -93,6 +94,10 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
                 script,
                 deferred_hivemind=mission.get("deferred_hivemind", False),
             )
+            if file_sha256(collision_matrix) != collision_matrix_sha:
+                raise ValueError(
+                    "original global Physics2D layer matrix changed while collecting missions"
+                )
             authored.append({
                 "mission_index": index,
                 "run": f"{run_name}/run.json",
@@ -106,8 +111,11 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
                     stage / run_name / "original-source-receipt.json"
                 ),
             })
-        if file_sha256(source_manifest) != manifest_sha:
-            raise ValueError("Original campaign collection source manifest changed during authoring")
+        if (file_sha256(source_manifest) != manifest_sha or
+                file_sha256(collision_matrix) != collision_matrix_sha):
+            raise ValueError(
+                "original campaign source manifest or collision matrix changed during authoring"
+            )
         # Publish these actual original battles into the EXISTING native
         # client library, rather than requiring a separate launcher. These
         # are individual physical mission captures, not a fabricated
@@ -146,7 +154,7 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
             "kind": "native_original_campaign_source_collection",
             "source_manifest_sha256": manifest_sha,
             "source_manifest": str(source_manifest),
-            "physics_matrix_sha256": file_sha256(collision_matrix),
+            "physics_matrix_sha256": collision_matrix_sha,
             "missions": authored,
             "native_game_libraries": library_files,
         }
