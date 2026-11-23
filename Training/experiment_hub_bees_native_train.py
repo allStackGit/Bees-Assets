@@ -777,7 +777,7 @@ def main():
     child_env = os.environ.copy()
     if native_wan:
         build, trainer_hash, runtime = (
-            job["game_payload_sha256"], job["trainer_sha256"], job["runtime_version"]
+            job["wan_release_sha256"], job["trainer_sha256"], job["runtime_version"]
         )
         child_env.update({
             "BEES_HUB_WAN_STATUS_PATH": str(root/"wan-status.json"),
