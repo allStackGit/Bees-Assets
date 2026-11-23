@@ -452,8 +452,13 @@ class FrozenGpuStreams:
                            if median(samples)<=fastest*1.05)
             return FusionDecision(True,"faster",baseline,
                                   median(parallel[selected]),selected)
-        except (RuntimeError, ValueError, TypeError, NotImplementedError) as error:
+        except (RuntimeError, ValueError, TypeError, AttributeError,
+                NotImplementedError) as error:
             self.last_issue = str(error)[:220]
+            if isinstance(error,(AttributeError,NotImplementedError)):
+                # A missing CUDA/HIP stream primitive will not become
+                # available for a different board size in this process.
+                self.enabled = False
             return FusionDecision(False,"unsupported")
 
     def run(self, batches):
@@ -734,8 +739,11 @@ class FrozenGpuGraphs:
         except (RuntimeError, MemoryError, ValueError, TypeError,
                 AttributeError, NotImplementedError) as error:
             # Some older CUDA/HIP builds do not expose graph capture APIs.
-            # Unsupported acceleration never invalidates the eager policy.
+            # An absent primitive cannot recover on the next map size;
+            # avoid repeated failed captures throughout a training run.
             self.last_issue = str(error)[:220]
+            if isinstance(error,(AttributeError,NotImplementedError)):
+                self.enabled = False
         return None
 
     def run(self, batches):
