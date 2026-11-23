@@ -3271,7 +3271,7 @@ fn current_state(
             "warp_audio_elapsed_seconds": if ship.ship_type == bees_sim::combat_world::WARP_GATE_TYPE {
                 view.combat.game_warp_gate_animation_elapsed(ship.entity_id)
             } else { None },
-            "destination": if owned {
+            "destination": if owned && body.motion.mobile {
                 view.combat.ship_game_destination(ship.entity_id)
                     .map(|destination| [destination.x, destination.y])
             } else { None },

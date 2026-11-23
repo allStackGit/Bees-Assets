@@ -192,6 +192,7 @@ pub struct NativeRenderCounts {
     pub tactical_buttons_drawn: usize,
     pub selected_command_rows: usize,
     pub command_target_markers: usize,
+    pub destination_markers: usize,
     /// Presentation-only pixel coverage; headless physics does no work.
     pub fog_sources: usize,
     pub fog_fading_sources: usize,
@@ -3108,9 +3109,6 @@ impl NativeSoftwareRenderer {
                 if let Some(destination) = view.combat.ship_game_destination(ship.entity_id) {
                     let (tx, ty) = self.project(destination);
                     self.line(x, y, tx, ty, 0x526a8a);
-                    let color = tactical_hud::battle_marker_color(custom_rgb, ship.side,
-                        view.player_authority.player_human_side(), 0xddeaff);
-                    self.cross(destination, 3.0, color);
                 }
             }
         }
@@ -3204,6 +3202,7 @@ impl NativeSoftwareRenderer {
         // Only presentation pixels are masked. Commands, physics, learning
         // and the source-owned visibility caches remain unchanged.
         self.apply_player_fog(view, &mut counts);
+        counts.destination_markers = self.draw_selected_destinations(view);
         self.observe_codex_discoveries(view);
         if let Some(bounds) = self.selection_box {
             self.shape(&ShipShape::Box { offset: (bounds.min + bounds.max) * 0.5,
@@ -3561,6 +3560,36 @@ impl NativeSoftwareRenderer {
         self.draw_selected_priority(view);
         if self.show_shooting_menu { self.draw_shooting_menu(view); }
         counts
+    }
+
+    /// A player's own movement markers use an unmasked source sprite.
+    /// Visit selected members directly so an offscreen ship can still
+    /// show the installed destination within the viewport.
+    fn draw_selected_destinations(&mut self, view: &NativeRenderWorldView<'_>) -> usize {
+        let human_side = view.player_authority.player_human_side();
+        let mut drawn = 0;
+        for index in 0..self.selection.squads().len() {
+            let owner = self.selection.squads()[index];
+            if !view.is_local_player_squad(owner) { continue; }
+            let Some(squad) = view.roster.get(owner) else { continue };
+            let rgb = view.player_authority.player_squad_color_rgb(owner);
+            let color = tactical_hud::battle_marker_color(rgb, squad.side, human_side, 0xddeaff);
+            for &id in &squad.members {
+                if !view.combat.ship_body(id).is_some_and(|body| body.active && body.motion.mobile) {
+                    continue;
+                }
+                let Some(destination) = view.combat.ship_game_destination(id) else { continue };
+                let (x, y) = self.project(destination);
+                if !(0.0..self.width as f32).contains(&x) ||
+                    !(0.0..self.height as f32).contains(&y)
+                { continue; }
+                let radius = tactical_hud::DESTINATION_MARKER_RADIUS_PIXELS as f32;
+                self.line(x - radius, y, x + radius, y, color);
+                self.line(x, y - radius, x, y + radius, color);
+                drawn += 1;
+            }
+        }
+        drawn
     }
 
     /// Stamp one vision disc into the already allocated main-screen fog

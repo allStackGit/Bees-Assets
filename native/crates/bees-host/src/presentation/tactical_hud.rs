@@ -12,6 +12,7 @@ pub enum HudAction {
 }
 
 pub(super) const CONTEXT_ATTACK_RADIUS_SQUARED: f32 = 100.0;
+pub(super) const DESTINATION_MARKER_RADIUS_PIXELS: i32 = 3;
 
 pub(super) fn battle_marker_color(
     custom_rgb: Option<[u8; 3]>, side: i32, human_side: Option<i32>, fallback: u32,

@@ -25,7 +25,8 @@ use serde_json::{json, Value};
 use super::{NativeCamera, NativeSoftwareRenderer, NativeControls, WorldMoveDrag, text};
 use super::codex::{native_codex, codex_lines};
 use super::minimap::MiniMapLayout;
-use super::tactical_hud::{HudAction, HudRect, ACTIONS, CONTEXT_ATTACK_RADIUS_SQUARED, battle_marker_color, shooting_hit, shooting_rect};
+use super::tactical_hud::{HudAction, HudRect, ACTIONS, CONTEXT_ATTACK_RADIUS_SQUARED,
+    DESTINATION_MARKER_RADIUS_PIXELS, battle_marker_color, shooting_hit, shooting_rect};
 use bees_hivemind::protocol::SHOOTING_STRATEGIES;
 use crate::game_audio::NativeGameAudio;
 use crate::remote_tls::{client_tls_from_environment, client_tls_from_file, RemoteSocket};
@@ -164,6 +165,7 @@ struct WireCounts {
     weapon_contact_draws: u64,
     weapon_obstructed_contact_draws: u64,
     command_target_draws: u64,
+    destination_marker_draws: u64,
     striker_bomb_indicator_draws: u64,
     tactical_button_clicks: u64,
     squad_tab_clicks: u64,
@@ -2393,7 +2395,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
     dialogue_elapsed_seconds: f32,
     artwork: &RemoteArtwork, show_art: bool, show_weapon_ranges: bool,
     show_minimap: bool,
-    combat_hud_draws: &mut [u64; 7], obstacle_hull_draws: &mut u64,
+    combat_hud_draws: &mut [u64; 8], obstacle_hull_draws: &mut u64,
     map_object_health_bars: &mut u64,
     minimap_ship_markers: &mut u64, minimap_terrain_markers: &mut u64,
     minimap_objective_markers: &mut u64,
@@ -2637,14 +2639,7 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     }
                 }
                 if let Some(destination) = point_from_wire(&ship["destination"]) {
-                    let end = screen(camera, destination);
-                    line(pixels, center, end, 0x2d6070);
-                    let color = wire_battle_marker_color(ship, human_side, 0xddeaff);
-                    let radius = (3.0 * camera.pixels_per_unit).round().clamp(2.0, 24.0) as i32;
-                    if (0..FIELD as i32).contains(&end.0) && (0..HEIGHT as i32).contains(&end.1) {
-                        line(pixels, (end.0 - radius, end.1), (end.0 + radius, end.1), color);
-                        line(pixels, (end.0, end.1 - radius), (end.0, end.1 + radius), color);
-                    }
+                    line(pixels, center, screen(camera, destination), 0x2d6070);
                 }
             }
         }
@@ -2657,6 +2652,25 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
         // The source texture work is measured separately from circle
         // visibility stamps and actual obscured presentation pixels.
         *fog_source_texture_pixels += source_textured;
+        // The host sends destinations only for player-owned ships. Show
+        // selected endpoints even where the player's vision has not reached.
+        if !highlighted.is_empty() {
+            for ship in state["ships"].as_array().into_iter().flatten() {
+                let Some(destination) = point_from_wire(&ship["destination"]) else { continue };
+                if ship["owned"] != true ||
+                    !ship["id"].as_i64().is_some_and(|id| highlighted.contains(&id))
+                { continue; }
+                let (x, y) = screen(camera, destination);
+                if !(0..FIELD as i32).contains(&x) || !(0..HEIGHT as i32).contains(&y) {
+                    continue;
+                }
+                let color = wire_battle_marker_color(ship, human_side, 0xddeaff);
+                let radius = DESTINATION_MARKER_RADIUS_PIXELS;
+                line(pixels, (x - radius, y), (x + radius, y), color);
+                line(pixels, (x, y - radius), (x, y + radius), color);
+                combat_hud_draws[7] += 1;
+            }
+        }
         // Objective markers use only the host's already-fog-filtered
         // ship/obstacle projection. A remote peer cannot look up a target
         // whose coordinates were withheld by the host.
@@ -5019,7 +5033,7 @@ pub fn connect_remote_with_trust(
         let mut map_objectives = 0_u64;
         let mut fog_masked = 0_u64;
         let mut fog_textured = 0_u64;
-        let mut combat_hud_draws = [0_u64; 7];
+        let mut combat_hud_draws = [0_u64; 8];
         let hud_started=Instant::now();
         draw(&mut pixels,peer.state.as_ref(),camera,&selected,squad_list_offset,&peer.notice,
             expected_side,mode,patrol_start,&peer.metrics,dialogue_line,
@@ -5217,6 +5231,7 @@ pub fn connect_remote_with_trust(
         peer.metrics.striker_bomb_indicator_draws += combat_hud_draws[4];
         peer.metrics.weapon_contact_draws += combat_hud_draws[5];
         peer.metrics.weapon_obstructed_contact_draws += combat_hud_draws[6];
+        peer.metrics.destination_marker_draws += combat_hud_draws[7];
         // The local client shows the selection box while dragging. Draw
         // only the current screen-space intent; the real ship collisions
         // are evaluated from the host-supplied hulls on release.
@@ -5564,6 +5579,7 @@ pub fn connect_remote_with_trust(
         "weapon_contact_draws":peer.metrics.weapon_contact_draws,
         "weapon_obstructed_contact_draws":peer.metrics.weapon_obstructed_contact_draws,
         "command_target_draws":peer.metrics.command_target_draws,
+        "destination_marker_draws":peer.metrics.destination_marker_draws,
         "striker_bomb_indicator_draws":peer.metrics.striker_bomb_indicator_draws,
         "tactical_button_clicks":peer.metrics.tactical_button_clicks,
         "squad_tab_clicks":peer.metrics.squad_tab_clicks,
