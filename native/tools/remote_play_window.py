@@ -61,6 +61,7 @@ class RemoteBattleWindow:
         self._reconnect_deadline = None
         self._reconnect_disabled = False
         self._disconnection_reported = False
+        self._authentication_started_at = None
         self._closing = False
         self.root.title("Bees — native spectator" if console.spectator
                         else "Bees — native cooperative battle")
@@ -453,6 +454,7 @@ class RemoteBattleWindow:
         self.squad_list.delete(0, "end")
         self.squad_detail.set("Waiting for authoritative roster")
         self.rejoin_button.state(["disabled"])
+        self._authentication_started_at = time.monotonic()
         self.status.set("Authenticating against the original host session...")
         old_connection.close()
 
@@ -560,6 +562,18 @@ class RemoteBattleWindow:
 
     def poll(self):
         self._receive_reconnect_results()
+        if self._authentication_started_at is not None:
+            if self.console.host_session_id is not None:
+                self._authentication_started_at = None
+            elif (self.console.alive and
+                  time.monotonic() - self._authentication_started_at > 10.0):
+                # TCP connected, but the host never authenticated this
+                # particular World. Do not accept gameplay or wait forever.
+                try:
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                self._authentication_started_at = None
         while not self.console.notifications.empty():
             self.notice(self.console.notifications.get_nowait())
         state = self.console.snapshot()
@@ -630,7 +644,11 @@ class RemoteBattleWindow:
                 else:
                     self.draw()
                 if not self.last_feedback:
-                    self.status.set(f"World {key[0]}, episode {key[1]}, tick {key[2]}")
+                    ping = self.console.heartbeat_rtt_ms
+                    latency = f" | LAN {ping:.0f} ms" if ping is not None else ""
+                    self.status.set(
+                        f"World {key[0]}, episode {key[1]}, tick {key[2]}{latency}"
+                    )
         can_surrender = (
             not self.console.spectator and self.console.alive and
             state is not None and state.get("can_surrender") is True and
