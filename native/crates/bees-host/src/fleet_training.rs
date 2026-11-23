@@ -287,6 +287,28 @@ fn append_training_arguments(
     } else if !recipe["evaluation_inference_device"].is_null() {
         return Err(invalid("invalid native holdout inference device").into());
     }
+    if !recipe["monitor_evaluation_gpus"].is_null() {
+        let gpus = recipe["monitor_evaluation_gpus"].as_array()
+            .filter(|gpus| (2..=4).contains(&gpus.len()))
+            .ok_or_else(|| invalid("invalid native monitoring GPU allocation"))?;
+        let mut seen = std::collections::HashSet::new();
+        for gpu in gpus {
+            let name = gpu.as_str()
+                .filter(|gpu| matches!(*gpu, "cuda:0" | "cuda:1" | "cuda:2" | "cuda:3"))
+                .ok_or_else(|| invalid("native monitor requires a supported CUDA/ROCm GPU"))?;
+            if !seen.insert(name) {
+                return Err(invalid("native monitor GPUs must be distinct").into());
+            }
+        }
+        if recipe["rollout_binary"].is_null() {
+            return Err(invalid("parallel native monitoring requires a compiled rollout binary").into());
+        }
+        command.arg("--parallel-monitor-suites").arg(gpus.len().to_string());
+        command.arg("--monitor-evaluation-gpus");
+        for gpu in gpus {
+            command.arg(gpu.as_str().expect("validated GPU string"));
+        }
+    }
     if recipe["hub_plan"].is_string() {
         if !recipe["worlds"].is_null() || !recipe["physics_workers"].is_null() ||
             !recipe["rollout_processes"].is_null()
