@@ -8145,7 +8145,6 @@ fn run_campaign_game_menu(
                 side: ship.player_side,
                 ship_type: ship.ship_type,
                 saved_squad_id: 0,
-                quantity: 1,
                 unit_price_tsv: ship.price_tsv,
             });
             for &squad_id in squad_destinations.get(&ship.player_side)
@@ -8163,8 +8162,7 @@ fn run_campaign_game_menu(
                     side: ship.player_side,
                     ship_type: ship.ship_type,
                     saved_squad_id: squad_id,
-                    quantity: 1,
-                    unit_price_tsv: ship.price_tsv,
+                        unit_price_tsv: ship.price_tsv,
                 });
             }
         }
