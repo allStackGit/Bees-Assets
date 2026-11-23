@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
-import fcntl
 import hashlib
 import json
 import math
@@ -16,7 +15,6 @@ import os
 import shutil
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import sys
 import time
@@ -24,10 +22,8 @@ import uuid
 
 import yaml
 from tensorboard.backend.event_processing.event_file_loader import EventFileLoader
+from bees_unity_port_reservation import reserve_base_port
 
-PORT_BASE = 22000
-PORT_WIDTH = 128
-PORT_LAST = 54000
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
 MAX_EVENT_ROWS_PER_POLL = 4096
@@ -345,34 +341,6 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
             shutil.rmtree(temporary)
     return True
 
-
-def reserve_base_port(root: Path, job_id: str, num_envs: int):
-    """Keep a process-held inter-job port reservation until training exits."""
-    lockroot = root.parent / "_bees_native_ports"
-    lockroot.mkdir(mode=0o700,exist_ok=True)
-    capacity = (PORT_LAST - PORT_BASE) // PORT_WIDTH
-    start = int(hashlib.sha256(job_id.encode("ascii")).hexdigest()[:8],16) % capacity
-    for offset in range(capacity):
-        slot = (start + offset) % capacity
-        port = PORT_BASE + slot * PORT_WIDTH
-        lock = (lockroot / f"{port}.lock").open("a+b")
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            checks = []
-            try:
-                for number in range(num_envs + 2):
-                    sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM)
-                    checks.append(sock)
-                    sock.bind(("127.0.0.1",port + number))
-            except OSError:
-                for sock in checks: sock.close()
-                lock.close()
-                continue
-            for sock in checks: sock.close()
-            return port,lock
-        except BlockingIOError:
-            lock.close()
-    raise RuntimeError("No isolated Unity communicator port block remains available.")
 
 def freeze_trainer(job: dict, root: Path) -> Path:
     content = yaml.safe_load(Path(job["trainer_source"]).read_text(encoding="utf-8"))
