@@ -21,9 +21,8 @@ import re
 import sys
 import uuid
 
-from experiment_hub_bees_native_train import (
-    require_file, reserve_base_port, verify_pinned_runtime,
-)
+from experiment_hub_bees_native_train import require_file, verify_pinned_runtime
+from bees_unity_port_reservation import reserve_base_port
 
 SHA = re.compile(r"^[0-9a-f]{64}$")
 FIELDS = {
