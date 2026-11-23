@@ -281,6 +281,29 @@ EXPERIMENT_HUB_BEES_LINUX_WORKER=/absolute/path/to/Bees RL Training.x86_64
 EXPERIMENT_HUB_ENABLE_ROCM=1
 ```
 
+If Halifax already uses a **custom** `EXPERIMENT_HUB_LOCAL_ADAPTERS` module
+for its running TinyBrains/Courier projects, **do not replace that module** or
+change its existing configuration. Instead, when the agent is idle, set the
+following machine-local additions:
+
+```text
+EXPERIMENT_HUB_BEES_ADDON_ROLES=bees_native
+EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT=/absolute/bees-unity-workers
+EXPERIMENT_HUB_BEES_PYTHON=/absolute/path/to/rocm-python310/bin/python
+EXPERIMENT_HUB_ENABLE_ROCM=1
+```
+
+The additive loader constructs only the requested Bees role from the same
+authenticated Hub worker software release. It refuses duplicate roles and
+leaves the existing adapter map and running jobs unchanged. Use
+`EXPERIMENT_HUB_BEES_ADDON_ROLES=bees_rollout` on an already enrolled remote
+actor with a custom adapter, together with its installed player, key and
+WAN-forward settings below. Do not set additive roles when
+`EXPERIMENT_HUB_LOCAL_ADAPTERS` already points to
+`experiment_hub_worker_adapters.js`; use `EXPERIMENT_HUB_WORKER_PROJECTS`
+in that shared-adapter configuration instead. Changes take effect only when
+the agent can be restarted safely after its active jobs finish.
+
 Retain the agent's existing machine ID, enrollment identity, local root,
 GPU inventory and cgroup-v2 configuration. The local adapter independently
 checks the installed Unity worker, trainer YAML, ML-Agents entrypoint and
