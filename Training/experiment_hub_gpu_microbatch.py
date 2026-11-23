@@ -176,6 +176,10 @@ class FrozenInferenceMicrobatcher:
         self._admission = OrderedDict()
         self._last_requal_group = 0
         self._pinned_pending = deque()
+        # Dedicated copy engine: pinned H2D for a new request can overlap
+        # inference kernels already queued by the previous request group.
+        # Lazily created only if a measured pinned strategy is attempted.
+        self._h2d_stream = None
         self._pinned_bytes = 0
         self._pinned_pool = []
         self._pinned_cached_bytes = 0
@@ -195,6 +199,7 @@ class FrozenInferenceMicrobatcher:
                               flat_groups=0, flat_packed_bytes=0,
                               pinned_groups=0, pinned_h2d_bytes=0,
                               pinned_allocations=0, pinned_reuses=0,
+                              async_h2d_groups=0, async_h2d_bytes=0,
                               head_of_line_bypasses=0,
                               host_input_requests=0, host_input_bytes=0,
                               numpy_input_arrays=0,
@@ -410,6 +415,9 @@ class FrozenInferenceMicrobatcher:
                 # before the worker or its parent resource lease is released.
                 if self.device.type == "cuda":
                     torch.cuda.current_stream(self.device).synchronize()
+                    if self._h2d_stream is not None:
+                        self._h2d_stream.synchronize()
+                        self._h2d_stream = None
                     self._pinned_pending.clear()
                     self._pinned_bytes = 0
                     self._pinned_pool.clear()
@@ -593,8 +601,9 @@ class FrozenInferenceMicrobatcher:
         if total_inputs<2:
             raise ValueError("No small input launches available to consolidate")
         # One H2D transfer per dtype instead of a separate transfer per
-        # model/argument. A blocking transfer here ensures pageable host
-        # storage can be released safely once the worker submits inference.
+        # model/argument. Pageable sources use blocking transfers; pinned
+        # host banks use an independent copy stream, with a compute-stream
+        # wait only at the point where the network actually needs the data.
         # GPU-origin inputs stay on the leased device without H2D copies.
         buffers, banks = [], {}
         if pinned and (not self.allow_pinned_h2d or self.device.type!="cuda" or
@@ -617,32 +626,49 @@ class FrozenInferenceMicrobatcher:
                     buffer.narrow(0,cursor,width).copy_(part)
                     cursor += width
                 pinned_sources[origin] = buffer
+        transfer_stream, completion = None, None
         try:
+            if pinned_sources:
+                if self._h2d_stream is None:
+                    self._h2d_stream = torch.cuda.Stream(device=self.device)
+                transfer_stream = self._h2d_stream
+                # Host staging copies are complete before the asynchronous
+                # transfer starts. This stream never touches policy weights.
+                with torch.cuda.stream(transfer_stream):
+                    for origin,buffer in pinned_sources.items():
+                        banks[origin] = buffer.to(self.device,non_blocking=True)
+                    completion = torch.cuda.Event()
+                    completion.record(transfer_stream)
             for origin,parts in fragments.items():
-                if origin in pinned_sources:
-                    banks[origin] = pinned_sources[origin].to(
-                        self.device,non_blocking=True)
-                else:
+                if origin not in pinned_sources:
                     banks[origin] = torch.cat(parts,dim=0).to(
                         self.device,non_blocking=False)
+            if completion is not None:
+                # The forward must wait for its inputs, but earlier groups'
+                # inference can run while this group's H2D DMA is queued.
+                # record_stream prevents the allocator from recycling banks
+                # allocated on the copy stream before inference has read them.
+                compute_stream = torch.cuda.current_stream(self.device)
+                compute_stream.wait_event(completion)
+                for origin in pinned_sources:
+                    banks[origin].record_stream(compute_stream)
             values = [tuple(banks[origin].narrow(0,start,count).view(shape)
                             for origin,start,count,shape in fields)
                       for fields in descriptors]
             if pinned_sources:
                 buffers = list(pinned_sources.values())
-                completion = torch.cuda.Event()
-                completion.record(torch.cuda.current_stream(self.device))
-                # Even if the model forward later fails, these CPU buffers
-                # cannot be recycled until DMA completion. Bound retained
-                # staging allocations by max_pinned_bytes.
+                # Recycle pinned CPU sources only after actual DMA completion,
+                # not after the compute-stream wait was merely enqueued.
                 self._pinned_bytes += resident_bytes
                 self._pinned_pending.append((buffers,completion,resident_bytes))
+                self._counters["async_h2d_groups"] += 1
+                self._counters["async_h2d_bytes"] += resident_bytes
             return values,buffers
         except BaseException:
-            if pinned_sources:
-                # Some DMA requests may already have been issued. Join only
-                # this worker's transfer stream before dropping host buffers.
-                torch.cuda.current_stream(self.device).synchronize()
+            if transfer_stream is not None:
+                # A partial transfer may still read checked-out CPU memory.
+                # Join the transfer stream before releasing its staging bank.
+                transfer_stream.synchronize()
             raise
 
     def _dispatch(self, group):
