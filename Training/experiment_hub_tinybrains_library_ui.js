@@ -22,7 +22,8 @@
         '<label>Rotations per candidate seat<input id="hub-mixed-rotations" type="number" min="1" max="8" value="1"></label>',
         '</div><p id="hub-mixed-config-summary" class="muted"></p>',
         '<fieldset><legend>Opponent pool</legend><div id="hub-mixed-opponents" class="formgrid"></div>',
-        '<p class="muted">Each map tests every candidate starting seat. More rotations provide more balanced opposing seat assignments; a suite is capped at 2,048 games.</p></fieldset>',
+        '<p id="hub-mixed-coverage" class="muted" role="status">Choose opponents to see coverage.</p>',
+        '<p class="muted">Every map tests every candidate starting seat; each seed/rotation uses an independently selected opponent lineup. Each suite is capped at 2,048 games.</p></fieldset>',
         '<div class="hub-controls"><button id="hub-mixed-save" type="button">Save evaluation</button>',
         '<button id="hub-mixed-new" type="button">New evaluation</button></div>',
         '<p id="hub-mixed-status" class="hub-notice" role="status"></p>',
@@ -43,6 +44,20 @@
         const field=$(id),previous=field.value;
         field.replaceChildren(new Option(placeholder,''),...items.map(row=>new Option(row[1],row[0])));
         if(items.some(row=>row[0]===previous))field.value=previous;
+    }
+    function samplingCoverage() {
+        const count=chosen.size;
+        const seeds=$('hub-mixed-seeds').value.split(',')
+            .filter(value=>/^\\d+$/.test(value.trim())).length;
+        const rotations=Number($('hub-mixed-rotations').value)||0;
+        const lineups=seeds*rotations;
+        $('hub-mixed-coverage').textContent=!count
+            ?'Choose at least one opponent.'
+            :lineups>=count
+                ?'Full opponent-pool coverage: on each map, every selected opponent occupies every opposing seat at least once (across seeds and rotations).'
+                :'Sampling only: '+lineups+' seed/rotation lineup(s) for '+
+                    count+' opponents. Increase seeds or rotations to '+count+
+                    ' total distinct lineups for full per-map opponent coverage.';
     }
     function summary() {
         const value=$('hub-mixed-configuration').value;
@@ -76,6 +91,7 @@
         panel.querySelectorAll('[data-mixed-opponent]').forEach(c=>c.checked=chosen.has(c.value));
         $('hub-mixed-save').textContent=copy?'Save duplicate':'Save new revision';
         summary();
+        samplingCoverage();
         notice(copy?'This creates a separate evaluation.':
             'Editing revision '+record.revision+'; the old suite stays frozen.');
     }
@@ -91,6 +107,7 @@
         chosen.clear();
         panel.querySelectorAll('[data-mixed-opponent]').forEach(c=>c.checked=false);
         $('hub-mixed-save').textContent='Save evaluation';
+        samplingCoverage();
     }
     function render(data) {
         if(!data)return;
@@ -122,6 +139,7 @@
                 input.addEventListener('change',()=>{
                     if(input.checked)chosen.add(input.value);
                     else chosen.delete(input.value);
+                    samplingCoverage();
                 });
                 row.append(input,document.createTextNode(' '+item.label+
                     (item.checkpoint_sha256?' · '+item.checkpoint_sha256.slice(0,12):'')));
@@ -242,6 +260,8 @@
     $('hub-mixed-freeze').addEventListener('click',freeze);
     $('hub-mixed-archive').addEventListener('click',archiveUnused);
     $('hub-mixed-configuration').addEventListener('change',summary);
+    $('hub-mixed-seeds').addEventListener('input',samplingCoverage);
+    $('hub-mixed-rotations').addEventListener('input',samplingCoverage);
     $('hub-mixed-maps').addEventListener('change',()=>{
         $('hub-mixed-custom-maps-label').hidden=$('hub-mixed-maps').value!=='custom';
     });
@@ -255,5 +275,6 @@
         else if(info?.custom_library_issue)
             notice('Saved evaluation library unavailable: '+info.custom_library_issue);
     });
+    samplingCoverage();
     panel.hidden=$('hub-project')?.value!=='tinybrains';
 })();
