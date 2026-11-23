@@ -57,7 +57,7 @@ function localActorSettings(config) {
         minEnvs: Number(value.minEnvs ?? 1),
         maxEnvs: Number(value.maxEnvs ?? 64),
         autoTune: value.autoTune === true,
-        torchDevice: String(value.torchDevice || 'cpu'),
+        torchDevice: String(process.env.BEES_LOCAL_ACTOR_TORCH_DEVICE || value.torchDevice || 'cpu'),
     };
     if (!enabled) return settings;
     for (const [name, number] of [
@@ -79,8 +79,8 @@ function localActorSettings(config) {
             'localActor env bounds must satisfy 1 <= minEnvs <= initialEnvs <= maxEnvs <= 64.'
         );
     }
-    if (!settings.torchDevice.trim()) {
-        throw new Error('localActor.torchDevice must be non-empty.');
+    if (!['cpu','cuda'].includes(settings.torchDevice)) {
+        throw new Error('localActor.torchDevice must be cpu or cuda.');
     }
     return settings;
 }
