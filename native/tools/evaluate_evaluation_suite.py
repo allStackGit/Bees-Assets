@@ -252,12 +252,215 @@ def evaluate_suite(sources: list[Path], model_manifest: Path, output: Path,
     return result
 
 
+
+def evaluate_both_sides(sources: list[Path], model_manifest: Path, output: Path,
+                        seed: int, binary: Path | None,
+                        physics_workers: int | None, device: str | None,
+                        resume: bool = False) -> dict:
+    """Evaluate every authentic scenario from both faction perspectives.
+
+    The existing single-side evaluator remains the only executor. Each side
+    owns its independent, immutable receipts, allowing a long evaluation to
+    recover without replaying a previously completed side or scenario.
+    """
+    if not 2 <= len(sources) <= 64 or not 0 <= seed < (1 << 63):
+        raise ValueError("paired native evaluation needs 2..64 scenarios and a fixed seed")
+    sources = [path.resolve(strict=True) for path in sources]
+    if len(set(sources)) != len(sources):
+        raise ValueError("paired native evaluation cannot duplicate a source run")
+    manifest = model_manifest.resolve(strict=True)
+    binary = binary.resolve(strict=True) if binary is not None else None
+    env = native_headless_environment()
+    model_store = env.get("BEES_NATIVE_MODEL_STORE")
+    pinned = {
+        "schema_version": 1,
+        "kind": "native_two_sided_heterogeneous_evaluation_request",
+        "source_runs": [
+            {"path": str(path), "sha256": file_sha256(path)}
+            for path in sources
+        ],
+        "model_manifest": str(manifest),
+        "model_manifest_sha256": file_sha256(manifest),
+        "model_store": model_store,
+        "model_dependencies": native_manifest_model_dependencies(manifest, model_store),
+        "policy_sampling_seed": seed,
+        "rollout_binary": str(binary) if binary else None,
+        "rollout_binary_sha256": file_sha256(binary) if binary else None,
+        "physics_workers": physics_workers,
+        "inference_device": device,
+        "learner_sides": [1, 2],
+    }
+    output = output.resolve()
+    if not output.parent.is_dir() or output.is_symlink():
+        raise ValueError("paired native evaluation destination is unsafe")
+    request_path = output / "paired-request.json"
+    result_path = output / "paired-evaluation-result.json"
+    if resume:
+        if not output.is_dir() or request_path.is_symlink() or (
+                json.loads(request_path.read_text(encoding="utf-8")) != pinned):
+            raise ValueError("paired native evaluation resume changed immutable inputs")
+        if result_path.exists() or result_path.is_symlink():
+            raise FileExistsError("paired evaluation has already been published")
+    else:
+        if output.exists():
+            raise FileExistsError("paired native evaluation requires a new directory")
+        output.mkdir()
+        atomic_json(request_path, pinned)
+        sync_directory(output)
+        sync_directory(output.parent)
+
+    started = time.monotonic()
+    sides = []
+    reused_sides = 0
+    for side in (1, 2):
+        destination = output / f"side-{side}"
+        completed = destination / "evaluation-suite-result.json"
+        if completed.exists() or completed.is_symlink():
+            if completed.is_symlink() or not completed.is_file():
+                raise ValueError(f"side {side} has an invalid native completion marker")
+            result = json.loads(completed.read_text(encoding="utf-8"))
+            # A published side is reusable only if all underlying immutable
+            # scenario receipts still match the exact pinned artifact set.
+            side_request = json.loads(
+                (destination / "suite-request.json").read_text(encoding="utf-8")
+            )
+            if (side_request.get("model_manifest_sha256") !=
+                    pinned["model_manifest_sha256"] or
+                    side_request.get("model_dependencies") != pinned["model_dependencies"] or
+                    side_request.get("source_runs") != pinned["source_runs"] or
+                    side_request.get("learner_side") != side or
+                    side_request.get("policy_sampling_seed") != seed or
+                    side_request.get("rollout_binary_sha256") !=
+                    pinned["rollout_binary_sha256"] or
+                    side_request.get("physics_workers") != physics_workers or
+                    side_request.get("inference_device") != device or
+                    result.get("kind") != "native_heterogeneous_evaluation_complete" or
+                    result.get("learner_side") != side or
+                    result.get("model_manifest_sha256") != pinned["model_manifest_sha256"] or
+                    result.get("policy_sampling_seed") != seed or
+                    not isinstance(result.get("by_source"), list) or
+                    len(result["by_source"]) != len(sources)):
+                raise ValueError(f"side {side} completed evaluation changed identity")
+            for index, row in enumerate(result["by_source"]):
+                if (row.get("scenario") != index + 1 or
+                        row.get("source_run") != str(sources[index]) or
+                        row.get("source_run_sha256") != pinned["source_runs"][index]["sha256"] or
+                        not isinstance(row.get("result_path"), str) or
+                        not isinstance(row.get("result_sha256"), str)):
+                    raise ValueError(f"side {side} source receipt differs from pinned request")
+                receipt_path = destination / row["result_path"]
+                if (receipt_path.is_symlink() or not receipt_path.is_file() or
+                        not receipt_path.resolve().is_relative_to(destination) or
+                        file_sha256(receipt_path) != row["result_sha256"]):
+                    raise ValueError(f"side {side} source receipt changed after publication")
+                receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+                if (receipt.get("kind") != "native_policy_evaluation_complete" or
+                        receipt.get("learner_side") != side or
+                        receipt.get("source_run_config_sha256") !=
+                        pinned["source_runs"][index]["sha256"] or
+                        receipt.get("model_manifest_sha256") !=
+                        pinned["model_manifest_sha256"]):
+                    raise ValueError(f"side {side} individual evaluation receipt is invalid")
+                check_native_input_dependencies({
+                    "source_dependencies": receipt["source_dependencies"],
+                })
+            reused_sides += 1
+        else:
+            result = evaluate_suite(
+                sources, manifest, destination, side, seed, binary,
+                physics_workers, device, resume=destination.exists(),
+            )
+        sides.append(result)
+
+    # Preserve source-by-source comparisons. Pooled win rate is useful but
+    # would hide a map or an opponent faction on which the candidate fails.
+    paired = []
+    for index, source in enumerate(sources):
+        left = sides[0]["by_source"][index]
+        right = sides[1]["by_source"][index]
+        if (left["source_run_sha256"] != right["source_run_sha256"] or
+                left["source_run_sha256"] != pinned["source_runs"][index]["sha256"]):
+            raise ValueError("paired native scenario identities do not match")
+        paired.append({
+            "scenario": index + 1,
+            "source_run": str(source),
+            "source_run_sha256": left["source_run_sha256"],
+            "side_1_win_rate": left["side_win_rate"],
+            "side_2_win_rate": right["side_win_rate"],
+            "side_win_rate_gap": abs(left["side_win_rate"] - right["side_win_rate"]),
+            "worst_side_win_rate": min(left["side_win_rate"], right["side_win_rate"]),
+            "side_1_scene_results": left["by_scene_sha256"],
+            "side_2_scene_results": right["by_scene_sha256"],
+        })
+    episodes = sum(side["episodes"] for side in sides)
+    victories = sum(side["side_victories"] for side in sides)
+    draws = sum(side["draws"] for side in sides)
+    steps = sum(side["world_steps"] for side in sides)
+    measured = sum(side["measured_simulation_wall_seconds"] for side in sides)
+    execution = sum(side["measured_execution_wall_seconds"] for side in sides)
+    if (episodes <= 0 or steps <= 0 or measured <= 0 or execution <= 0 or
+            not 0 <= victories + draws <= episodes):
+        raise ValueError("paired native evaluation has incomplete measurements")
+    for path, pinned_source in zip(sources, pinned["source_runs"]):
+        if file_sha256(path) != pinned_source["sha256"]:
+            raise ValueError("paired evaluation source changed before publication")
+    if (file_sha256(manifest) != pinned["model_manifest_sha256"] or
+            native_manifest_model_dependencies(manifest, model_store) !=
+            pinned["model_dependencies"] or
+            (binary is not None and file_sha256(binary) != pinned["rollout_binary_sha256"])):
+        raise ValueError("paired evaluation model or native binary changed")
+    result = {
+        "schema_version": 1,
+        "kind": "native_two_sided_heterogeneous_evaluation_complete",
+        "model_manifest_sha256": pinned["model_manifest_sha256"],
+        "model_dependencies": pinned["model_dependencies"],
+        "policy_sampling_seed": seed,
+        "scenarios": len(sources),
+        "scenario_side_evaluations": len(sources) * 2,
+        "completed_sides_reused": reused_sides,
+        "episodes": episodes, "side_victories": victories, "draws": draws,
+        "pooled_win_rate": victories / episodes,
+        "equal_side_mean_win_rate": sum(
+            side["mean_scenario_win_rate"] for side in sides
+        ) / 2,
+        "worst_side_scenario_win_rate": min(
+            row["worst_side_win_rate"] for row in paired
+        ),
+        "mean_scenario_side_gap": sum(
+            row["side_win_rate_gap"] for row in paired
+        ) / len(paired),
+        "world_steps": steps,
+        "measured_simulation_wall_seconds": measured,
+        "measured_simulation_world_steps_per_second": steps / measured,
+        "measured_execution_wall_seconds": execution,
+        "measured_execution_world_steps_per_second": steps / execution,
+        "current_invocation_wall_seconds": time.monotonic() - started,
+        "sides": [{
+            "side": index,
+            "receipt": f"side-{index}/evaluation-suite-result.json",
+            "receipt_sha256": file_sha256(
+                output / f"side-{index}" / "evaluation-suite-result.json"
+            ),
+            "episodes": side["episodes"],
+            "side_win_rate": side["side_win_rate"],
+            "mean_scenario_win_rate": side["mean_scenario_win_rate"],
+            "worst_scenario_win_rate": side["worst_scenario_win_rate"],
+        } for index, side in enumerate(sides, start=1)],
+        "by_scenario": paired,
+    }
+    atomic_json(result_path, result)
+    sync_directory(output)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("model_manifest", type=Path)
     parser.add_argument("output_dir", type=Path)
     parser.add_argument("run_configs", nargs="+", type=Path)
-    parser.add_argument("--learner-side", type=int, required=True)
+    parser.add_argument("--learner-side", type=int, choices=(1, 2))
+    parser.add_argument("--both-sides", action="store_true",
+                        help="evaluate every frozen scenario from both source faction sides")
     parser.add_argument("--policy-seed", type=int, default=0)
     parser.add_argument("--rollout-binary", type=Path)
     parser.add_argument("--physics-workers", type=int)
@@ -265,11 +468,23 @@ def main():
     parser.add_argument("--resume", action="store_true",
                         help="continue unfinished scenarios from an unchanged pinned suite request")
     args = parser.parse_args()
-    print(json.dumps(evaluate_suite(
-        args.run_configs, args.model_manifest, args.output_dir, args.learner_side,
-        args.policy_seed, args.rollout_binary, args.physics_workers,
-        args.inference_device, resume=args.resume,
-    ), sort_keys=True), flush=True)
+    if args.both_sides:
+        if args.learner_side is not None:
+            parser.error("--both-sides and --learner-side are mutually exclusive")
+        result = evaluate_both_sides(
+            args.run_configs, args.model_manifest, args.output_dir,
+            args.policy_seed, args.rollout_binary, args.physics_workers,
+            args.inference_device, resume=args.resume,
+        )
+    else:
+        if args.learner_side is None:
+            parser.error("--learner-side is required without --both-sides")
+        result = evaluate_suite(
+            args.run_configs, args.model_manifest, args.output_dir, args.learner_side,
+            args.policy_seed, args.rollout_binary, args.physics_workers,
+            args.inference_device, resume=args.resume,
+        )
+    print(json.dumps(result, sort_keys=True), flush=True)
 
 
 if __name__ == "__main__":
