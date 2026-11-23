@@ -196,3 +196,152 @@ class QualifiedPpoActionTerms:
                 max((self.speedups[key] for key,fn in self.selected.items()
                      if fn is not None),default=0.))
         }
+
+
+def ppo_value_terms(policy, entropy, values, old_values, targets,
+                    clip, value_coefficient, entropy_coefficient):
+    """Original differentiable PPO value clipping and final loss algebra."""
+    clipped = old_values + (values-old_values).clamp(-clip,clip)
+    value_loss = torch.maximum(
+        (values-targets).square(),(clipped-targets).square())
+    loss = (policy+value_coefficient*value_loss
+            -entropy_coefficient*entropy)
+    return value_loss,loss
+
+
+class QualifiedPpoValueTerms:
+    """Select a faster fused PPO value/total-loss kernel on leased GPUs.
+
+    Qualification executes only synthetic tensor forward+backward graphs
+    before training starts. A different optimizer coefficient, dtype, GPU
+    or unsupported shape never causes an unqualified live specialization;
+    it uses the original eager calculation. Model weights and Adam state
+    are never captured or touched.
+    """
+
+    def __init__(self, *, min_speedup=.10):
+        if not 0<=min_speedup<=.5:
+            raise ValueError("Invalid PPO value qualification margin")
+        self.min_speedup=min_speedup
+        self.selected={}
+        self.ranges={}
+        self.speedups={}
+        self.coefficients={}
+
+    @staticmethod
+    def _sample(device,dtype,rows):
+        base=torch.linspace(-1.,1.,rows,device=device,dtype=dtype)
+        policy=(base*.3).detach().requires_grad_(True)
+        entropy=(base*.1+.25).detach().requires_grad_(True)
+        value=(base*.67+.11).detach().requires_grad_(True)
+        old=(base*.55+.05).detach()
+        targets=(base*.8-.06).detach()
+        return policy,entropy,value,old,targets
+
+    @staticmethod
+    def _forward_backward(fn,inputs,coefficients):
+        result=fn(*inputs,*coefficients)
+        grads=torch.autograd.grad(result[1].sum(),inputs[:3])
+        return tuple(item.detach() for item in result),tuple(
+            item.detach() for item in grads)
+
+    @staticmethod
+    def _seconds(fn,inputs,coefficients,device):
+        torch.cuda.synchronize(device)
+        started=perf_counter()
+        for _ in range(2):
+            QualifiedPpoValueTerms._forward_backward(fn,inputs,coefficients)
+        torch.cuda.synchronize(device)
+        return (perf_counter()-started)/2
+
+    def qualify(self,device, *, dtype=torch.float32,clip=.2,
+                value_coefficient=.5,entropy_coefficient=.001):
+        if (not isinstance(device,torch.device) or device.type!='cuda' or
+                dtype!=torch.float32 or not hasattr(torch,'compile') or
+                not 0<clip<1 or not 0<=value_coefficient<=100 or
+                not 0<=entropy_coefficient<=100):
+            return False
+        key=(str(device),str(dtype))
+        coefficients=(float(clip),float(value_coefficient),
+                      float(entropy_coefficient))
+        if key in self.selected:
+            return self.selected[key] is not None
+        self.selected[key]=None
+        self.coefficients[key]=coefficients
+        try:
+            candidate=torch.compile(ppo_value_terms,
+                                    backend='inductor',
+                                    dynamic=True,fullgraph=True)
+            results=[]
+            for rows in (8,128):
+                inputs=self._sample(device,dtype,rows)
+                expected,expected_grad=self._forward_backward(
+                    ppo_value_terms,inputs,coefficients)
+                actual,actual_grad=self._forward_backward(
+                    candidate,inputs,coefficients)
+                if (any(not torch.allclose(a,b,rtol=2e-4,atol=2e-5)
+                        for a,b in zip(expected,actual)) or
+                    any(not torch.allclose(a,b,rtol=3e-4,atol=3e-5)
+                        for a,b in zip(expected_grad,actual_grad))):
+                    results.append((rows,False,0.))
+                    continue
+                eager_times=[]
+                compiled_times=[]
+                for round_index in range(4):
+                    options=((ppo_value_terms,eager_times),
+                             (candidate,compiled_times))
+                    if round_index%2:
+                        options=options[::-1]
+                    for fn,times in options:
+                        times.append(self._seconds(
+                            fn,inputs,coefficients,device))
+                eager=median(eager_times)
+                compiled=median(compiled_times)
+                gain=(1-compiled/eager if eager>0 else -1.)
+                results.append((rows,gain>=self.min_speedup,gain))
+            wins=[rows for rows,win,_ in results if win]
+            if not wins:
+                return False
+            if len(wins)==len(results):
+                allowed=(1,None)
+            elif wins[0]==128:
+                allowed=(128,None)
+            else:
+                allowed=(1,8)
+            self.selected[key]=candidate
+            self.ranges[key]=allowed
+            self.speedups[key]=max(
+                gain for _,win,gain in results if win)
+            return True
+        except Exception:
+            return False
+
+    def __call__(self,policy,entropy,values,old_values,targets,
+                 clip,value_coefficient,entropy_coefficient):
+        key=(str(values.device),str(values.dtype))
+        fn=self.selected.get(key)
+        low,high=self.ranges.get(key,(1,None))
+        if (fn is None or len(values)<low or
+                (high is not None and len(values)>high) or
+                self.coefficients.get(key)!=(
+                    float(clip),float(value_coefficient),float(entropy_coefficient)) or
+                any(t.dtype!=values.dtype or t.device!=values.device
+                    for t in (policy,entropy,old_values,targets))):
+            return ppo_value_terms(policy,entropy,values,old_values,targets,
+                                   clip,value_coefficient,entropy_coefficient)
+        try:
+            return fn(policy,entropy,values,old_values,targets,
+                      clip,value_coefficient,entropy_coefficient)
+        except Exception:
+            self.selected[key]=None
+            self.ranges.pop(key,None)
+            return ppo_value_terms(policy,entropy,values,old_values,targets,
+                                   clip,value_coefficient,entropy_coefficient)
+
+    def metrics(self):
+        return {
+            'ppo_compiled_value_devices':sum(
+                candidate is not None for candidate in self.selected.values()),
+            'ppo_compiled_value_speedup':max(
+                (self.speedups[key] for key,fn in self.selected.items()
+                 if fn is not None),default=0.)}
