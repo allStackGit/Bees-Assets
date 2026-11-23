@@ -872,24 +872,31 @@ pub(super) fn choose_multiplayer(
     sources: &OriginalGameSources,
 ) -> Result<Option<FleetChoice>, Box<dyn Error>> {
     let fighters = &sources.ships;
-    // The existing LAN host's token map is authoritative. A HiveMind
-    // opponent is selectable only when exactly one real remote commander
-    // can authenticate, so two users can never be assigned the same side.
-    let use_hivemind = if has_hivemind_profile(save_root) &&
-        authenticated_side.is_some() {
+    // The native host's authenticated token map is the sole authority
+    // over player sides. With only one commander, the other side can use
+    // the SAME source-scripted FreePlay squad director as local games;
+    // HiveMind remains an independent explicit option when configured.
+    let opponent_mode = if authenticated_side.is_some() {
+        let hive_available = has_hivemind_profile(save_root);
         let rows = [
             BattleMenuRow { title: "Two remote commanders",
-                status: "  [Side 1 and side 2]", unlocked: true },
+                status: "  [Separate authenticated sides]", unlocked: true },
+            BattleMenuRow { title: "Remote commander vs native game AI",
+                status: "  [Original scripted FreePlay squads]", unlocked: true },
             BattleMenuRow { title: "Remote commander vs HiveMind",
-                status: "  [Existing authenticated socket AI]", unlocked: true },
+                status: "  [Existing authenticated socket AI]",
+                unlocked: hive_available },
         ];
         let mut selected = 0_usize;
-        match select_library(&rows, &mut selected, false)? {
-            Some(0) => false,
-            Some(1) => true,
-            _ => return Ok(None),
+        let Some(mode) = select_library(&rows, &mut selected, false)?
+            else { return Ok(None); };
+        if mode == 2 && !hive_available {
+            return Err(invalid("native HiveMind opponent requires a configured profile").into());
         }
-    } else { false };
+        mode
+    } else { 0 };
+    let use_scripted_ai = opponent_mode == 1;
+    let use_hivemind = opponent_mode == 2;
     let hivemind = if use_hivemind {
         let side = authenticated_side.expect("one authorized remote commander");
         Some(NativeHiveMindFleet {
@@ -914,6 +921,16 @@ pub(super) fn choose_multiplayer(
     let Some(specialist_squad_sizes) =
         choose_specialist_squad_sizes(fleet_sizes, mix)? else { return Ok(None); };
     let Some(fog_of_war) = choose_visibility()? else { return Ok(None); };
+    let mut ai_tactics = [AiTactics::Aggressive; 2];
+    if use_scripted_ai {
+        let opposing_side = (3 - authenticated_side
+            .expect("scripted mode requires exactly one remote commander")) as usize - 1;
+        let Some(doctrine) = choose_ai_tactics(
+            opposing_side,
+            opposing_side == 0 && matches!(mix[opposing_side], FleetMix::Gate),
+        )? else { return Ok(None); };
+        ai_tactics[opposing_side] = doctrine;
+    }
     let Some(objective) = choose_objective(mix, sources)? else { return Ok(None); };
     let objective_side = match objective {
         Objective::Elimination => None,
@@ -945,7 +962,9 @@ pub(super) fn choose_multiplayer(
         pattern
     };
     Ok(Some(FleetChoice {
-        player_side: if use_hivemind { authenticated_side } else { None },
+        player_side: if use_hivemind || use_scripted_ai {
+            authenticated_side
+        } else { None },
         fleet_sizes, squad_sizes, specialist_squad_sizes, mix, queen_archetype: queen_archetype.cloned(),
         factory_archetype: factory_archetype.cloned(),
         source_fighter: std::array::from_fn(|side|
@@ -963,7 +982,7 @@ pub(super) fn choose_multiplayer(
         ai_both: false,
         benchmark: false,
         spectator_episodes: 1,
-        ai_tactics: [AiTactics::Aggressive; 2],
+        ai_tactics,
         hivemind, objective, reinforcements, objective_side,
         benchmark_worlds: 1, benchmark_workers: 1,
     }))
