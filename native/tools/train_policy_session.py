@@ -925,6 +925,14 @@ def evaluate_monitor_suites(directory, manifest, recipe, *, due):
     same pinned receipt and seed rules, regardless of completion order.
     """
     scheduled = []
+    monitor_gpus = recipe.get("monitor_evaluation_gpus")
+    if monitor_gpus is not None and (
+            not isinstance(monitor_gpus, list) or
+            len(monitor_gpus) != recipe.get("monitor_evaluation_parallelism", 1) or
+            len(monitor_gpus) < 2 or len(set(monitor_gpus)) != len(monitor_gpus) or
+            any(device not in ("cuda:0", "cuda:1", "cuda:2", "cuda:3")
+                for device in monitor_gpus)):
+        raise ValueError("native monitoring GPU allocations changed after publication")
     for number, suite in enumerate(recipe.get("monitor_evaluations", []), 1):
         suite_id = f"monitor-{number:03d}"
         home = directory / suite_id
@@ -938,6 +946,12 @@ def evaluate_monitor_suites(directory, manifest, recipe, *, due):
         derived = {
             **recipe, "evaluation_config": suite, "evaluation_side": side,
         }
+        if monitor_gpus is not None:
+            # Mapping comes from immutable suite identity, not from whichever
+            # unfinished subset happened to be scheduled after a restart.
+            derived["evaluation_inference_device"] = monitor_gpus[
+                (number - 1) % len(monitor_gpus)
+            ]
         if side != recipe["evaluation_side"]:
             # A changed score label alone does not move the learner. Only
             # an explicit source-owned model slot swap can evaluate the
@@ -955,10 +969,29 @@ def evaluate_monitor_suites(directory, manifest, recipe, *, due):
             suite_id: ensure_evaluation(home, manifest, derived)
             for suite_id, home, derived in scheduled
         }
-    # Bounded concurrent subprocesses run the same trusted native binary
-    # on distinct authored physical Levels; no shared gameplay/simulation
-    # state and no implicit GPU placement. Futures are harvested in stable
-    # source order to preserve checkpoint selection determinism.
+    if monitor_gpus is not None:
+        # One execution lane per explicitly allocated GPU. Multiple suites
+        # assigned to the same card execute serially in their immutable
+        # numeric suite order; other cards proceed independently. A recovered
+        # subset retains exactly the same physical GPU assignment.
+        lanes = [[] for _ in monitor_gpus]
+        for suite_id, home, derived in scheduled:
+            ordinal = int(suite_id.split("-")[1]) - 1
+            lanes[ordinal % len(monitor_gpus)].append((suite_id, home, derived))
+
+        def run_gpu_lane(items):
+            return [
+                (suite_id, ensure_evaluation(home, manifest, derived))
+                for suite_id, home, derived in items
+            ]
+
+        with ThreadPoolExecutor(max_workers=len(monitor_gpus)) as pool:
+            futures = [pool.submit(run_gpu_lane, lane) for lane in lanes if lane]
+            completed = [row for future in futures for row in future.result()]
+        return dict(sorted(completed))
+    # CPU-only monitoring retains the original bounded per-suite scheduler.
+    # Stable source ordering makes checkpoint ranking independent of
+    # operating-system task completion order.
     with ThreadPoolExecutor(max_workers=min(parallel, len(scheduled))) as pool:
         tasks = [
             (suite_id, pool.submit(ensure_evaluation, home, manifest, derived))
@@ -1811,7 +1844,11 @@ def main():
     parser.add_argument("--monitor-evaluation-side", type=int, action="append", default=[],
                         help="physical learner side for the corresponding explicit monitor source; repeatable")
     parser.add_argument("--parallel-monitor-suites", type=int, default=1,
-                        help="concurrent CPU-only monitoring evaluations (1..16); needs a frozen native rollout binary")
+                        help="concurrent native monitoring evaluations (1..16); needs a pinned rollout binary")
+    parser.add_argument("--monitor-evaluation-gpus", nargs="+",
+                        choices=("cuda:0", "cuda:1", "cuda:2", "cuda:3"),
+                        help="explicit exclusive GPU lanes for monitoring suites; "
+                             "one distinct ordinal per --parallel-monitor-suites worker")
     parser.add_argument("--checkpoint-selection", choices=(
                             "primary", "mean", "worst", "mean-scene", "worst-scene",
                             "mission", "mission-mean-scene", "mission-worst-scene",
@@ -1942,13 +1979,22 @@ def main():
         parser.error("physical mission ranking requires a pinned primary evaluation suite")
     if len(args.monitor_evaluation_run_config) > 16:
         parser.error("no more than 16 independent monitoring suites per session")
+    monitor_gpus = args.monitor_evaluation_gpus
+    if monitor_gpus is not None:
+        if (args.rollout_binary is None or
+                args.parallel_monitor_suites != len(monitor_gpus) or
+                not 2 <= len(monitor_gpus) <= 4 or
+                len(set(monitor_gpus)) != len(monitor_gpus)):
+            parser.error(
+                "GPU monitoring needs a frozen native rollout executable and "
+                "one distinct --monitor-evaluation-gpus ordinal per parallel monitor worker"
+            )
     if (not 1 <= args.parallel_monitor_suites <= 16 or
-            args.parallel_monitor_suites > 1 and (
-                args.rollout_binary is None or args.evaluation_inference_device != "cpu"
-            )):
+            (args.parallel_monitor_suites > 1 and monitor_gpus is None and
+             (args.rollout_binary is None or args.evaluation_inference_device != "cpu"))):
         parser.error(
-            "parallel monitors require 2..16 CPU-only native evaluation processes, "
-            "--rollout-binary and --evaluation-inference-device cpu"
+            "parallel monitors require a pinned native rollout executable, "
+            "and either CPU inference or explicit per-worker monitoring GPUs"
         )
     if (args.checkpoint_selection in ("mean", "worst") and
             not args.monitor_evaluation_run_config and args.curriculum_plan is None):
@@ -2224,6 +2270,8 @@ def main():
         recipe["monitor_evaluations"] = suites
         if args.parallel_monitor_suites > 1:
             recipe["monitor_evaluation_parallelism"] = args.parallel_monitor_suites
+        if monitor_gpus is not None:
+            recipe["monitor_evaluation_gpus"] = list(monitor_gpus)
     if args.checkpoint_selection != "primary":
         recipe["checkpoint_selection"] = args.checkpoint_selection
     if args.early_stop_patience is not None:
