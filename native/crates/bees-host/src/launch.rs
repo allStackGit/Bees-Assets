@@ -2572,6 +2572,38 @@ pub fn run() -> Result<(), Box<dyn Error>> {
         return run_reassign_authored_ship(&catalog, &output, side,
             fleet_ship_id, from_saved_squad_id, to_saved_squad_id);
     }
+    if first == "transfer-batch" {
+        let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--output-dir") {
+            return Err(invalid(USAGE).into());
+        }
+        let output = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
+        if args.next().is_none_or(|flag| flag != "--side") {
+            return Err(invalid(USAGE).into());
+        }
+        let side: i32 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--squad") {
+            return Err(invalid(USAGE).into());
+        }
+        let destination: i64 = args.next().ok_or_else(|| invalid(USAGE))?
+            .to_string_lossy().parse()?;
+        if args.next().is_none_or(|flag| flag != "--ships") {
+            return Err(invalid(USAGE).into());
+        }
+        let ships = args.next().ok_or_else(|| invalid(USAGE))?;
+        let ships = ships.to_string_lossy();
+        if ships.len() > 32768 * 20 || ships.is_empty() ||
+            args.next().is_some() {
+            return Err(invalid(USAGE).into());
+        }
+        let fleet_ship_ids = ships.split(',')
+            .map(str::parse::<i64>)
+            .collect::<Result<Vec<_>, _>>()?;
+        return run_transfer_ships(
+            &catalog, &output, side, &fleet_ship_ids, destination,
+        );
+    }
     if first == "transfer" {
         let catalog = PathBuf::from(args.next().ok_or_else(|| invalid(USAGE))?);
         if args.next().is_none_or(|flag| flag != "--output-dir") {
@@ -4129,6 +4161,62 @@ fn run_build_ship(
         "ship_type": purchased.ship_type,
         "cost_tsv": purchased.price_tsv,
         "remaining_mined_tsv": progress.unspent_minerals()? - purchased.price_tsv,
+    }));
+    Ok(())
+}
+
+/// A cross-squad move of several purchased hulls is one career action.
+/// Validate all ownerships and the entire projected physical deployment
+/// before publishing its single immutable chronological receipt.
+fn run_transfer_ships(
+    catalog_path: &Path, output_root: &Path, side: i32,
+    fleet_ship_ids: &[i64], destination_squad_id: i64,
+) -> Result<(), Box<dyn Error>> {
+    if !matches!(side, 1 | 2) || fleet_ship_ids.is_empty() ||
+        fleet_ship_ids.len() > 32768 || destination_squad_id < 0 {
+        return Err(invalid("batch transfer requires a valid side and at least one FleetShip").into());
+    }
+    let catalog_path = catalog_path.canonicalize()?;
+    let catalog: battle_catalog::BattleCatalog =
+        serde_json::from_slice(&fs::read(&catalog_path)?)?;
+    catalog.validate()?;
+    let _writer = battle_catalog::CampaignWriterLease::acquire(output_root)?;
+    ensure_no_interrupted_campaign_edit(&catalog, output_root)?;
+    let progress = catalog.load_progress(output_root)?;
+    if progress.is_retired_saved_squad(destination_squad_id) {
+        return Err(invalid("cannot transfer FleetShips into a retired SavedSquad").into());
+    }
+    let casualties = progress.lost_player_fleet_ids(side)?;
+    let mut seen = HashSet::with_capacity(fleet_ship_ids.len());
+    let mut projected = progress.purchases_for_side(side);
+    let mut moves = Vec::with_capacity(fleet_ship_ids.len());
+    for &id in fleet_ship_ids {
+        if id <= 0 || !seen.insert(id) || casualties.contains(&id) {
+            return Err(invalid("batch contains duplicated, invalid or lost FleetShip IDs").into());
+        }
+        let purchased = projected.iter_mut().find(|ship| ship.fleet_ship_id == id)
+            .ok_or_else(|| invalid("batch transfer includes an unowned purchased FleetShip"))?;
+        if purchased.saved_squad_id == destination_squad_id {
+            return Err(invalid("batch includes a FleetShip already at its destination").into());
+        }
+        purchased.saved_squad_id = destination_squad_id;
+        moves.push((id, destination_squad_id));
+    }
+    let root = catalog_path.parent()
+        .ok_or_else(|| invalid("missing native campaign catalog root"))?;
+    preflight_native_fleet_edit(
+        &catalog, root, &progress, side, &projected,
+        &progress.authored_roster_for_side(side), destination_squad_id,
+    )?;
+    let count = catalog.transfer_purchased_ships(&progress, output_root, side, &moves)?;
+    println!("{}", json!({
+        "kind": "native_campaign_fleet_batch_transferred",
+        "campaign_id": catalog.campaign_id,
+        "player_side": side,
+        "fleet_ship_ids": fleet_ship_ids,
+        "to_saved_squad_id": destination_squad_id,
+        "ships_transferred": count,
+        "cost_tsv": 0,
     }));
     Ok(())
 }
