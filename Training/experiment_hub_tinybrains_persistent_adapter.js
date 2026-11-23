@@ -1404,6 +1404,68 @@ function createTinyBrainsPersistentDockerAdapter({
             console.warn('[hub-evaluations] Ignoring invalid optional frozen Mini approval: '+
                 String(error.message||error).slice(0,160));
         }
+        // A separate immutable full-season sweep covers every 2-, 4- and
+        // 6-player Hive Minds board without replacing existing fast suites.
+        // These are only advertised after explicit local suite installation.
+        const seasonSuites={
+            nano:'tinybrains_nano_season_v1',
+            micro:'tinybrains_micro_season_v1',
+            mini:'tinybrains_mini_batch128_season_v1',
+        };
+        const boards=path.join(project,'maps/hive-minds/boards');
+        for(const [opponent,name] of Object.entries(seasonSuites)) {
+            const file=path.join(root,name+'.json');
+            if(!fs.existsSync(file))continue;
+            try {
+                const stat=fs.lstatSync(file);
+                if(!stat.isFile()||stat.isSymbolicLink()||
+                    fs.realpathSync(file)!==file||
+                    stat.uid!==process.getuid()||stat.mode&0o077||
+                    stat.size<1||stat.size>8192)
+                    throw Error('Season suite must be private and immutable.');
+                const suite=JSON.parse(fs.readFileSync(file,'utf8'));
+                const allMaps=fs.readdirSync(boards)
+                    .filter(value=>value.endsWith('.json'))
+                    .map(value=>value.slice(0,-5)).sort();
+                if(allMaps.length!==76||suite.suite_id!==name||
+                    suite.opponent!==opponent||
+                    !Array.isArray(suite.maps)||suite.maps.length!==76||
+                    [...suite.maps].sort().join(',')!==allMaps.join(',')||
+                    !Array.isArray(suite.seeds)||
+                    suite.seeds.length!==1||suite.seeds[0]!==813101||
+                    suite.max_turns!==1000||
+                    !SHA.test(String(suite.runtime_sha256||''))||
+                    !SHA.test(String(suite.opponent_model_sha256||''))||
+                    !SHA.test(String(suite.opponent_manifest_sha256||'')))
+                    throw Error('Season suite differs from the approved all-map evaluation contract.');
+                const directory=opponent==='mini'
+                    ?path.join(root,'opponents','tinybrains_mini_batch128_v1')
+                    :path.join(project,'upstream/ants-starter/models',opponent+'-bc');
+                if(opponent==='mini') {
+                    const frozen=JSON.parse(fs.readFileSync(
+                        path.join(root,'tinybrains_mini_batch128_v1.json'),'utf8'));
+                    if(suite.opponent_dir!==directory||
+                        suite.opponent_source_job!==frozen.opponent_source_job||
+                        suite.opponent_checkpoint_sha256!==frozen.opponent_checkpoint_sha256)
+                        throw Error('Season Mini opponent is not the approved frozen model.');
+                }
+                for(const [filename,key] of [
+                    ['model.onnx','opponent_model_sha256'],
+                    ['manifest.json','opponent_manifest_sha256'],
+                ]) {
+                    const sourceFile=path.join(directory,filename);
+                    const item=fs.lstatSync(sourceFile);
+                    if(!item.isFile()||item.isSymbolicLink()||
+                        crypto.createHash('sha256')
+                            .update(fs.readFileSync(sourceFile)).digest('hex')!==suite[key])
+                        throw Error('Season opponent bytes differ from the approved fingerprint.');
+                }
+                approvedEvaluationSuites=[...new Set([...approvedEvaluationSuites,name])];
+            }catch(error) {
+                console.warn('[hub-evaluations] Ignoring invalid optional season suite '+name+': '+
+                    String(error.message||error).slice(0,160));
+            }
+        }
     }
     return {
         executable,cwd:nativeWindows?project:PROJECT_IN,
