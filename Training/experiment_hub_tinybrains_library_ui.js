@@ -15,7 +15,8 @@
         '<div class="formgrid">',
         '<label>Evaluation name<input id="hub-mixed-name" maxlength="80" placeholder="All-map mixed opponents"></label>',
         '<label>Match training configuration<select id="hub-mixed-configuration"></select></label>',
-        '<label>Map selection<select id="hub-mixed-maps"><option value="configuration">Use training configuration maps</option><option value="all_77">All 77 maps</option><option value="season_76">76 competitive maps</option></select></label>',
+        '<label>Map selection<select id="hub-mixed-maps"><option value="configuration">Use training configuration maps</option><option value="all_77">All 77 maps</option><option value="season_76">76 competitive maps</option><option value="custom">Choose individual maps</option></select></label>',
+        '<label id="hub-mixed-custom-maps-label" hidden>Exact evaluation maps (Ctrl/Cmd-click to select multiple)<select id="hub-mixed-custom-maps" multiple size="8"></select></label>',
         '<label>Maximum turns<input id="hub-mixed-turns" type="number" min="1" max="1000" placeholder="Inherit from configuration"></label>',
         '<label>Seeds (comma-separated)<input id="hub-mixed-seeds" value="813101"></label>',
         '<label>Rotations per candidate seat<input id="hub-mixed-rotations" type="number" min="1" max="8" value="1"></label>',
@@ -34,7 +35,7 @@
     ].join('');
     existing.parentElement.insertBefore(panel,existing.nextSibling);
     let library=null,editing=null,busy=false,chosen=new Set();
-    let templateSignature=null,opponentSignature=null,configSignature=null,checkpointSignature=null;
+    let templateSignature=null,opponentSignature=null,configSignature=null,checkpointSignature=null,mapSignature=null;
     const notice=value=>{$('hub-mixed-status').textContent=value;};
     function fill(id,items,placeholder) {
         const field=$(id),previous=field.value;
@@ -53,6 +54,10 @@
         $('hub-mixed-name').value=copy?record.name+' copy':record.name;
         $('hub-mixed-configuration').value=record.configuration_id+':'+record.configuration_revision;
         $('hub-mixed-maps').value=record.map_mode;
+        $('hub-mixed-custom-maps-label').hidden=record.map_mode!=='custom';
+        const selection=new Set(record.map_ids||[]);
+        for(const option of $('hub-mixed-custom-maps').options)
+            option.selected=selection.has(option.value);
         $('hub-mixed-turns').value=record.max_turns;
         $('hub-mixed-seeds').value=record.seeds.join(',');
         $('hub-mixed-rotations').value=record.rotations;
@@ -67,6 +72,8 @@
         editing=null;
         $('hub-mixed-name').value='';
         $('hub-mixed-maps').value='configuration';
+        $('hub-mixed-custom-maps-label').hidden=true;
+        for(const option of $('hub-mixed-custom-maps').options)option.selected=false;
         $('hub-mixed-turns').value='';
         $('hub-mixed-seeds').value='813101';
         $('hub-mixed-rotations').value=1;
@@ -133,6 +140,14 @@
             }
             if(!data.templates?.length)root.textContent='No saved mixed evaluations.';
         }
+        const maps=JSON.stringify(data.maps);
+        if(maps!==mapSignature) {
+            mapSignature=maps;
+            const select=$('hub-mixed-custom-maps');
+            const previous=new Set([...select.selectedOptions].map(o=>o.value));
+            select.replaceChildren(...(data.maps||[]).map(id=>new Option(id,id)));
+            for(const option of select.options)option.selected=previous.has(option.value);
+        }
         const candidates=JSON.stringify(data.checkpoint_candidates);
         if(candidates!==checkpointSignature) {
             checkpointSignature=candidates;
@@ -174,6 +189,8 @@
             ...(editing?{id:editing.id,expected_revision:editing.revision}:{}),
             configuration_id:id,configuration_revision:Number(revision),
             map_mode:$('hub-mixed-maps').value,
+            ...($('hub-mixed-maps').value==='custom'
+                ?{map_ids:[...$('hub-mixed-custom-maps').selectedOptions].map(o=>o.value)}:{}),
             ...(turns?{max_turns:Number(turns)}:{}),
             seeds:seeds.map(Number),
             rotations:Number($('hub-mixed-rotations').value),
@@ -202,6 +219,9 @@
     $('hub-mixed-new').addEventListener('click',clear);
     $('hub-mixed-freeze').addEventListener('click',freeze);
     $('hub-mixed-configuration').addEventListener('change',summary);
+    $('hub-mixed-maps').addEventListener('change',()=>{
+        $('hub-mixed-custom-maps-label').hidden=$('hub-mixed-maps').value!=='custom';
+    });
     $('hub-project')?.addEventListener('change',()=>{
         panel.hidden=$('hub-project').value!=='tinybrains';
     });
