@@ -41,8 +41,6 @@ function createBeesRolloutAdapter({
 }) {
     if(!['linux','win32'].includes(process.platform))
         throw Error('Bees WAN remote actors require Linux or Windows native supervision.');
-    if(process.platform==='win32'&&sshForward!==null)
-        throw Error('Windows Bees WAN actors need a separately installed private loopback forward.');
     const project=fs.realpathSync(projectRoot);
     const artifacts=fs.realpathSync(artifactRoot);
     if(!safeLocal(project)||!safeLocal(artifacts)||
@@ -66,7 +64,7 @@ function createBeesRolloutAdapter({
         if(!sshForward||typeof sshForward!=='object'||Array.isArray(sshForward)||
             Object.keys(sshForward).some(k=>![
                 'learnerMachineId','tailnetIp','sshUser','identityFile',
-                'knownHostsFile','sshPort','brokerPort',
+                'knownHostsFile','sshPort','brokerPort','sshExecutable',
             ].includes(k))||
             !/^[a-z][a-z0-9_-]{0,47}$/.test(String(sshForward.learnerMachineId||''))||
             !TAILNET.test(String(sshForward.tailnetIp||''))||
@@ -75,14 +73,22 @@ function createBeesRolloutAdapter({
             !Number.isSafeInteger(sshForward.sshPort)||
             sshForward.sshPort<1||sshForward.sshPort>65535)
             throw Error('Bees WAN SSH forward must target a pinned Tailnet learner and approved login identity.');
-        const ssh=trustedFile('/usr/bin/ssh','System OpenSSH',true);
+        const ssh=trustedFile(sshForward.sshExecutable||
+            (process.platform==='win32'
+                ?path.join(process.env.SystemRoot||'C:\\Windows',
+                    'System32','OpenSSH','ssh.exe')
+                :'/usr/bin/ssh'),
+            'System OpenSSH',true);
         const keyFile=trustedFile(sshForward.identityFile,'Private SSH identity');
         const hostFile=trustedFile(sshForward.knownHostsFile,'Pinned SSH known_hosts');
         const privateStat=fs.statSync(keyFile);
         const hostStat=fs.statSync(hostFile);
         if(!fs.statSync(keyFile).isFile()||privateStat.size<16||
-            privateStat.size>32768||(privateStat.mode&0o077)!==0||
-            typeof process.getuid==='function'&&privateStat.uid!==process.getuid()||
+            privateStat.size>32768||
+            process.platform!=='win32'&&(
+                (privateStat.mode&0o077)!==0||
+                typeof process.getuid==='function'&&
+                    privateStat.uid!==process.getuid())||
             hostStat.size<40||hostStat.size>1048576)
             throw Error('Bees WAN SSH credentials must be local pinned files; private key must be owned and mode 0600.');
         approvedForward=Object.freeze({
