@@ -3934,12 +3934,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tinyBrainsDevice=document.createElement('select');
     const tinyBrainsStage=document.createElement('select');
     tinyBrainsStage.append(
-        new Option('Keep checkpoint maps and turn limit (no stage override)',''),
+        new Option('Stage 5 — Full multiplayer maps (default)','full_multiplayer'),
         new Option('Stage 1 — Basic tiny, two players','basic_tiny'),
         new Option('Stage 2 — Tiny two-player maps','tiny_two_player'),
         new Option('Stage 3 — Small two-player maps','small_two_player'),
-        new Option('Stage 4 — All two-player maps','all_two_player'),
-        new Option('Stage 5 — Full multiplayer maps','full_multiplayer'));
+        new Option('Stage 4 — All two-player maps','all_two_player'));
     const tinyBrainsRemote=document.createElement('input');
     const tinyBrainsWeights=document.createElement('input');
     tinyBrainsRemote.type='checkbox';
@@ -4006,7 +4005,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         if(stage&&!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&machine.agent_platform==='linux'&&
+            machine.status==='connected'&&
+            ['linux','win32'].includes(machine.agent_platform)&&
             machine.tinybrains_profiles?.[profile]===digest&&
             machine.tinybrains_curriculum_stages?.includes(stage))) {
             feedback('hub-config-message',
@@ -4088,7 +4088,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(control===tinyBrainsStage) {
             const hint=document.createElement('small');
             hint.className='muted';
-            hint.textContent='Without a stage override, training uses the map list and max-turn limit stored in the imported checkpoint. Stages select approved subsets of the original source map inventory.';
+            hint.textContent='New training runs default to all approved 2-, 4-, and 6-player maps. Select a smaller stage explicitly for a focused curriculum. The selected stage is frozen when the job is queued.';
             label.append(hint);
         }
         tinyBrainsFields.append(label);
@@ -4169,6 +4169,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ([,item])=>item.profile===profile&&item.sha256);
             return {
                 profile,profile_sha256:entry.profile_sha256,updates:1000,
+                training_stage:'full_multiplayer',
                 ...(found?{import_checkpoint:found[0],
                     import_checkpoint_sha256:found[1].sha256}:{}),
             };
@@ -4184,7 +4185,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsUpdates.value=parameters.updates??1000;
         tinyBrainsThreads.value=parameters.threads??'';
         tinyBrainsDevice.value=parameters.device||'';
-        tinyBrainsStage.value=parameters.training_stage||'';
+        tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
         tinyBrainsRemote.checked=parameters.remote_rollouts===true;
         tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
         displayTinyBrainsImports();
