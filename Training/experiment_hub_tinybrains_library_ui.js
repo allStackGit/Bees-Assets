@@ -1,17 +1,17 @@
 'use strict';
 
-// Standalone Design controls for immutable mixed evaluation definitions.
+// Standalone evaluation-library controls for immutable mixed evaluation definitions.
 // Never mutate a running job or one of its previously evaluated suite files.
 (() => {
     const $=id=>document.getElementById(id);
-    const existing=$('hub-config-evaluation');
-    if(!existing)return;
+    const mount=$('hub-evaluations-library');
+    if(!mount)return;
     const panel=document.createElement('details');
     panel.className='wide';
     panel.id='hub-saved-mixed-evaluations';
     panel.innerHTML=[
         '<summary>Saved mixed-opponent evaluations and checkpoint opponents</summary>',
-        '<p class="muted">Select a saved training environment, then choose independently verified frozen opponents. Editing publishes a new immutable suite revision; old runs and receipts stay unchanged.</p>',
+        '<p class="muted">Save the training Design first, then create an evaluation from its immutable environment here. Use “Monitor in Design” on a saved evaluation to attach it to a Design without editing the evaluation definition. Old runs and receipts remain unchanged.</p>',
         '<div class="formgrid">',
         '<label>Evaluation name<input id="hub-mixed-name" maxlength="80" placeholder="All-map mixed opponents"></label>',
         '<label>Match training configuration<select id="hub-mixed-configuration"></select></label>',
@@ -38,7 +38,7 @@
         '<button id="hub-mixed-freeze" type="button">Freeze and add named opponent</button>',
         '<p class="muted">Nano and Micro are already available. Freezing a selected saved update checkpoint publishes only a verified, named opponent model. It does not start training or create another evaluator timer.</p>'
     ].join('');
-    existing.parentElement.insertBefore(panel,existing.nextSibling);
+    mount.append(panel);
     let library=null,editing=null,busy=false,chosen=new Set();
     let templateSignature=null,opponentSignature=null,configSignature=null,checkpointSignature=null,mapSignature=null;
     const notice=value=>{$('hub-mixed-status').textContent=value;};
@@ -180,6 +180,7 @@
                     ' · '+record.games+' games · '+record.suite_id;
                 row.append(name);
                 for(const [title,action] of [
+                    ['Monitor in Design',()=>monitorInDesign(record)],
                     ['Edit',()=>draft(record)],
                     ['Duplicate',()=>draft(record,true)],
                     ['Delete',()=>remove(record)]
@@ -251,6 +252,13 @@
             opponent_ids:[...chosen]
         });
         if(result){clear();notice(result.message);}
+    }
+    function monitorInDesign(record) {
+        document.dispatchEvent(new CustomEvent('hub-use-saved-evaluation',{
+            detail:{configuration_id:record.configuration_id,
+                configuration_revision:record.configuration_revision,
+                suite_id:record.suite_id,games:record.games}
+        }));
     }
     async function remove(record) {
         if(!confirm('Delete saved evaluation "'+record.name+
