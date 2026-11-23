@@ -1347,7 +1347,8 @@ document.addEventListener('DOMContentLoaded', () => {
             option.value===options[index].value&&
             option.text===options[index].text&&
             option.disabled===options[index].disabled&&
-            (!select.multiple||option.selected===options[index].selected)))
+            (!select.multiple||select.id==='hub-compare-metric'||
+                option.selected===options[index].selected)))
             return false;
         // Leave an actively edited menu intact until it is closed.
         const picker=select.id==='hub-compare-metric'
@@ -4317,23 +4318,29 @@ document.addEventListener('DOMContentLoaded', () => {
             delete parameters.training_schema_sha256;
         }
         $('hub-config-json').value=JSON.stringify(parameters,null,2);
+        // The structured controls already show these values. A later state
+        // heartbeat must not rebuild them merely because the JSON changed.
+        renderedDesignSignature=designEditorSignature(parameters,choice);
         refreshEvaluationCheckpointNotice();
         return parameters;
     }
     let renderedDesignSignature=null;
-    function renderDesignEditor(force=false) {
-        let parameters;
-        try {parameters=JSON.parse($('hub-config-json').value);}
-        catch {return;}
-        const chosen=designDefinition(parameters);
-        refreshEvaluationCheckpointNotice();
-        const signature=JSON.stringify({project,parameters,
+    function designEditorSignature(parameters,chosen) {
+        return JSON.stringify({project,parameters,
             machine:chosen?.machine?.id||null,
             fields:chosen?.entry?.fields||null,
             config_sha256:chosen?.entry?.config_sha256||null,
             profile_sha256:chosen?.entry?.profile_sha256||null,
             training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
             source_sha256:chosen?.machine?.design_catalog?.tinybrains?.source_sha256||null});
+    }
+    function renderDesignEditor(force=false) {
+        let parameters;
+        try {parameters=JSON.parse($('hub-config-json').value);}
+        catch {return;}
+        const chosen=designDefinition(parameters);
+        refreshEvaluationCheckpointNotice();
+        const signature=designEditorSignature(parameters,chosen);
         // Dynamic worker metadata is not a reason to reconstruct a user's
         // Design form, which could destroy an unfinished field edit.
         if(!force&&(
