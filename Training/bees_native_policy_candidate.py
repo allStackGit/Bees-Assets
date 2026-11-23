@@ -144,9 +144,14 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
     if root.is_symlink() or not root.is_dir():
         raise ValueError("Candidate path must be a real directory.")
     manifest = _json_file(root / "manifest.json", MAX_MANIFEST_SIZE)
-    extra = {"unity_worker_payload_sha256"} if (
-        "unity_worker_payload_sha256" in manifest
-    ) else set()
+    extra = {
+        key for key in ("unity_worker_payload_sha256", "wan_release_sha256")
+        if key in manifest
+    }
+    if ("wan_release_sha256" in extra) != (
+        "unity_worker_payload_sha256" in extra
+    ):
+        raise ValueError("WAN policy provenance needs both local Unity content and shared release hashes.")
     if set(manifest) != MANIFEST_FIELDS | extra or manifest["schema_version"] != 1 or (
         manifest["kind"] != "bees-unity-onnx-candidate" or
         manifest["deployment_status"] != "not-promoted" or
@@ -167,6 +172,7 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
         _digest(manifest[label], label)
     if extra:
         _digest(manifest["unity_worker_payload_sha256"], "complete Unity player")
+        _digest(manifest["wan_release_sha256"], "shared cross-platform Unity release")
     size = manifest["model_size_bytes"]
     if type(size) is not int or not 0 < size <= MAX_MODEL_SIZE:
         raise ValueError("Invalid Bees candidate ONNX size.")
@@ -191,8 +197,10 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
         "lineage_root_id": lineage,
         "model_sha256": manifest["model_sha256"],
         "model_size_bytes": size,
-        **({"unity_worker_payload_sha256": manifest["unity_worker_payload_sha256"]}
-           if extra else {}),
+        **({
+            "unity_worker_payload_sha256": manifest["unity_worker_payload_sha256"],
+            "wan_release_sha256": manifest["wan_release_sha256"],
+        } if extra else {}),
         "evaluation": evaluation,
     }
 
