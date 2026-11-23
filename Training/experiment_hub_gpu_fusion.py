@@ -85,6 +85,7 @@ class FusionDecision:
     reason: str
     eager_seconds: float = 0.0
     fused_seconds: float = 0.0
+    stream_width: int = 0
 
 
 class FrozenGpuFusion:
@@ -342,8 +343,14 @@ class FrozenGpuStreams:
                             for param in model.parameters()))
         self.streams = []
         self.max_streams = max_streams
+        ceiling = min(max_streams,len(self.models))
+        self.stream_candidates = tuple(sorted(
+            {2,ceiling,*(n for n in (4,8,16) if n <= ceiling)}
+        )) if self.enabled else ()
         self.profiles = OrderedDict()
         self.calls = self.parallel_calls = self.qualifications = 0
+        self.selected_stream_width = 0
+        self.calibrated_stream_widths = 0
         self.last_issue = None
 
     def _prepare(self, batches):
@@ -368,26 +375,29 @@ class FrozenGpuStreams:
         with torch.inference_mode():
             return [model(*parts) for model, parts in zip(self.models, args)]
 
-    def _parallel(self, args):
+    def _parallel(self, args, width=None):
         if not self.streams:
             self.streams = [torch.cuda.Stream(device=self.device)
                             for _ in range(min(self.max_streams, len(self.models)))]
+        width = len(self.streams) if width is None else width
+        if not 2 <= width <= len(self.streams):
+            raise ValueError("Concurrent inference width exceeds the fixed GPU cohort")
         caller = torch.cuda.current_stream(self.device)
         outputs = []
-        # One caller dependency per active stream, not per tiny model.
-        # Work submitted to a reused stream remains ordered by that stream.
-        for stream in self.streams:
+        # One dependency per active stream, not per tiny model. Inference
+        # operations on a reused stream are ordered without extra events.
+        for stream in self.streams[:width]:
             stream.wait_stream(caller)
         with torch.inference_mode():
             for index, (model, parts) in enumerate(zip(self.models, args)):
-                stream = self.streams[index % len(self.streams)]
+                stream = self.streams[index % width]
                 with torch.cuda.stream(stream):
                     outputs.append(model(*parts))
                 # The owner may release the source after run() returns, but
                 # CUDA kernels on another stream can still be reading it.
                 for tensor in parts:
                     tensor.record_stream(stream)
-            for stream in self.streams:
+            for stream in self.streams[:width]:
                 caller.wait_stream(stream)
             for result in outputs:
                 for tensor in _leaves(result):
@@ -403,22 +413,39 @@ class FrozenGpuStreams:
     def _qualify(self, args):
         try:
             reference = self._serial(args)
-            candidate = self._parallel(args)
-            if not all(_equivalent(a, b, self.rtol, self.atol)
-                       for a, b in zip(reference, candidate)):
-                return FusionDecision(False, "numerical_mismatch")
-            serial, parallel = [], []
+            valid = []
+            for width in self.stream_candidates:
+                candidate = self._parallel(args,width)
+                if all(_equivalent(a,b,self.rtol,self.atol)
+                       for a,b in zip(reference,candidate)):
+                    valid.append(width)
+            if not valid:
+                return FusionDecision(False,"numerical_mismatch")
+            # Selecting max_streams unconditionally can make small-network
+            # batches slower: more stream events compete for too little
+            # arithmetic work. Time 2/4/... independent stream widths and
+            # choose the best useful-work rate on the actual frozen cohort.
+            serial = []
+            parallel = {width:[] for width in valid}
             for _ in range(3):
-                serial.append(self._measure(lambda: self._serial(args)))
-                parallel.append(self._measure(lambda: self._parallel(args)))
-            baseline, candidate = median(serial), median(parallel)
-            return FusionDecision(
-                candidate < baseline*(1-self.min_speedup),
-                "faster" if candidate < baseline*(1-self.min_speedup) else "no_measured_gain",
-                baseline, candidate)
+                serial.append(self._measure(lambda:self._serial(args)))
+                for width in valid:
+                    parallel[width].append(self._measure(
+                        lambda width=width:self._parallel(args,width)))
+            self.calibrated_stream_widths += len(valid)
+            baseline = median(serial)
+            fastest = min(median(samples) for samples in parallel.values())
+            if fastest >= baseline*(1-self.min_speedup):
+                return FusionDecision(False,"no_measured_gain",baseline,fastest)
+            # Within a five-percent measurement band, prefer fewer streams
+            # to reduce launch/allocator contention with other GPU learners.
+            selected = min(width for width,samples in parallel.items()
+                           if median(samples)<=fastest*1.05)
+            return FusionDecision(True,"faster",baseline,
+                                  median(parallel[selected]),selected)
         except (RuntimeError, ValueError, TypeError, NotImplementedError) as error:
             self.last_issue = str(error)[:220]
-            return FusionDecision(False, "unsupported")
+            return FusionDecision(False,"unsupported")
 
     def run(self, batches):
         args, signature = self._prepare(batches)
@@ -436,13 +463,15 @@ class FrozenGpuStreams:
             self.profiles.move_to_end(signature)
         if decision.fused:
             try:
-                result = self._parallel(args)
+                result = self._parallel(args,decision.stream_width)
             except (RuntimeError, ValueError, TypeError, NotImplementedError) as error:
                 self.last_issue = str(error)[:220]
                 self.profiles[signature] = FusionDecision(False, "runtime_fallback")
             else:
                 self.parallel_calls += 1
+                self.selected_stream_width = decision.stream_width
                 return result
+        self.selected_stream_width = 0
         return self._serial(args)
 
     def metrics(self):
@@ -451,6 +480,8 @@ class FrozenGpuStreams:
             gpu_stream_parallel_calls=self.parallel_calls,
             gpu_stream_qualifications=self.qualifications,
             gpu_stream_profiles=len(self.profiles),
+            gpu_stream_selected_width=self.selected_stream_width,
+            gpu_stream_qualified_widths=self.calibrated_stream_widths,
         )
 
 
