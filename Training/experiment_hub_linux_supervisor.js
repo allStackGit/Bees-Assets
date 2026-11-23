@@ -310,7 +310,7 @@ function terminalResult(record,result,exitStatus) {
         diagnostic:'Linux workload failed (systemd result: '+reason+', main status: '+status+').'};
 }
 function checkpointStopVerified(record,receipt) {
-    return Boolean(['courier','tinybrains'].includes(record.project_id)&&record.stop_requested_at&&
+    return Boolean(['courier','tinybrains','bees_native'].includes(record.project_id)&&record.stop_requested_at&&
         record.stop_policy==='interrupt-main'&&receipt?.result==='success'&&
         receipt.exit_code==='exited'&&receipt.exit_status==='0');
 }
@@ -776,7 +776,7 @@ class LinuxSupervisor {
         }
         if(p.ActiveState==='inactive'||p.ActiveState==='failed') {
             const result=terminalResult(record,p.Result,p.ExecMainStatus);
-            const receipt=['courier','tinybrains'].includes(record.project_id)&&record.stop_requested_at&&
+            const receipt=['courier','tinybrains','bees_native'].includes(record.project_id)&&record.stop_requested_at&&
                 result.state==='finished'?this.readTerminalReceipt(record):null;
             return {...result,checkpoint_stop_verified:checkpointStopVerified(record,receipt),
                 active:false,unit_exists:true,pid:null,cpu_time_ns:numeric(p.CPUUsageNSec),
@@ -896,7 +896,7 @@ class LinuxSupervisor {
                 r.job_id===job.continuation_of_job_id);
             if(!parent||parent.project_id!==job.project_id||
                 (parent.state!=='finished'&&!(parent.state==='stopped'&&
-                    ['courier','tinybrains'].includes(parent.project_id)&&parent.checkpoint_stop_verified===true))||
+                    ['courier','tinybrains','bees_native'].includes(parent.project_id)&&parent.checkpoint_stop_verified===true))||
                 (parent.artifact_lineage_root_id||parent.job_id)!==
                     job.artifact_lineage_root_id)
                 throw Error('Local predecessor is missing, unverified or not terminal.');
