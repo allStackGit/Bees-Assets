@@ -49,10 +49,18 @@ def load_manifest(path: Path) -> dict:
     return manifest
 
 
-def author_collection(source_manifest: Path, destination: Path) -> dict:
+def author_collection(source_manifest: Path, destination: Path,
+                      original_campaign_options: Path | None = None) -> dict:
     source_manifest = source_manifest.resolve(strict=True)
+    if original_campaign_options is not None:
+        original_campaign_options = original_campaign_options.resolve(strict=True)
     manifest_sha = file_sha256(source_manifest)
     configuration = load_manifest(source_manifest)
+    if (original_campaign_options is not None and
+            len(configuration["missions"]) != 12):
+        raise ValueError(
+            "atomic original campaign requires all twelve persisted source missions"
+        )
     base = source_manifest.parent
     absolute = lambda name: (base / name).resolve(strict=True)
     collision_matrix = absolute(configuration["physics_matrix"])
@@ -158,9 +166,18 @@ def author_collection(source_manifest: Path, destination: Path) -> dict:
             "missions": authored,
             "native_game_libraries": library_files,
         }
-        # No partial collection or library becomes published; the complete
-        # source Run set and its menu indexes are committed atomically.
+        # A requested original Campaign is part of the SAME publish
+        # transaction as its immutable source missions and standalone
+        # encounters. The canonical campaign author writes its full
+        # physical assets, career catalog, FleetShip grants and story
+        # metadata into this staged collection before any final pathname
+        # becomes visible. Failure leaves no partial install.
         atomic_json(stage / "collection-receipt.json", suite)
+        if original_campaign_options is not None:
+            published = publish_original_campaign(
+                stage, original_campaign_options,
+            )
+            suite["original_campaign"] = published
         sync_directory(stage)
         if destination.exists() or destination.is_symlink():
             raise FileExistsError("Original campaign collection destination was claimed")
@@ -195,6 +212,7 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
         raise FileExistsError("original campaign is already published")
     receipt_path = collection / "collection-receipt.json"
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    original_options_sha = file_sha256(options_file)
     original = json.loads(options_file.read_text(encoding="utf-8"))
     if (not isinstance(original, dict) or
             set(original) != {"schema_version", "title", "arguments"} or
@@ -278,6 +296,8 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
     # publishes self-contained source assets and refuses unfinished
     # native FleetShip lineage. Do not replace it with another campaign.
     subprocess.run(command, check=True)
+    if file_sha256(options_file) != original_options_sha:
+        raise ValueError("source campaign authoring options changed during publication")
     catalog_path = published / "campaign.json"
     library_path = published / "library.json"
     if not catalog_path.is_file() or not library_path.is_file():
@@ -286,7 +306,7 @@ def publish_original_campaign(collection: Path, options_file: Path) -> dict:
         "schema_version": 1,
         "kind": "native_original_campaign_source_collection_published",
         "collection_receipt_sha256": file_sha256(receipt_path),
-        "source_options_sha256": file_sha256(options_file),
+        "source_options_sha256": original_options_sha,
         "source_catalog_sha256": file_sha256(catalog_file),
         "campaign": "original-campaign/campaign.json",
         "campaign_sha256": file_sha256(catalog_path),
@@ -308,11 +328,10 @@ def main():
                         help="source-approved original campaign options JSON; "
                              "publishes the twelve real missions using author_campaign.py")
     args = parser.parse_args()
-    result = author_collection(args.manifest, args.output_directory)
-    if args.original_campaign_options is not None:
-        result["original_campaign"] = publish_original_campaign(
-            args.output_directory, args.original_campaign_options,
-        )
+    result = author_collection(
+        args.manifest, args.output_directory,
+        original_campaign_options=args.original_campaign_options,
+    )
     print(json.dumps(result, sort_keys=True), flush=True)
 
 
