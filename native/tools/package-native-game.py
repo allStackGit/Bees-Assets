@@ -475,10 +475,14 @@ def package_extra_career_library(
         if entry is primary[0]:
             continue
         gate = entry.get("unlock_after")
+        playtime = entry.get("unlock_after_playtime")
         if (kind != "campaign" or entry.get("kind") != "battle" or
-                not isinstance(gate, dict) or
-                gate.get("campaign_id") != primary_id):
-            raise ValueError("extra campaign game must be a genuine locked post-campaign battle")
+                (gate is None) == (playtime is None) or
+                not isinstance(gate if gate is not None else playtime, dict) or
+                (gate if gate is not None else playtime).get("campaign_id") != primary_id):
+            raise ValueError(
+                "extra campaign game needs a genuine source campaign mission or Fish Tank playtime unlock"
+            )
     if unlock_after is not None:
         if kind != "challenge" or ":" not in unlock_after:
             raise ValueError("Challenge unlock requires CAMPAIGN:MISSION")
@@ -499,20 +503,42 @@ def package_extra_career_library(
             menu["games"].append(entry)
             continue
         gate = entry.get("unlock_after")
+        playtime = entry.get("unlock_after_playtime")
+        if gate is not None and playtime is not None:
+            raise ValueError("post-campaign modes cannot have two independent unlock authorities")
         if gate is not None:
             if (not isinstance(gate, dict) or
                     set(gate) != {"campaign_id", "mission_id"} or
                     not all(isinstance(value, str) and value for value in gate.values())):
                 raise ValueError("invalid native post-campaign or Challenge unlock reference")
+            campaign_id = gate["campaign_id"]
+        elif playtime is not None:
+            # Original FishTankTrigger allows 1800 seconds of real Pluto
+            # campaign playtime to unlock Fish Tank before the Uranus finale.
+            # Preserve its one existing durable campaign marker and normal
+            # game library gate; do not replace it with a made-up mission win.
+            if (entry.get("kind") != "battle" or
+                    not isinstance(playtime, dict) or
+                    set(playtime) != {"campaign_id", "seconds"} or
+                    not isinstance(playtime["campaign_id"], str) or
+                    not playtime["campaign_id"] or
+                    type(playtime["seconds"]) is not int or
+                    playtime["seconds"] != 1800):
+                raise ValueError("Fish Tank playtime unlock must specify the original 1800 seconds")
+            campaign_id = playtime["campaign_id"]
+        else:
+            campaign_id = None
+        if campaign_id is not None:
             parents = [game for game in menu["games"] if
-                       game["kind"] == "campaign" and game["id"] == gate["campaign_id"]]
+                       game["kind"] == "campaign" and game["id"] == campaign_id]
             if len(parents) != 1:
                 raise ValueError("native mode unlock must refer to a packaged campaign")
-            catalog_path = destination / parents[0]["config"]
-            catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
-            if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
-                       for battle in catalog.get("battles", [])):
-                raise ValueError("native mode unlock milestone is missing from the campaign")
+            if gate is not None:
+                catalog_path = destination / parents[0]["config"]
+                catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
+                if not any((battle.get("mission") or {}).get("id") == gate["mission_id"]
+                           for battle in catalog.get("battles", [])):
+                    raise ValueError("native mode unlock milestone is missing from the campaign")
         menu["games"].append(entry)
     menu_path.write_text(json.dumps(menu, indent=2, ensure_ascii=False) + "\n",
                          encoding="utf-8")
