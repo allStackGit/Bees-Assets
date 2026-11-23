@@ -1330,11 +1330,13 @@ bees connect 127.0.0.1:7284 --token-file ~/.config/bees/side1.token --side 1
 python3 native/tools/remote_play_window.py 127.0.0.1 7284 --side 1
 ```
 
-The packaged game also offers **Join Multiplayer** on its native home screen
-when a user-specific `multiplayer.json` exists in the saved game directory
-(`~/.local/share/bees-native` on Linux or
-`%LOCALAPPDATA%\\BeesNative` on Windows). The file stores connection
-settings, never authentication secrets:
+Select **Join Multiplayer** on the packaged game's home screen and enter
+the server address with its port, the path to your private token file,
+and your side or spectator role. An optional `multiplayer.json` in the
+player's save directory (`~/.local/share/bees-native` on Linux or
+`%LOCALAPPDATA%\\BeesNative` on Windows) supplies the initial values. The
+game remembers edits while the library is open. The settings file stores
+the token path only:
 
 ```json
 {

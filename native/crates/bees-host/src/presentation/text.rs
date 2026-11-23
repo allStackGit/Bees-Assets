@@ -26,6 +26,18 @@ pub(super) fn fit(text: &str, max_width: usize) -> &str {
     text
 }
 
+#[cfg(feature = "client")]
+pub(super) fn fit_tail(text: &str, max_width: usize) -> &str {
+    let mut advance = 0;
+    for (index, character) in text.char_indices().rev() {
+        advance += usize::from(glyph(character)[0]);
+        if advance > max_width {
+            return &text[index + character.len_utf8()..];
+        }
+    }
+    text
+}
+
 pub(super) fn blend(destination: u32, color: [u8; 3], opacity: u32) -> u32 {
     let mut rgb = 0;
     for (source, shift) in color.into_iter().zip([16, 8, 0]) {

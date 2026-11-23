@@ -6283,6 +6283,7 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
     let mut selected = 0_usize;
     let mut launch_failed = false;
     let saved_network = save_root.join("multiplayer.json");
+    let mut last_multiplayer_join: Option<bees_host::presentation::MultiplayerJoin> = None;
     let saved_host = save_root.join("multiplayer-host.json");
     // The published game library and its authored assets are immutable for
     // this menu session. Cache expensive original class/collider discovery;
@@ -6515,14 +6516,13 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         )?);
         recordings.extend(recorded_library::list_fleet_builds(save_root)?);
         recorded_library::sort_recent(&mut recordings);
-        let join_available=saved_network.is_file();
-        let host_available=saved_host.is_file();
-        if join_available {
-            rows.push(BattleMenuRow {
-                title: "Join Multiplayer", status: "  [Saved server]",
-                unlocked: true,
-            });
-        }
+        let join_index = rows.len();
+        rows.push(BattleMenuRow {
+            title: "Join Multiplayer",
+            status: if saved_network.is_file() { "  [Saved server]" } else { "  [LAN]" },
+            unlocked: true,
+        });
+        let host_available = saved_host.is_file();
         if host_available {
             rows.push(BattleMenuRow {
                 title: "Host Multiplayer", status: "  [Private lobby]",
@@ -6621,12 +6621,10 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
         let trained_index = (index >= library.games.len() &&
             index < library.games.len() + trained.len())
             .then_some(index.saturating_sub(library.games.len()));
-        let remote = join_available && index == library.games.len() + trained.len();
-        let hosting = host_available &&
-            index == library.games.len() + trained.len() + usize::from(join_available);
+        let remote = index == join_index;
+        let hosting = host_available && index == join_index + 1;
         let watching = !recordings.is_empty() &&
-            index == library.games.len() + trained.len() +
-                usize::from(join_available) + usize::from(host_available);
+            index == join_index + 1 + usize::from(host_available);
         let (game_id, game_kind, game_title) = if creating_fleet {
             (fleet_builder::GAME_ID, "custom_fleet", "Build Fleet Skirmish")
         } else if reusing_fleet {
@@ -6868,27 +6866,44 @@ fn run_library(library_path: &Path, save_root: &Path) -> Result<(), Box<dyn Erro
             })()
         } else if remote {
             (|| {
-                let connection: NativeSavedNetwork =
-                    serde_json::from_slice(&fs::read(&saved_network)?)?;
-                if connection.address.is_empty() || connection.address.len() > 255 {
-                    return Err(invalid("invalid saved native multiplayer endpoint").into());
-                }
-                let token_file = if connection.token_file.is_absolute() {
-                    connection.token_file
+                use bees_host::presentation::{choose_multiplayer_join, MultiplayerJoin};
+                let initial = if last_multiplayer_join.is_some() {
+                    last_multiplayer_join.clone()
                 } else {
-                    save_root.join(connection.token_file)
+                    match fs::read(&saved_network) {
+                        Ok(bytes) => match serde_json::from_slice::<NativeSavedNetwork>(&bytes) {
+                            Ok(saved) => Some(MultiplayerJoin {
+                                address: saved.address,
+                                token_file: saved.token_file,
+                                side: saved.side,
+                                spectator: saved.spectator,
+                            }),
+                            Err(_) => {
+                                eprintln!("Could not read saved multiplayer settings");
+                                None
+                            }
+                        },
+                        Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+                        Err(error) => return Err(error.into()),
+                    }
                 };
+                let Some(connection) = choose_multiplayer_join(initial)? else {
+                    return Ok(());
+                };
+                let token_file = save_root.join(&connection.token_file);
                 let session_name = if connection.spectator {
                     "multiplayer-spectator-session.json"
                 } else {
                     "multiplayer-session.json"
                 };
-                bees_host::presentation::connect_remote(
+                let result = bees_host::presentation::connect_remote(
                     &connection.address, &token_file, connection.side,
                     Some(&save_root.join(session_name)),
                     Some(&save_root.join("audio-settings.json")),
                     connection.spectator,
-                )
+                );
+                last_multiplayer_join = Some(connection);
+                result
             })()
         } else if hosting {
             run_library_host(&saved_host,save_root,&library,&games,&trained,

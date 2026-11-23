@@ -31,6 +31,10 @@ mod codex;
 #[cfg(feature = "client")]
 mod battle_menu;
 #[cfg(feature = "client")]
+mod multiplayer_menu;
+#[cfg(feature = "client")]
+pub use multiplayer_menu::{choose_multiplayer_join, MultiplayerJoin};
+#[cfg(feature = "client")]
 mod remote_window;
 #[cfg(feature = "client")]
 pub use remote_window::connect_remote;
