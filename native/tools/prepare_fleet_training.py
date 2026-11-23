@@ -16,6 +16,7 @@ import importlib.util
 import json
 import math
 import os
+import struct
 import subprocess
 import sys
 import tempfile
@@ -120,6 +121,22 @@ def source_battle(run_path: Path) -> tuple[dict, dict]:
     return scene, run
 
 
+def native_f32(value):
+    return struct.unpack("<f", struct.pack("<f", value))[0]
+
+
+def move_source_position(position, offset, bounds):
+    # Runtime scene numbers and Vec2 addition are f32, including the
+    # bounds check. Use that same initial position in the frozen scene.
+    position = [native_f32(native_f32(a) + native_f32(b))
+                for a, b in zip(position, offset, strict=True)]
+    if not all(math.isfinite(value) and
+               native_f32(bounds["min"][axis]) <= value <= native_f32(bounds["max"][axis])
+               for axis, value in enumerate(position)):
+        raise ValueError("physical ship placement would leave native map bounds")
+    return position
+
+
 def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     """Expand the game builder's exact clone offsets/IDs, not a new ship generator."""
     scene, run = copy.deepcopy(scene), copy.deepcopy(run)
@@ -128,7 +145,8 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
     if not isinstance(layout, dict):
         raise ValueError("native layout must be an object")
     supported = {"clone_squads", "merge_squads", "number_squads",
-                 "remove_static_ids", "add_static_boxes", "add_map_borders"}
+                 "remove_static_ids", "add_static_boxes", "add_static_polygons",
+                 "add_map_borders", "translate_squads"}
     if any(key not in supported and value not in ([], None)
            for key, value in layout.items()):
         raise ValueError("unsupported fleet layout operation; refusing a changed physical battle")
@@ -193,11 +211,7 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
                 raise ValueError("native squad clone has invalid ship ID or unsupported relationship")
             ship = copy.deepcopy(source_ship)
             ship["entity_id"] = new_id
-            ship["position"] = [source_ship["position"][n] + by[n] for n in (0, 1)]
-            if not all(math.isfinite(value) and
-                       bounds["min"][n] <= value <= bounds["max"][n]
-                       for n, value in enumerate(ship["position"])):
-                raise ValueError("cloned physical ship would leave native map bounds")
+            ship["position"] = move_source_position(source_ship["position"], by, bounds)
             # Match the native game's authoritative clone registration:
             # legacy clones are temporary, while explicitly valued fleet
             # builder clones count toward reward/TSV and use a fresh FleetShip
@@ -216,6 +230,31 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
             ship_by_id[new_id] = ship
         squads.append(new_squad)
         squad_by_id[new_squad_id] = new_squad
+
+    translations = layout.get("translate_squads", [])
+    if not isinstance(translations, list):
+        raise ValueError("native squad translations must be a list")
+    moved_squads, moved_ships = set(), set()
+    # Clones above read the original coordinates. Only original squads
+    # receive these translations, before merged formation centers are built.
+    for edit in translations:
+        if not isinstance(edit, dict) or set(edit) != {"squad_item_id", "by"}:
+            raise ValueError("native squad translation needs a source ID and offset")
+        squad_id, offset = edit["squad_item_id"], edit["by"]
+        if (type(squad_id) is not int or squad_id <= 0 or squad_id in moved_squads or
+                squad_id not in source_squads or not isinstance(offset, list) or
+                len(offset) != 2 or not all(type(axis) in (int, float) and math.isfinite(axis)
+                                           for axis in offset)):
+            raise ValueError("invalid or repeated native source squad translation")
+        moved_squads.add(squad_id)
+        for ship_id in source_squads[squad_id]["members"]:
+            ship = source_ships.get(ship_id)
+            if (ship is None or ship_id in moved_ships or ship.get("is_moving", False) or
+                    ship.get("has_target_coordinates", False) or
+                    any(ship.get("body_velocity", [0, 0]))):
+                raise ValueError("native translation requires distinct stationary ships")
+            ship["position"] = move_source_position(ship["position"], offset, bounds)
+            moved_ships.add(ship_id)
 
     # Convert the same source squad merge operation used by the live
     # Rust Level. No ship or fleet identity is added here; only command
@@ -343,43 +382,31 @@ def materialize(scene: dict, run: dict) -> tuple[dict, dict, int]:
         squad["original_squad_count"] = count
 
     removed = layout.get("remove_static_ids", [])
-    added = layout.get("add_static_boxes", [])
-    if not isinstance(removed, list) or not isinstance(added, list):
-        raise ValueError("native static obstacle edits must be lists")
-    old_boxes = scene_layout.get("add_static_boxes", [])
+    if not isinstance(removed, list) or any(type(item) is not int or item <= 0 for item in removed):
+        raise ValueError("native static obstacle removals must be a list of positive IDs")
     removed_ids = set(removed)
-    existing_ids = {box["entity_id"] for box in old_boxes}
-    if len(removed_ids) != len(removed) or not removed_ids.issubset(existing_ids):
+    terrain_keys = ("add_static_boxes", "add_static_polygons", "add_map_borders")
+    current = {key: scene_layout.get(key, []) for key in terrain_keys}
+    additions = {key: layout.get(key, []) for key in terrain_keys}
+    if any(not isinstance(rows, list) for rows in (*current.values(), *additions.values())):
+        raise ValueError("native terrain placements must be lists")
+    removable = {item["entity_id"] for key in terrain_keys[:2] for item in current[key]}
+    if len(removed_ids) != len(removed) or not removed_ids.issubset(removable):
         raise ValueError("native fleet removal refers to a missing or duplicate static collider")
-    active = [box for box in old_boxes if box["entity_id"] not in removed_ids]
-    for box in added:
-        if box["entity_id"] in existing_ids or box["entity_id"] in ship_by_id:
-            raise ValueError("native fleet addition collides with a physical entity ID")
-        existing_ids.add(box["entity_id"])
-        active.append(box)
-    scene_layout["add_static_boxes"] = active
-    # Source MapBorders are real physical trigger colliders, never ordinary
-    # static obstacles, destructible cover or discovery-reward baselines.
-    # Carry their exact game layout into the policy scene unchanged.
-    borders = layout.get("add_map_borders", [])
-    current_borders = scene_layout.get("add_map_borders", [])
-    if not isinstance(borders, list) or not isinstance(current_borders, list):
-        raise ValueError("native map-border placements must be lists")
-    reserved_ids = {
-        *ship_by_id.keys(),
-        *(obj["entity_id"] for key in ("mining_asteroids", "map_objects")
-          for obj in scene.get(key, [])),
-        *(box["entity_id"] for box in active),
-        *(polygon["entity_id"] for polygon in scene_layout.get("add_static_polygons", [])),
-        *(border["entity_id"] for border in current_borders),
-    }
-    for border in borders:
-        if not isinstance(border, dict) or type(border.get("entity_id")) is not int or (
-                border["entity_id"] <= max_source_entity or
-                border["entity_id"] in reserved_ids):
-            raise ValueError("native map-border identity collides with an authored physical entity")
-        reserved_ids.add(border["entity_id"])
-    scene_layout["add_map_borders"] = [*current_borders, *borders]
+    reserved = set(ship_by_id)
+    for key in terrain_keys:
+        for item in additions[key]:
+            entity_id = item.get("entity_id") if isinstance(item, dict) else None
+            if (type(entity_id) is not int or
+                    not max_source_entity < entity_id < (1 << 63) - 1 or
+                    entity_id in reserved):
+                raise ValueError("new native terrain must have a distinct ID above the source world")
+            reserved.add(entity_id)
+        retained = [item for item in current[key] if item["entity_id"] not in removed_ids]
+        # Preserve source prefab identity, transforms, explicit vertices,
+        # and lethal-contact flags. Both outputs use the same Rust loaders.
+        if retained or additions[key] or key in scene_layout or key != "add_static_polygons":
+            scene_layout[key] = [*retained, *additions[key]]
     return scene, run, len(clones)
 
 
