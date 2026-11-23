@@ -565,7 +565,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
                          evaluation_physics_workers: int | None = None,
                          rollout_gpus: str | None = None,
                          rollout_gpu_mask: str | None = None,
-                         evaluation_inference_device: str | None = None) -> None:
+                         evaluation_inference_device: str | None = None,
+                         operator_stop_file: Path | None = None) -> None:
     """Hand freshly verified artifacts to the one existing native trainer.
 
     The session has its own immutable recipe, model lineage, round receipts
@@ -580,6 +581,8 @@ def run_training_session(output: Path, rounds: int, learner_slot: int | None,
     ]
     if resume:
         command.append("--resume")
+    if operator_stop_file is not None:
+        command.extend(["--operator-stop-file", str(operator_stop_file)])
     if learner_slot is not None:
         command.extend(["--learner-slot", str(learner_slot)])
     if self_play_opponent_slot is not None:
@@ -734,6 +737,8 @@ def main() -> None:
                         help="continue from an unchanged completed bootstrap and existing round receipts")
     parser.add_argument("--clear-stop-request", action="store_true",
                         help="on an exclusively locked resume, clear this native game's cooperative stop request")
+    parser.add_argument("--operator-stop-file", type=Path,
+                        help="optional private native game job stop request path, checked between committed rounds")
     parser.add_argument("--curriculum-plan", type=Path,
                         help="existing pinned native curriculum Stage plan, applied between optimizer rounds")
     parser.add_argument("--learner-slot", type=int,
@@ -891,6 +896,8 @@ def main() -> None:
         parser.error("--train-rounds must be between 1 and 99999")
     if args.resume and args.train_rounds is None:
         parser.error("--resume requires --train-rounds")
+    if args.clear_stop_request and args.operator_stop_file is None:
+        parser.error("--clear-stop-request requires --operator-stop-file")
     if args.clear_stop_request and (not args.resume or args.train_rounds is None):
         parser.error("--clear-stop-request requires a training resume")
     if args.curriculum_plan is not None and args.train_rounds is None:
@@ -1117,7 +1124,7 @@ def main() -> None:
         # launch cannot clear a stop request while the original optimizer
         # is still running and finishing its current committed round.
         if args.clear_stop_request:
-            stop = output.parent / "stop.request"
+            stop = args.operator_stop_file
             if stop.is_symlink() or (stop.exists() and not stop.is_file()):
                 raise ValueError("native training stop request must be a regular file")
             stop.unlink(missing_ok=True)
@@ -1157,6 +1164,7 @@ def main() -> None:
                 evaluation_inference_device=args.evaluation_inference_device,
                 rollout_gpus=args.rollout_gpus,
                 rollout_gpu_mask=args.rollout_gpu_mask,
+                operator_stop_file=args.operator_stop_file,
             )
 
 
