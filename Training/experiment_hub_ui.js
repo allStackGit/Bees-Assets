@@ -1229,6 +1229,15 @@ function approvedTinyBrainsProfiles(machines) {
     const commit=status.dataset.commit||null;
     const frontendRevision=status.dataset.frontendRevision||null;
     const initial=status.textContent;
+    // Never discard a local draft because a new coordinator/UI release appeared.
+    // Surface the update and let the operator reload after saving their work.
+    const reloadButton=document.createElement('button');
+    reloadButton.type='button';
+    reloadButton.textContent='Reload Hub when ready';
+    reloadButton.hidden=true;
+    reloadButton.style.marginLeft='0.5rem';
+    reloadButton.addEventListener('click',()=>window.location.reload());
+    status.insertAdjacentElement('afterend',reloadButton);
     async function checkVersion() {
         try {
             const response=await fetch('/api/hub/software/version',{cache:'no-store'});
@@ -1241,9 +1250,13 @@ function approvedTinyBrainsProfiles(machines) {
             if(data.generation!==generation||
                 (data.source_commit||null)!==commit||
                 (data.frontend_revision||null)!==frontendRevision) {
-                window.location.reload();
+                status.textContent='A newer Hub version is active ('+
+                    (data.source_commit?.slice(0,12)||'new release')+
+                    '). Save any unfinished draft, then reload to use it.';
+                reloadButton.hidden=false;
                 return;
             }
+            reloadButton.hidden=true;
             const updated=data.updated_at&&Number.isFinite(Date.parse(data.updated_at))
                 ?new Date(data.updated_at).toLocaleString():null;
             status.textContent='Hub '+(data.source_commit?.slice(0,12)||'version unknown')+
@@ -1326,11 +1339,30 @@ document.addEventListener('DOMContentLoaded', () => {
         return data;
     };
     const feedback=(id,message)=>{ $(id).textContent=message; };
+    // Replacing native select nodes on each state poll closes an open menu and
+    // can silently replace the user's selection, even when nothing changed.
+    function refreshSelectOptions(select,options) {
+        const current=[...select.options];
+        if(current.length===options.length&&current.every((option,index)=>
+            option.value===options[index].value&&
+            option.text===options[index].text&&
+            option.disabled===options[index].disabled&&
+            (!select.multiple||option.selected===options[index].selected)))
+            return false;
+        // Leave an actively edited menu intact until it is closed.
+        if(document.activeElement===select)return false;
+        const previous=select.value;
+        select.replaceChildren(...options);
+        if(!select.multiple&&[...select.options].some(option=>option.value===previous))
+            select.value=previous;
+        return true;
+    }
     const expandedRecordDetails=new Set();
     function recordDetail(key,label,message) {
         const details=document.createElement('details');
         if(expandedRecordDetails.has(key))details.open=true;
         details.addEventListener('toggle',()=>{
+            if(!details.isConnected)return;
             if(details.open)expandedRecordDetails.add(key);
             else expandedRecordDetails.delete(key);
         });
@@ -1457,10 +1489,13 @@ document.addEventListener('DOMContentLoaded', () => {
         for(const [i,row] of rows.entries()) {
             const label=row.firstElementChild;
              const select=row.querySelector('select');
-            label.textContent=(relationship==='batch'?'Trial ':'Stage ')+(i+1)+' saved configuration';
-            label.append(select);
+            const caption=(relationship==='batch'?'Trial ':'Stage ')+(i+1)+
+                ' saved configuration';
+            if(label.firstChild?.nodeType===Node.TEXT_NODE)
+                label.firstChild.textContent=caption;
+            else label.insertBefore(document.createTextNode(caption),select);
             const old=select.value;
-            select.replaceChildren(...configs.map(c=>new Option(
+            refreshSelectOptions(select,configs.map(c=>new Option(
                 (checkpointPipeline?'':c.project_id+' · ')+
                     c.name+' · revision '+c.revision,c.id)));
             const suggested=configs.find(c=>c.project_id===project);
@@ -1532,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const oldConfig=config.value,oldMachine=machine.value;
             captions[0].textContent='Member '+(i+1)+' saved configuration';
             captions[1].textContent='Machine';
-            config.replaceChildren(...configs.map(c=>new Option(
+            refreshSelectOptions(config,configs.map(c=>new Option(
                 c.project_id+' · '+c.name+' · revision '+c.revision,c.id)));
             if(configs.some(c=>c.id===oldConfig))config.value=oldConfig;
             else {
@@ -1550,7 +1585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         m.execution_capabilities?.cgroup_v2_detected===true&&
                         ['cpu','memory'].every(c=>
                             m.execution_capabilities?.cgroup_controllers?.includes(c)))));
-            machine.replaceChildren(...eligible.map(m=>
+            refreshSelectOptions(machine,eligible.map(m=>
                 new Option(m.name+' ('+m.id+')',m.id)));
             if(eligible.some(m=>m.id===oldMachine))machine.value=oldMachine;
             row.querySelector('button').disabled=rows.length<=2;
@@ -4063,9 +4098,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 options.set(key,id+' · '+source.sha256.slice(0,12));
             }
         }
-        tinyBrainsImport.replaceChildren(new Option('Fresh initialization (no import)',''),
+        refreshSelectOptions(tinyBrainsImport,[
+            new Option('Fresh initialization (no import)',''),
             ...[...options].sort(([a],[b])=>a.localeCompare(b))
-                .map(([key,label])=>new Option(label,key)));
+                .map(([key,label])=>new Option(label,key))]);
         if(options.has(previous))tinyBrainsImport.value=previous;
     }
     tinyBrainsSelect.addEventListener('change',displayTinyBrainsImports);
@@ -4074,11 +4110,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if(tinyBrainsPicker.hidden)return;
         const prior=tinyBrainsSelect.value;
         const options=approvedTinyBrainsProfiles(state.machines);
-        tinyBrainsSelect.replaceChildren(...(options.length
+        refreshSelectOptions(tinyBrainsSelect,options.length
             ?options.map(([key,{profile,digest,workers,cudaWorkers}])=>new Option(
                 profile+' · '+(cudaWorkers?'GPU (CUDA/ROCm)':'CPU')+' · '+digest.slice(0,12)+
                 ' · '+workers+(workers===1?' worker':' workers'),key))
-            :[new Option('No connected worker advertises a profile','')]));
+            :[new Option('No connected worker advertises a profile','')]);
         if(options.some(([key])=>key===prior))tinyBrainsSelect.value=prior;
         tinyBrainsSelect.disabled=tinyBrainsUse.disabled=!options.length;
         displayTinyBrainsImports();
@@ -4281,10 +4317,16 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshEvaluationCheckpointNotice();
         const signature=JSON.stringify({project,parameters,
             machine:chosen?.machine?.id||null,
-            catalog:chosen?.entry||null});
-        // Periodic monitor/worker refresh must not discard an in-progress
-        // number edit while the last saved JSON is still unchanged.
-        if(!force&&signature===renderedDesignSignature)return;
+            fields:chosen?.entry?.fields||null,
+            config_sha256:chosen?.entry?.config_sha256||null,
+            profile_sha256:chosen?.entry?.profile_sha256||null,
+            training_schema_sha256:chosen?.entry?.training_schema_sha256||null,
+            source_sha256:chosen?.machine?.design_catalog?.tinybrains?.source_sha256||null});
+        // Dynamic worker metadata is not a reason to reconstruct a user's
+        // Design form, which could destroy an unfinished field edit.
+        if(!force&&(
+            signature===renderedDesignSignature||
+            $('hub-design-editor').contains(document.activeElement)))return;
         renderedDesignSignature=signature;
         const editor=$('hub-design-editor');
         $('hub-design-availability').textContent=project==='bees'||chosen?'':(
@@ -4777,7 +4819,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // This fallback is only created for an existing selected suite.
             options.push(new Option(chosen+' (saved; not currently advertised)',chosen));
         }
-        select.replaceChildren(...options);
+        refreshSelectOptions(select,options);
         select.value=chosen||'';
     }
     function appendEvaluationSuite(rule={}) {
@@ -5552,7 +5594,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function display() {
         if(!state)return;
         const current=project;
-        $('hub-project').replaceChildren(...state.projects.map(p=>new Option(p.name,p.id)));
+        refreshSelectOptions($('hub-project'),
+            state.projects.map(p=>new Option(p.name,p.id)));
         project=state.projects.some(p=>p.id===current)?current:'bees';
         $('hub-project').value=project;
         renderJobMetricSelection();
@@ -5634,7 +5677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const jobSelect=$('hub-job-configuration');
         const former=jobSelect.value;
-        jobSelect.replaceChildren(...configs.map(c=>new Option(
+        refreshSelectOptions(jobSelect,configs.map(c=>new Option(
             c.name+' · revision '+c.revision,c.id)));
         if(configs.some(c=>c.id===former)) jobSelect.value=former;
         // The Train capability list belongs to this saved revision, not to
