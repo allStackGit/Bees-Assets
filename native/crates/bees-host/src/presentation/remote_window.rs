@@ -2881,6 +2881,8 @@ fn draw(pixels: &mut [u32], state: Option<&Value>, camera: Option<NativeCamera>,
                     "First Honeybee destroyed  |  Monitor incoming enemy signals"
                 } else if objective["gunship_briefed"] == true {
                     "Lieutenant Tom is engaging the unidentified Honeybee"
+                } else if state["campaign_dialogue"]["cue"] == "PlutoAnomalyGunshipApproaching" {
+                    "Tom's Gunship is approaching the unidentified vessel"
                 } else if objective["gunship_arrived"] == true {
                     "Gunship arrived  |  Listen to Lieutenant Tom's briefing"
                 } else if objective["honeybee_spotted"] == true {

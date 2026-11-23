@@ -25,6 +25,8 @@ pub enum CampaignDialogueSpec {
         withdrawal_before_report: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         gunship_briefing_after_entry: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        gunship_contact_briefing: bool,
     },
     /// Original Pluto II: the first real Scout must be selected before
     /// the campaign permits the rest of the fleet and the Bee encounter.
@@ -135,6 +137,8 @@ pub enum CampaignCue {
     /// deferred Gunship squads may now enter the same physical World.
     PlutoAnomalyScoutReportComplete,
     PlutoAnomalyGunshipArrived,
+    PlutoAnomalyGunshipApproaching,
+    PlutoAnomalyGunshipContact,
     PlutoAnomalyGunshipBriefingComplete,
     PlutoAnomalyHoneybeeDestroyed,
     PlutoAnomalyVictory,
@@ -203,7 +207,8 @@ impl CampaignCue {
 
     pub fn is_briefing(self) -> bool {
         self.is_level_intro() || matches!(self, Self::PlutoAnomalyHoneybeeSpotted |
-            Self::PlutoAnomalyScoutReport | Self::PlutoAnomalyGunshipArrived | Self::PlutoReinforcementsScoutSelected)
+            Self::PlutoAnomalyScoutReport | Self::PlutoAnomalyGunshipArrived |
+            Self::PlutoAnomalyGunshipContact | Self::PlutoReinforcementsScoutSelected)
     }
 }
 
@@ -218,6 +223,8 @@ enum DialogueMode {
         #[serde(default, skip_serializing_if = "is_false")]
         gunship_briefing_after_entry: bool,
         #[serde(default, skip_serializing_if = "is_false")]
+        gunship_contact_briefing: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
         scout_report_started: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         scout_withdrawal_arrived: bool,
@@ -227,6 +234,8 @@ enum DialogueMode {
         report_completed: bool,
         #[serde(default)]
         gunship_arrived: bool,
+        #[serde(default, skip_serializing_if = "is_false")]
+        gunship_contact_reached: bool,
         #[serde(default)]
         gunship_briefed: bool,
         honeybee_destroyed: bool,
@@ -342,13 +351,14 @@ impl CampaignDialogue {
         let (mode, cue) = match spec {
             CampaignDialogueSpec::PlutoAnomaly {
                 scout_id, honeybee_id, gunship_id, withdrawal_before_report,
-                gunship_briefing_after_entry, ..
+                gunship_briefing_after_entry, gunship_contact_briefing, ..
             } => (
                 DialogueMode::PlutoAnomaly {
                     scout_id, honeybee_id, gunship_id, withdrawal_before_report,
-                    gunship_briefing_after_entry,
+                    gunship_briefing_after_entry, gunship_contact_briefing,
                     spotted: false, scout_report_started: false, scout_withdrawal_arrived: false,
-                    scout_alarm_until_tick: None, report_completed: false, gunship_arrived: false, gunship_briefed: false,
+                    scout_alarm_until_tick: None, report_completed: false, gunship_arrived: false, gunship_contact_reached: false,
+                    gunship_briefed: false,
                     honeybee_destroyed: false,
                 },
                 CampaignCue::PlutoAnomalyBriefing,
@@ -438,7 +448,9 @@ impl CampaignDialogue {
                 CampaignCue::PlutoAnomalyHoneybeeSpotted | CampaignCue::PlutoAnomalyScoutWithdrawing |
                 CampaignCue::PlutoAnomalyScoutReportComplete) =>
                 Some(scout_id),
-            (DialogueMode::PlutoAnomaly { gunship_id, .. }, CampaignCue::PlutoAnomalyGunshipArrived) =>
+            (DialogueMode::PlutoAnomaly { gunship_id, .. },
+                CampaignCue::PlutoAnomalyGunshipArrived | CampaignCue::PlutoAnomalyGunshipApproaching |
+                CampaignCue::PlutoAnomalyGunshipContact) =>
                 Some(gunship_id),
             _ => None,
         }
@@ -475,12 +487,13 @@ impl CampaignDialogue {
         let same_authored_story = match (&mode, &self.mode) {
             (DialogueMode::PlutoAnomaly {
                 scout_id: a, honeybee_id: b, gunship_id: e, withdrawal_before_report: saved,
-                gunship_briefing_after_entry: saved_gunship, ..
+                gunship_briefing_after_entry: saved_gunship, gunship_contact_briefing: saved_contact, ..
             }, DialogueMode::PlutoAnomaly {
                 scout_id: c, honeybee_id: d, gunship_id: f, withdrawal_before_report: authored,
-                gunship_briefing_after_entry: authored_gunship, ..
+                gunship_briefing_after_entry: authored_gunship,
+                gunship_contact_briefing: authored_contact, ..
             }) => a == c && b == d && e == f && saved == authored &&
-                saved_gunship == authored_gunship,
+                saved_gunship == authored_gunship && saved_contact == authored_contact,
             (DialogueMode::PlutoReinforcements { scout_id: a, .. },
                 DialogueMode::PlutoReinforcements { scout_id: b, .. }) => a == b,
             (DialogueMode::Minesweeper { .. }, DialogueMode::Minesweeper { .. }) =>
@@ -535,6 +548,13 @@ impl CampaignDialogue {
         {
             return Err(CampaignDialogueRestoreError::InvalidProgress);
         }
+        if matches!(mode, DialogueMode::PlutoAnomaly { gunship_contact_reached: true, .. }) &&
+            !matches!(mode, DialogueMode::PlutoAnomaly {
+                gunship_contact_briefing: true, gunship_arrived: true, ..
+            })
+        {
+            return Err(CampaignDialogueRestoreError::InvalidProgress);
+        }
         let valid = match (&mode, cue) {
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, gunship_id,
@@ -570,29 +590,44 @@ impl CampaignDialogue {
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: false,
-                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
-            }, CampaignCue::PlutoAnomalyGunshipArrived) =>
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started,
+                gunship_contact_briefing, gunship_contact_reached, ..
+            }, CampaignCue::PlutoAnomalyGunshipArrived | CampaignCue::PlutoAnomalyGunshipApproaching |
+                CampaignCue::PlutoAnomalyGunshipContact) =>
                 scout_report_started == withdrawal_before_report &&
-                sequence == 3 + u32::from(*scout_report_started),
+                match cue {
+                    CampaignCue::PlutoAnomalyGunshipArrived =>
+                        !*gunship_contact_briefing && !*gunship_contact_reached &&
+                        sequence == 3 + u32::from(*scout_report_started),
+                    CampaignCue::PlutoAnomalyGunshipApproaching =>
+                        *gunship_contact_briefing && !*gunship_contact_reached &&
+                        sequence == 3 + u32::from(*scout_report_started),
+                    CampaignCue::PlutoAnomalyGunshipContact =>
+                        *gunship_contact_briefing && *gunship_contact_reached &&
+                        sequence == 4 + u32::from(*scout_report_started),
+                    _ => false,
+                },
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: true,
-                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, ..
+                honeybee_destroyed: false, withdrawal_before_report, scout_report_started, gunship_contact_briefing, gunship_contact_reached, ..
             }, CampaignCue::PlutoAnomalyGunshipBriefingComplete) =>
                 scout_report_started == withdrawal_before_report &&
-                sequence == 4 + u32::from(*scout_report_started),
+                gunship_contact_reached == gunship_contact_briefing &&
+                sequence == 4 + u32::from(*scout_report_started) + u32::from(*gunship_contact_reached),
             (DialogueMode::PlutoAnomaly {
                 spotted: true, report_completed: true,
                 gunship_arrived: true, gunship_briefed: true,
-                honeybee_destroyed: true, withdrawal_before_report, scout_report_started, ..
+                honeybee_destroyed: true, withdrawal_before_report, scout_report_started, gunship_contact_briefing, gunship_contact_reached, ..
             }, CampaignCue::PlutoAnomalyHoneybeeDestroyed) =>
                 scout_report_started == withdrawal_before_report &&
-                sequence == 5 + u32::from(*scout_report_started),
+                gunship_contact_reached == gunship_contact_briefing &&
+                sequence == 5 + u32::from(*scout_report_started) + u32::from(*gunship_contact_reached),
             (DialogueMode::PlutoAnomaly {
                 scout_id, honeybee_id, gunship_id,
                 spotted, report_completed, gunship_arrived,
                 gunship_briefed, honeybee_destroyed, withdrawal_before_report,
-                scout_report_started, ..
+                scout_report_started, gunship_contact_briefing, gunship_contact_reached, ..
             }, CampaignCue::PlutoAnomalyVictory | CampaignCue::PlutoAnomalyDefeat) =>
                 *scout_id > 0 && *honeybee_id > 0 && *gunship_id > 0 &&
                 scout_id != honeybee_id && scout_id != gunship_id &&
@@ -600,11 +635,12 @@ impl CampaignDialogue {
                 (!*scout_report_started || (*withdrawal_before_report && *spotted)) &&
                 (!*report_completed || (*spotted && (!*withdrawal_before_report || *scout_report_started))) &&
                 (!*gunship_arrived || *report_completed) &&
-                (!*gunship_briefed || *gunship_arrived) &&
+                (!*gunship_briefed || (*gunship_arrived &&
+                    (!*gunship_contact_briefing || *gunship_contact_reached))) &&
                 (!*honeybee_destroyed || *gunship_briefed) &&
                 sequence == 1 + u32::from(*spotted) +
                     u32::from(*scout_report_started) + u32::from(*report_completed) +
-                    u32::from(*gunship_arrived) +
+                    u32::from(*gunship_arrived) + u32::from(*gunship_contact_reached) +
                     u32::from(*gunship_briefed) +
                     u32::from(*honeybee_destroyed),
             (DialogueMode::PlutoReinforcements {
@@ -1182,7 +1218,8 @@ impl CampaignDialogue {
         if let DialogueMode::PlutoAnomaly {
             scout_id, honeybee_id, gunship_id, spotted, withdrawal_before_report,
             scout_report_started, report_completed, gunship_arrived, gunship_briefed,
-            gunship_briefing_after_entry, honeybee_destroyed, ..
+            gunship_briefing_after_entry, gunship_contact_briefing, gunship_contact_reached,
+            honeybee_destroyed, ..
         } = &mut self.mode {
             if !*spotted && source_pluto_honeybee_spotted {
                 *spotted = true;
@@ -1214,12 +1251,22 @@ impl CampaignDialogue {
                 (!*gunship_briefing_after_entry || !world.ship_has_pending_game_movement(*gunship_id))
             {
                 *gunship_arrived = true;
-                return Some(CampaignCue::PlutoAnomalyGunshipArrived);
+                return Some(if *gunship_contact_briefing {
+                    CampaignCue::PlutoAnomalyGunshipApproaching
+                } else {
+                    CampaignCue::PlutoAnomalyGunshipArrived
+                });
             }
             if *gunship_arrived && !*gunship_briefed {
-                // Same presentation/ACK boundary as the Scout report.
-                // The authored Gunship attack queue is event-gated until
-                // Lieutenant Tom's actual source briefing finishes.
+                if *gunship_contact_briefing && !*gunship_contact_reached {
+                    if !world.first_weapon_has_enemy_contact(*gunship_id) {
+                        return None;
+                    }
+                    *gunship_contact_reached = true;
+                    return Some(CampaignCue::PlutoAnomalyGunshipContact);
+                }
+                // The host advances past the dialogue only after the
+                // commander has acknowledged its blocking briefing.
                 *gunship_briefed = true;
                 return Some(CampaignCue::PlutoAnomalyGunshipBriefingComplete);
             }

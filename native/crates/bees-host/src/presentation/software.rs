@@ -3419,7 +3419,14 @@ impl NativeSoftwareRenderer {
                 "Lieutenant Tom is engaging the unidentified Honeybee"
             } else if view.campaign_dialogue.is_some_and(|(_, cue)|
                 matches!(cue,
-                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipApproaching
+                ))
+            {
+                "Tom's Gunship is approaching the unidentified vessel"
+            } else if view.campaign_dialogue.is_some_and(|(_, cue)|
+                matches!(cue,
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived |
+                    bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipContact
                 ))
             {
                 "Gunship arrived  |  Listen to Lieutenant Tom's briefing"

@@ -3675,6 +3675,8 @@ fn current_state(
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReport |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyScoutReportComplete |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipApproaching |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipContact |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
                 "gunship_arrived": view.campaign_dialogue_side
@@ -3682,6 +3684,8 @@ fn current_state(
                     .map(|_| view.campaign_dialogue.is_some_and(|(_, cue)|
                         matches!(cue,
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipArrived |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipApproaching |
+                            bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipContact |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyGunshipBriefingComplete |
                             bees_gameplay::campaign_dialogue::CampaignCue::PlutoAnomalyHoneybeeDestroyed))),
                 "gunship_briefed": view.campaign_dialogue_side

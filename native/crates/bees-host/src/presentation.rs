@@ -303,7 +303,8 @@ impl<'a> NativeRenderWorldView<'a> {
             self.campaign_dialogue.is_some_and(|(_, cue)| matches!(cue,
                 CampaignCue::PlutoAnomalyBriefing | CampaignCue::PlutoAnomalyHoneybeeSpotted |
                 CampaignCue::PlutoAnomalyScoutWithdrawing | CampaignCue::PlutoAnomalyScoutReport |
-                CampaignCue::PlutoAnomalyScoutReportComplete | CampaignCue::PlutoAnomalyGunshipArrived))
+                CampaignCue::PlutoAnomalyScoutReportComplete | CampaignCue::PlutoAnomalyGunshipArrived |
+                CampaignCue::PlutoAnomalyGunshipApproaching | CampaignCue::PlutoAnomalyGunshipContact))
     }
 
     fn neptune_mining_briefing(&self) -> bool {

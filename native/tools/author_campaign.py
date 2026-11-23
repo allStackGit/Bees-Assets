@@ -1042,10 +1042,10 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 queue for queue in level.get("scripted_queues", [])
                 if isinstance(queue, dict) and
                 queue.get("squad_item_id") == gunship_squad_id and
-                queue.get("activation") == {
-                    "kind": "on_campaign_cue",
-                    "cue": "pluto_gunship_briefing_complete",
-                } and any(isinstance(order, dict) and
+                queue.get("activation") in (
+                    {"kind": "on_campaign_cue", "cue": "pluto_gunship_briefing_complete"},
+                    {"kind": "on_campaign_cue", "cue": "pluto_gunship_arrived"},
+                ) and any(isinstance(order, dict) and
                     order.get("kind") == "aggressive" and
                     any(order.get("enemy_squad_item_id") == honeybee.get("item_id")
                         for honeybee in honeybee_owners)
@@ -1119,7 +1119,7 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                     "authored Scout withdrawal on pluto_honeybee_spotted, "
                     "one real Gunship wave after the Scout report, "
                     "an original nine-slot Bee counterattack at Gunship handoff, "
-                    "and a source attack on pluto_gunship_briefing_complete"
+                    "and a source Gunship approach targeting the first Honeybee"
                 )
             gunship_home = homes[args.player_side - 1]
             if isinstance(gunship_home, dict):
@@ -1130,11 +1130,15 @@ def campaign(args) -> tuple[dict, dict, list[tuple[str, dict]], dict, dict, dict
                 raise ValueError("Pluto Anomaly requires a finite Human starting position")
             gunship_waves[0]["spawn"] = [gunship_home[0], gunship_home[1] - 100]
             gunship_waves[0]["entry"] = [gunship_home[0], gunship_home[1] + 40]
+            gunship_attack[0]["activation"] = {
+                "kind": "on_campaign_cue", "cue": "pluto_gunship_arrived",
+            }
             level["campaign_dialogue"] = {
                 "pluto_anomaly": {
                     "player_side": args.player_side,
                     "withdrawal_before_report": True,
                     "gunship_briefing_after_entry": True,
+                    "gunship_contact_briefing": True,
                     "scout_id": scouts[0]["entity_id"],
                     "honeybee_id": honeybees[0]["entity_id"],
                     "gunship_id": gunship_id,

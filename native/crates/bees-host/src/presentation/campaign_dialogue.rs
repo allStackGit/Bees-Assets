@@ -11,6 +11,19 @@ pub(super) fn gunship_attack_prompt(selected: bool) -> &'static str {
 }
 
 pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)] {
+    const PLUTO_GUNSHIP_DIALOGUE: &[(&str, &str)] = &[
+        ("Tom", "This is Gunship P-4 reporting to command. I’m approaching the unidentified vessel now."),
+        ("Tom", "Unidentified vessel, you are in United Fleet airspace. Identify yourself immediately."),
+        ("Samuel", "Still nothing, even on local communications?"),
+        ("Tom", "Negative."),
+        ("Samuel", "Strange. It doesn’t seem hostile. What are your orders- oh, we’re getting a call from High Command."),
+        ("High Command", "Commander, we have received reports of an alien vessel in Pluto airspace. We cannot allow it to infiltrate our territory. Shoot it down."),
+        ("Samuel", "Shoot it down? We don’t even know what it is! Who even reported this?"),
+        ("High Command", "Those are your orders, Commander."),
+        ("Samuel", "But- oh, they disconnected. Looks like we have to attack, sir."),
+        ("Tom", "What are your orders, Commander?"),
+        ("Samuel", "In order to attack, he’ll need to be in range of his ship’s guns. Once in range, he can attack the ship."),
+    ];
     match cue {
         // Original PlutoLines_Anomaly is split at physical Scout sighting,
         // Tom's real Gunship arrival, and the first Honeybee kill. Only
@@ -29,19 +42,9 @@ pub(crate) fn lines(cue: CampaignCue) -> &'static [(&'static str, &'static str)]
         ],
         // The report's completion releases actual deferred Gunship squads.
         CampaignCue::PlutoAnomalyScoutReportComplete => &[],
-        CampaignCue::PlutoAnomalyGunshipArrived => &[
-            ("Tom", "This is Gunship P-4 reporting to command. I’m approaching the unidentified vessel now."),
-            ("Tom", "Unidentified vessel, you are in United Fleet airspace. Identify yourself immediately."),
-            ("Samuel", "Still nothing, even on local communications?"),
-            ("Tom", "Negative."),
-            ("Samuel", "Strange. It doesn’t seem hostile. What are your orders- oh, we’re getting a call from High Command."),
-            ("High Command", "Commander, we have received reports of an alien vessel in Pluto airspace. We cannot allow it to infiltrate our territory. Shoot it down."),
-            ("Samuel", "Shoot it down? We don’t even know what it is! Who even reported this?"),
-            ("High Command", "Those are your orders, Commander."),
-            ("Samuel", "But- oh, they disconnected. Looks like we have to attack, sir."),
-            ("Tom", "What are your orders, Commander?"),
-            ("Samuel", "In order to attack, he’ll need to be in range of his ship’s guns. Once in range, he can attack the ship."),
-        ],
+        CampaignCue::PlutoAnomalyGunshipArrived => PLUTO_GUNSHIP_DIALOGUE,
+        CampaignCue::PlutoAnomalyGunshipApproaching => &PLUTO_GUNSHIP_DIALOGUE[..1],
+        CampaignCue::PlutoAnomalyGunshipContact => &PLUTO_GUNSHIP_DIALOGUE[1..],
         CampaignCue::PlutoAnomalyGunshipBriefingComplete => &[],
         CampaignCue::PlutoAnomalyHoneybeeDestroyed => &[
             ("Tom", "Well, that was hardly a fight."),

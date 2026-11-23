@@ -1865,6 +1865,7 @@ impl NativePhysicalScene {
     fn pluto_anomaly_handoff_is_authored(
         &self, player_side: i32, scout_id: i64,
         honeybee_id: i64, gunship_id: i64, gunship_briefing_after_entry: bool,
+        gunship_contact_briefing: bool,
         waves: &[crate::reinforcements::NativeReinforcementPlan],
         queues: &[crate::policy_only_metadata::NativeScriptedQueuePlan],
     ) -> bool {
@@ -1897,7 +1898,9 @@ impl NativePhysicalScene {
                 NativeAuthoredEntity::Ship(ship)
                     if ship.entity_id == gunship_id &&
                     ship.side == player_side && ship.ship_type == 13 &&
-                    !ship.vitals.is_dead()
+                    !ship.vitals.is_dead() && (!gunship_contact_briefing ||
+                        ship.turrets.iter().any(|turret| turret.slot == 0 &&
+                            turret.range_collider.is_some_and(|range| range.enabled)))
             ));
         let scout_squad = self.source_squads.iter().find(|squad|
             squad.side == player_side &&
@@ -1917,13 +1920,16 @@ impl NativePhysicalScene {
             squad.side == 3 - player_side &&
             squad.members.contains(&honeybee_id)
         );
+        let approach_cue = if gunship_contact_briefing {
+            NativeMissionCue::PlutoGunshipArrived
+        } else {
+            NativeMissionCue::PlutoGunshipBriefingComplete
+        };
         let gunship_attack = gunship_squad.zip(honeybee_squad)
             .is_some_and(|(gunship, enemy)| {
                 queues.iter().filter(|queue|
                     queue.squad_item_id == gunship.item_id &&
-                    matches!(queue.activation,
-                        NativeScriptedActivation::OnCampaignCue(
-                            NativeMissionCue::PlutoGunshipBriefingComplete)) &&
+                    queue.activation == NativeScriptedActivation::OnCampaignCue(approach_cue) &&
                     queue.orders.iter().any(|order|
                         matches!(order, NativeScriptedOrder::Aggressive {
                             enemy_squad_item_id,
@@ -4005,8 +4011,9 @@ impl NativePhysicalScene {
                 return Err(NativePolicyOnlyLevelError::InvalidCampaignDialogue),
             Some(CampaignDialogueSpec::PlutoAnomaly {
                 player_side, scout_id, honeybee_id, gunship_id, withdrawal_before_report,
-                gunship_briefing_after_entry,
+                gunship_briefing_after_entry, gunship_contact_briefing,
             }) if player_side != human_side || scout_id <= 0 ||
+                (gunship_contact_briefing && !gunship_briefing_after_entry) ||
                 (withdrawal_before_report && !self.source_squads.iter().any(|squad|
                     squad.side == player_side && squad.members.as_slice() == [scout_id])) ||
                 honeybee_id <= 0 || gunship_id <= 0 ||
@@ -4026,7 +4033,7 @@ impl NativePhysicalScene {
                 )) ||
                 !self.pluto_anomaly_handoff_is_authored(
                     player_side, scout_id, honeybee_id, gunship_id, gunship_briefing_after_entry,
-                    &setup.reinforcements, &setup.scripted_queues,
+                    gunship_contact_briefing, &setup.reinforcements, &setup.scripted_queues,
                 ) ||
                 // This encounter is an ordinary source combat Level, not
                 // a fabricated reward or independently simulated mission.

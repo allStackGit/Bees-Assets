@@ -50,6 +50,13 @@ impl CombatWorld {
         Ok(Some(NativeWeaponRangeContacts { ship_ids: &contacts.ships, revision: contacts.revision }))
     }
 
+    /// Pluto I reads the first weapon's physical RangeCollider cache.
+    /// Cease-fire suppresses firing while leaving these contacts intact.
+    pub fn first_weapon_has_enemy_contact(&self, ship_id: i64) -> bool {
+        self.ship_weapons.get(&ship_id)
+            .is_some_and(|weapons| !weapons.range_contacts[0].ids().is_empty())
+    }
+
     /// Uranus I's original discovery trigger reads Ship.ShipsWithinRange:
     /// the union of genuine post-physics weapon RangeCollider contacts for
     /// every living human ship. This is the existing combat target cache,

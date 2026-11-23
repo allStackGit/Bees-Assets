@@ -59,7 +59,8 @@ impl NativeMissionCue {
             (Self::PlutoScoutReportComplete, CampaignCue::PlutoAnomalyScoutReportComplete) |
             (Self::PlutoGunshipBriefingComplete, CampaignCue::PlutoAnomalyGunshipBriefingComplete) |
             (Self::PlutoHoneybeeDestroyed, CampaignCue::PlutoAnomalyHoneybeeDestroyed) |
-            (Self::PlutoGunshipArrived, CampaignCue::PlutoAnomalyGunshipArrived) |
+            (Self::PlutoGunshipArrived,
+                CampaignCue::PlutoAnomalyGunshipArrived | CampaignCue::PlutoAnomalyGunshipApproaching) |
             (Self::PlutoReinforcementsScoutSelected, CampaignCue::PlutoReinforcementsScoutSelected) |
             (Self::PlutoReinforcementsCombatReady, CampaignCue::PlutoReinforcementsCombatReady) |
             (Self::UranusBumblebeeSpotted, CampaignCue::UranusOffensiveBumblebeeSpotted) |
