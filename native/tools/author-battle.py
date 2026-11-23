@@ -460,6 +460,48 @@ def resize_empty_arena(scene: dict, map_size: float) -> None:
 
 
 
+def native_demolition_orders(scene: dict, members: list[dict],
+                             target: dict, attacking_side: int) -> list[dict] | None:
+    """Author the original MoveToPoint + physical MapObject point-fire orders."""
+    armed = [ship for ship in members
+             if ship.get("base_speed", 0) > 0 and ship.get("turrets")]
+    if not armed:
+        return None
+    target_pos = target.get("position")
+    if (not isinstance(target_pos, list) or len(target_pos) != 2 or
+            any(type(v) not in (int, float) or not math.isfinite(v)
+                for v in target_pos)):
+        raise ValueError("native demolition needs the physical MapObject position")
+    ranges = [
+        mount["range_collider"]["radius"]
+        for ship in armed for mount in ship["turrets"]
+        if isinstance(mount.get("range_collider"), dict) and
+        mount["range_collider"].get("enabled", True) and
+        isinstance(mount["range_collider"].get("radius"), (int, float)) and
+        math.isfinite(mount["range_collider"]["radius"]) and
+        mount["range_collider"]["radius"] > 0
+    ]
+    if not ranges:
+        return None
+    origin = [sum(ship["position"][axis] for ship in armed) / len(armed)
+              for axis in range(2)]
+    direction = [origin[axis] - target_pos[axis] for axis in range(2)]
+    length = math.hypot(*direction)
+    if length < 0.001:
+        direction, length = [1.0 if attacking_side == 1 else -1.0, 0.0], 1.0
+    standoff = min(35.0, max(16.0, min(ranges) * 0.55))
+    low, high = scene["bounds"]["min"], scene["bounds"]["max"]
+    destination = [
+        max(low[axis] + 6, min(high[axis] - 6,
+            target_pos[axis] + direction[axis] / length * standoff))
+        for axis in range(2)
+    ]
+    return [
+        {"kind": "move_to_point", "destination": destination},
+        {"kind": "bombard_map_object", "target_map_object_id": target["entity_id"]},
+    ]
+
+
 def native_scripted_squad_orders(scene: dict, members: list[dict],
                                  squad_index: int, ai_tactics: str,
                                  has_beehive: bool,
@@ -496,6 +538,52 @@ def native_scripted_squad_orders(scene: dict, members: list[dict],
             raise ValueError("original escort command needs a physical exit for its faction")
         return [{"kind": "move_to_point",
                  "destination": copy.deepcopy(exit_zone["center"])}]
+    survival = mission.get("survival")
+    if (isinstance(survival, dict) and
+            survival.get("defending_side") == example["side"] and
+            any(ship["entity_id"] == survival.get("protected_ship_id")
+                for ship in members)):
+        # The protected physical hull must not receive an attack order
+        # that drives it out of the original defended zone.
+        return [{"kind": "hold"}]
+    demolition = mission.get("demolition")
+    if (isinstance(demolition, dict) and
+            demolition.get("attacking_side") == example["side"]):
+        target = next(
+            (obj for obj in scene.get("map_objects", [])
+             if obj["entity_id"] == demolition.get("target_map_object_id")),
+            None,
+        )
+        if target is None:
+            raise ValueError("native demolition target is not a physical MapObject")
+        bombard = native_demolition_orders(scene, members, target, example["side"])
+        if bombard:
+            return bombard
+    target_ship = mission.get("target_ship")
+    if (isinstance(target_ship, dict) and
+            target_ship.get("attacking_side") == example["side"] and
+            any(ship.get("base_speed", 0) > 0 and ship.get("turrets")
+                for ship in members)):
+        target_squad = next(
+            (squad for squad in scene["squads"]
+             if squad["side"] != example["side"] and
+             target_ship.get("target_ship_id") in squad["members"]),
+            None,
+        )
+        if target_squad is None:
+            raise ValueError("named-target mission lacks its physical opposing squad")
+        return [{"kind": "target_enemy",
+                 "enemy_squad_item_id": target_squad["item_id"]}]
+    if (isinstance(exit_zone, dict) and
+            exit_zone.get("player_side") == example["side"] and
+            not any(mission.get(key) for key in
+                    ("escort", "survival", "demolition", "target_ship"))):
+        center = exit_zone.get("center")
+        if (not isinstance(center, list) or len(center) != 2 or
+                any(type(v) not in (int, float) or not math.isfinite(v)
+                    for v in center)):
+            raise ValueError("native extraction needs a physical exit destination")
+        return [{"kind": "move_to_point", "destination": copy.deepcopy(center)}]
     if example["ship_type"] == 18 and special.get("kind") == "scout":
         sights = [ship["sight"]["source_sight"] for ship in members]
         if any(not isinstance(value, (int, float)) or
@@ -1210,7 +1298,8 @@ def author(args) -> tuple[dict, dict, dict]:
             )
             plan = {
                 "squad_item_id": squad["item_id"],
-                "repeat": False if orders[0]["kind"] == "hold" else True,
+                "repeat": (orders[0]["kind"] != "hold" and
+                           orders[-1]["kind"] != "bombard_map_object"),
                 "orders": orders,
             }
             if squad["item_id"] in deferred_squad_ids:
@@ -1873,40 +1962,12 @@ def author(args) -> tuple[dict, dict, dict]:
                                 if ship.get("base_speed", 0) > 0 and ship.get("turrets")]
                 if not armed_mobile:
                     continue
-                ranges = [
-                    mount["range_collider"]["radius"]
-                    for ship in armed_mobile for mount in ship["turrets"]
-                    if isinstance(mount.get("range_collider"), dict) and
-                    mount["range_collider"].get("enabled", True) and
-                    isinstance(mount["range_collider"].get("radius"), (int, float)) and
-                    math.isfinite(mount["range_collider"]["radius"]) and
-                    mount["range_collider"]["radius"] > 0
-                ]
-                if not ranges:
+                orders = native_demolition_orders(
+                    scene, members, eligible[0], owner,
+                )
+                if orders is None:
                     continue
-                # Approach from the unit's CURRENT side of the target,
-                # leaving the destructible collider clear. The regular
-                # native pathfinder performs real obstacle avoidance.
-                origin = [sum(ship["position"][axis] for ship in armed_mobile) /
-                          len(armed_mobile) for axis in range(2)]
-                direction = [origin[i] - target_pos[i] for i in range(2)]
-                length = math.hypot(*direction)
-                if length < 0.001:
-                    direction, length = [1.0 if owner == 1 else -1.0, 0.0], 1.0
-                # Preserve enough of the turret's real range to reach
-                # the target without requiring a collision with it.
-                standoff = min(35.0, max(16.0, min(ranges) * 0.55))
-                low, high = scene["bounds"]["min"], scene["bounds"]["max"]
-                position = [
-                    max(low[axis] + 6, min(high[axis] - 6,
-                        target_pos[axis] + direction[axis] / length * standoff))
-                    for axis in range(2)
-                ]
-                queue["orders"] = [
-                    {"kind": "move_to_point", "destination": position},
-                    {"kind": "bombard_map_object",
-                     "target_map_object_id": eligible[0]["entity_id"]},
-                ]
+                queue["orders"] = orders
                 queue["repeat"] = False
                 bombard_squads += 1
             if not bombard_squads:
@@ -2254,7 +2315,8 @@ def author_policy_scene(scene: dict, run: dict, args) -> tuple[dict, dict]:
         )
         queue = {
             "squad_item_id": squad_id,
-            "repeat": orders[0]["kind"] != "hold",
+            "repeat": (orders[0]["kind"] != "hold" and
+                       orders[-1]["kind"] != "bombard_map_object"),
             "orders": orders,
         }
         if any(ship["entity_id"] in deferred_reinforcement_ships

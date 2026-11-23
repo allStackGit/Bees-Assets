@@ -572,7 +572,8 @@ def verify_same_battle(scene: dict, run: dict,
         )
         allowed = {
             "squad_item_id": squad_id,
-            "repeat": orders[0]["kind"] != "hold",
+            "repeat": (orders[0]["kind"] != "hold" and
+                       orders[-1]["kind"] != "bombard_map_object"),
             "orders": orders,
         }
         if squad_id in deferred:
