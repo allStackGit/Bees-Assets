@@ -107,12 +107,32 @@ function hubEvaluationMetricPresentation(runs,metricKey) {
             success_rate:receipt.suite_id?.startsWith('tinybrains_')?'Win rate':'Success rate',
             win_count:'Wins',loss_count:'Losses',draw_count:'Draws',
             score_rate:'Draw-adjusted score rate',
+            mean_placement:'Mean finishing placement',
+            top_half_rate:'Top-half finish rate',
             survival_rate:'Survival rate',
         };
-        const metricName=names[measure]||measure.replaceAll('_',' ');
+        const classMetric=/^(score_rate|mean_placement|top_half_rate|trials)_(2|4|6)p$/.exec(measure);
+        const classNames={
+            score_rate:'draw-adjusted score rate',
+            mean_placement:'mean placement',
+            top_half_rate:'top-half finish rate',
+            trials:'trial count',
+        };
+        const metricName=classMetric
+            ?classMetric[2]+'-player '+classNames[classMetric[1]]
+            :names[measure]||measure.replaceAll('_',' ');
         const named=/^tinybrains_(nano|micro)_tiny_v([0-9]+)$/.exec(receipt.suite_id||'');
+        const season=/^tinybrains_(nano|micro)_season_v([0-9]+)$/.exec(receipt.suite_id||'');
+        const mini=/^tinybrains_mini_batch128_(season_)?v([0-9]+)$/.exec(receipt.suite_id||'');
+        const history=/^tinybrains_mini_([a-f0-9]{20})$/.exec(receipt.suite_id||'');
         const suiteName=named
             ?'TinyBrains vs '+(named[1]==='nano'?'Nano':'Micro')+' (v'+named[2]+')'
+            :season?'TinyBrains vs '+(season[1]==='nano'?'Nano':'Micro')+
+                ' · all season maps (v'+season[2]+')'
+            :mini?'TinyBrains vs Frozen Batch 128'+
+                (mini[1]?' · all season maps':'')+' (v'+mini[2]+')'
+            :history?'TinyBrains vs Historical '+history[1].slice(0,12)+
+                ' · all season maps'
             :String(receipt.suite_id||'Unknown suite').replaceAll('_',' ');
         let definition=null;
         try {
