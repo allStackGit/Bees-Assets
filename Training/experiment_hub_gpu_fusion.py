@@ -217,7 +217,7 @@ class FrozenGpuFusion:
 
     def _finish_gpu(self):
         if self.device is not None and self.device.type == "cuda":
-            torch.cuda.synchronize(self.device)
+            torch.cuda.current_stream(self.device).synchronize()
 
     def _time(self, fn):
         begun = perf_counter()
@@ -394,7 +394,7 @@ class FrozenGpuStreams:
     def _measure(self, fn):
         started = perf_counter()
         fn()
-        torch.cuda.synchronize(self.device)
+        torch.cuda.current_stream(self.device).synchronize()
         return perf_counter()-started
 
     def _qualify(self, args):
@@ -574,7 +574,7 @@ class FrozenGpuGraphs:
         for row, stable in zip(args, inputs):
             for value, target in zip(row, stable):
                 target.copy_(value)
-        torch.cuda.synchronize(self.device)
+        torch.cuda.current_stream(self.device).synchronize()
         initial_reserved = torch.cuda.memory_reserved(self.device)
         initial_allocated = torch.cuda.memory_allocated(self.device)
         warmup = torch.cuda.Stream(device=self.device)
@@ -612,10 +612,10 @@ class FrozenGpuGraphs:
         return FrozenGpuGraphs._copy_results(output)
 
     def _elapsed(self, operation):
-        torch.cuda.synchronize(self.device)
+        torch.cuda.current_stream(self.device).synchronize()
         start = perf_counter()
         operation()
-        torch.cuda.synchronize(self.device)
+        torch.cuda.current_stream(self.device).synchronize()
         return perf_counter()-start
 
     def _qualify(self, args):
