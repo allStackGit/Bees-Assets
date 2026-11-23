@@ -495,7 +495,6 @@ struct AuthoredRosterOwner {
     ship_type: Option<u8>,
 }
 
-#[derive(Default)]
 /// Immutable match outcomes projected from committed career battle receipts.
 /// Side IDs remain physical side IDs, not an inferred user/AI identity.
 #[derive(Clone, Copy, Default)]
@@ -505,6 +504,7 @@ pub struct CareerMatchResults {
     pub side_two_wins: u64,
 }
 
+#[derive(Default)]
 pub struct CampaignProgress<'a> {
     missions: HashMap<&'a str, MissionProgress>,
     fleet: HashMap<i64, FleetProgress>,
