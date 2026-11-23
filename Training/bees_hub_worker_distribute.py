@@ -18,8 +18,11 @@ import re
 import subprocess
 import sys
 
+from bees_release_runtime import verify_runtime
+
 SHA = re.compile(r"^[0-9a-f]{64}$")
 ID = re.compile(r"^[a-z][a-z0-9_-]{0,47}$")
+BUILD_ID = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
 USER = re.compile(r"^[a-z_][a-z0-9_-]{0,31}$")
 SAFE_PATH = re.compile(r"^[A-Za-z0-9_./:\\-]{2,256}$")
 SCHEMA_FIELDS = {
@@ -142,6 +145,7 @@ def source_manifest(filename: Path) -> tuple[dict, str]:
         record.get("schema_version") != 1 or
         record.get("kind") != "offline-unity-workers" or
         record.get("deployment_status") != "unpublished" or
+        not BUILD_ID.fullmatch(str(record.get("build_id", ""))) or
         not isinstance(record.get("artifacts"), list) or
         not 1 <= len(record["artifacts"]) <= 2
     ):
@@ -224,6 +228,16 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
         if (source_runtime.stat().st_size != runtime["archive_bytes"] or
             sha256_file(source_runtime) != runtime["archive_sha256"]):
             raise ValueError("Frozen Bees Python training runtime changed after packaging.")
+        # Do the full payload/source-identity verification locally before any
+        # remote activation, instead of finding an invalid runtime on machine N.
+        verified = verify_runtime(
+            source_runtime,
+            expected_sha256=runtime["archive_sha256"],
+            expected_version=runtime["runtime_version"],
+            expected_build_id=doc["build_id"],
+        )
+        if verified["source_commit"] != doc.get("source_commit"):
+            raise ValueError("Frozen Bees runtime and Unity source revisions differ.")
     # Validate every selected target and every required local archive before
     # changing any machine. A missing Windows ZIP must not leave Linux machines
     # on a newly activated, only partially distributed release.
