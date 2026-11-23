@@ -350,6 +350,11 @@ training runtime, and exact copied manifest from the activated release. You do n
 `EXPERIMENT_HUB_BEES_WINDOWS_WORKER` or
 `EXPERIMENT_HUB_BEES_WORKER_MANIFEST` values. Existing explicit-path
 installations remain supported when the install-root variable is absent.
+When the activated release includes `bees-runtime.zip`, a remote actor can
+use the enrolled Hub worker software's `Training/` directory and does not
+need a second Bees-Assets checkout; omit
+`EXPERIMENT_HUB_BEES_ASSETS_ROOT` in that case. A local Python 3.10
+installation with ML-Agents 1.1.0, PyTorch and TensorBoard is still required.
 Restart only **idle** agents after activation; active jobs continue
 using their original immutable player and learner.
 
