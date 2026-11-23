@@ -112,6 +112,66 @@ async function sha256(file) {
     return hash.digest('hex');
 }
 
+// The same manifest must never describe Linux and Windows players compiled
+// from two different dirty checkout states. Git HEAD identifies committed
+// sources; hash modified/untracked Assets plus the entire Unity package and
+// project-settings trees before and after both target builds.
+const PROTECTED=new Set(['results','.results','Demonstrations','Logs','TrainingHistory~']);
+const protectedPath=name=>name.split(/[\\/]/).some(part=>PROTECTED.has(part));
+async function sourceSnapshot() {
+    const names=new Set();
+    for(const args of [
+        ['diff','--name-only','-z','HEAD','--','.'],
+        ['ls-files','--others','--exclude-standard','-z','--','.'],
+    ]) {
+        const result=runSync('git',args,{
+            cwd:paths.assetsRoot,timeout:60000,maxBuffer:16*1024*1024,
+            check:false,
+        });
+        if(result.status!==0)
+            throw Error('Cannot capture the exact modified Unity source inventory.');
+        for(const name of String(result.stdout||'').split('\0')) {
+            if(name&&!protectedPath(name))names.add(name);
+        }
+    }
+    const hashes=[];
+    const add=async (root,prefix,name)=>{
+        const relative=name.split(path.sep).join('/');
+        if(protectedPath(relative))return;
+        const absolute=path.join(root,name);
+        const st=fs.existsSync(absolute)?fs.lstatSync(absolute):null;
+        if(st===null){hashes.push([prefix+relative,'deleted']);return;}
+        if(!st.isFile()||st.isSymbolicLink())
+            throw Error('Unity build source is not a regular file: '+prefix+relative);
+        hashes.push([prefix+relative,st.size,await sha256(absolute)]);
+    };
+    for(const name of [...names].sort())await add(paths.assetsRoot,'Assets/',name);
+    const projectRoot=paths.beesRoot;
+    for(const folder of ['Packages','ProjectSettings']) {
+        const base=path.join(projectRoot,folder);
+        if(!fs.existsSync(base)||!fs.statSync(base).isDirectory())
+            throw Error('Unity source snapshot is missing '+folder);
+        const files=[];
+        const pending=[''];
+        while(pending.length) {
+            const rel=pending.shift();
+            for(const entry of fs.readdirSync(path.join(base,rel),{withFileTypes:true})) {
+                const sub=path.join(rel,entry.name);
+                if(protectedPath(sub))continue;
+                if(entry.isSymbolicLink())
+                    throw Error('Unity source snapshots cannot follow package/project symlinks.');
+                if(entry.isDirectory())pending.push(sub);
+                else if(entry.isFile())files.push(sub);
+                else throw Error('Unity project source contains an unsupported filesystem entry.');
+            }
+        }
+        for(const name of files.sort())await add(base,folder+'/',name);
+    }
+    hashes.sort((a,b)=>a[0]<b[0]?-1:a[0]>b[0]?1:0);
+    return crypto.createHash('sha256')
+        .update(JSON.stringify(hashes)).digest('hex');
+}
+
 async function build(argv = process.argv.slice(2)) {
     const arg = options(argv);
     if (arg.help) {
@@ -130,6 +190,9 @@ async function build(argv = process.argv.slice(2)) {
         : [TARGETS[arg.platform]];
     const commit = getGitShortSha();
     const sourceDirty = dirtySource();
+    if(sourceDirty===null)
+        throw Error('Cannot establish the Unity source status before building workers.');
+    const sourceFingerprint=await sourceSnapshot();
     const packagesManifest = path.join(paths.beesRoot, 'Packages', 'manifest.json');
     const packagesSha = await sha256(packagesManifest);
     const timestamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
@@ -165,7 +228,8 @@ async function build(argv = process.argv.slice(2)) {
 
     if (getGitShortSha() !== commit ||
         (await sha256(packagesManifest)) !== packagesSha ||
-        dirtySource() !== sourceDirty) {
+        dirtySource() !== sourceDirty||
+        (await sourceSnapshot())!==sourceFingerprint) {
         throw Error('Unity source or project packages changed during the worker build; artifacts were not published.');
     }
     const manifest = {
@@ -176,6 +240,7 @@ async function build(argv = process.argv.slice(2)) {
         created_utc: new Date().toISOString(),
         source_commit: commit,
         source_dirty: sourceDirty,
+        source_snapshot_sha256: sourceFingerprint,
         unity_version: version,
         packages_manifest_sha256: packagesSha,
         artifacts,
