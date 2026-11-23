@@ -472,6 +472,11 @@ async function main(argv=process.argv.slice(2)) {
         hub.addProject({id:'tinybrains',name:'TinyBrains Ants-MAPOCA'});
         hub.addProject({id:'courier',name:'Courier Ants'});
     }
+    if(!hub.state.projects.some(item=>item.id==='bees_native'))
+        hub.addProject({
+            id:'bees_native',name:'Bees Unity (native training)',
+            description:'Independent, Hub-leased Unity MA-POCA jobs on enrolled Linux workers',
+        });
     const beesBridge=new BeesBridge(process.env.EXPERIMENT_HUB_BEES_BRIDGE_PORT||null);
     const runtime={...activeHubVersion(root),bees_bridge_configured:!!beesBridge.port,
         bees_bridge_port:beesBridge.port};
