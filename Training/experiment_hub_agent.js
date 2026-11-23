@@ -307,8 +307,12 @@ async function main() {
     const syncLogs=process.env.EXPERIMENT_HUB_SYNC_ARTIFACTS==='1';
     if(syncLogs&&!executor)
         throw Error('Log sync requires an opted-in native execution adapter.');
+    const once=process.argv.includes('--once');
     let nativePreflightReason=null;
-    if(executor?.projects.length) {
+    // One-shot qualification preserves its diagnostic semantics. Continuous
+    // agents first re-authenticate as connected but *not qualified*, so a
+    // slow local preflight cannot leave the machine falsely offline.
+    if(once&&executor?.projects.length) {
         try {
             await executor.supervisor.qualify();
         }catch(error) {
@@ -319,7 +323,7 @@ async function main() {
     }
     const advertisement={
         ...(executor?executor.advertisement():{}),
-        native_preflight_passed:Boolean(executor?.supervisor.qualifiedAt),
+        native_preflight_passed:Boolean(once&&executor?.supervisor.qualifiedAt),
         native_preflight_reason:nativePreflightReason,
         instance_id:crypto.randomUUID(),
     };
@@ -347,7 +351,6 @@ async function main() {
             .finally(()=>{if(artifactSync===work)artifactSync=null;});
         artifactSync=work;
     };
-    const once=process.argv.includes('--once');
     const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
         !['finished','failed','stopped'].includes(entry.state)));
     const poll=async(expedite=false)=>{
@@ -527,6 +530,25 @@ async function main() {
         });
     }
     await poll(!once);
+    // Qualification may involve slow OS/native probes. Keep the heartbeat
+    // timer alive throughout; the coordinator will deny native Starts until
+    // the fresh qualification is explicitly advertised.
+    if(!once&&executor?.projects.length&&!stopping) {
+        try {
+            await executor.supervisor.qualify();
+            nativePreflightReason=null;
+        }catch(error) {
+            nativePreflightReason=String(error.message||error).slice(0,180);
+            console.error('[experiment-hub-agent] Native resource preflight: '+
+                nativePreflightReason);
+        }
+        if(!stopping) {
+            advertisement.native_preflight_passed=
+                Boolean(executor.supervisor.qualifiedAt);
+            advertisement.native_preflight_reason=nativePreflightReason;
+            await poll(true);
+        }
+    }
     if(!once)collectArtifacts();
     if(once) {
         clearInterval(timer);
