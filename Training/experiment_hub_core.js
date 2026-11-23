@@ -6624,8 +6624,9 @@ class ExperimentHub {
             const budget=resourceRequest(actor.resources);
             if(actor.envs>budget.cpus||
                 (actor.device==='cuda'
-                    ?machine.agent_platform!=='linux'||
-                        budget.gpu_count!==1||budget.gpu_mode!=='exclusive'
+                    ?budget.gpu_count!==1||budget.gpu_mode!=='exclusive'||
+                        (machine.agent_platform==='win32'&&
+                            machine.execution_capabilities?.gpu_execution!=='cuda')
                     :budget.gpu_count!==0))
                 throw Error('Bees WAN actor environment count/GPU mode differs from its CPU and GPU resource lease.');
             const roleConfig={
