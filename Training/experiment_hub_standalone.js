@@ -535,15 +535,36 @@ async function main(argv=process.argv.slice(2)) {
                 !job.capacity_released_at&&
                 !['finished','failed','stopped','cancelled'].includes(job.status));
             const active=outstanding.length>0;
-            const override=active&&Object.values(
+            const operatorOverride=active&&Object.values(
                 hub.state.machine_update_policies||{}).includes('override');
+            // A verified Halifax user-systemd agent can be restarted while
+            // separately OS-owned remote training continues. Remote worker
+            // state and reservations survive coordinator generations; they
+            // reauthenticate and reconcile after reconnect. Do not require
+            // the user to stop an unrelated Exeter job for local updates.
+            // Fail closed if local service identity is uncertain, automation
+            // is armed, or ANY dispatched claim belongs to the local agent.
+            const agentActivity=active
+                ?await localServices.restartActivity(hub,'agent'):null;
+            const remotelyOwned=active&&agentActivity?.scope==='local'&&
+                agentActivity.machine_id&&agentActivity.count===0&&
+                outstanding.every(job=>job.assigned_machine_id&&
+                    job.assigned_machine_id!==agentActivity.machine_id);
+            const localSafe=remotelyOwned&&
+                (!hub.automation.enabled||hub.state.automation_restart);
+            const override=operatorOverride||localSafe;
             if(active&&!override) {
                 frontend.activationReason='Activation blocked by '+outstanding.length+
                     ' dispatched job record(s) requiring native-owner reconciliation: '+
                     outstanding.slice(0,3).map(job=>job.id.slice(0,8)+
                         ' ('+job.status+')').join(', ')+
                     (outstanding.length>3?', …':'')+
-                    '. A job may be unverified even when no trainer is running.';
+                    '. A job may be unverified even when no trainer is running.'+
+                    (agentActivity?.scope==='all'
+                        ?' Local agent identity was not verified.'
+                        :agentActivity?.count
+                            ?' At least one job belongs to the local agent.'
+                            :'');
                 return;
             }
             // An ordinary idle update still honors the separate CPU queue
