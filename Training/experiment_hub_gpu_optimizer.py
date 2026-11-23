@@ -113,6 +113,20 @@ def qualify_fused_adam(optimizer, *, min_speedup=0.08,
                         rtol=1e-5,atol=1e-7).all())
         if not checks or not bool(torch.stack(checks).all().item()):
             return result
+        # Ordinary Adam stores its step counters on CPU. Fused Adam's
+        # grouped GPU kernel requires those tensors on each parameter's
+        # device. Stage every replacement before changing *any* live
+        # optimizer state, preserving exact step counts and Adam moments.
+        relocated = []
+        for group in groups:
+            for parameter in group["params"]:
+                entry = optimizer.state.get(parameter)
+                if entry and "step" in entry:
+                    step = entry["step"]
+                    if step.device != parameter.device:
+                        relocated.append((entry,step.to(parameter.device)))
+        for entry,device_step in relocated:
+            entry["step"] = device_step
         # Group-level flags are the step dispatch contract. Adam's existing
         # moments/step counters stay intact, including restored checkpoints.
         for group in groups:
