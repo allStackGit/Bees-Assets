@@ -5618,11 +5618,9 @@ fn select_library_quick_battle_output(
     }
 }
 
-/// Archive the exact original one-Level physical scene and RunConfig for
-/// later replay, before the first tick. Unlike a newly serialized scene,
-/// byte-for-byte copies preserve the existing trace's configuration hash.
-/// External model/HiveMind/stage-asset games retain their original pinned
-/// paths and are never published as incomplete portable archives.
+/// Archive the exact one-Level RunConfig and its sibling physical files
+/// before the first tick. Byte copies preserve the trace identities.
+/// External model or HiveMind games keep their original pinned paths.
 #[cfg(feature = "client")]
 fn archive_quick_battle_replay_source(
     config:&Path,output:&Path,
@@ -5633,29 +5631,37 @@ fn archive_quick_battle_replay_source(
     }
     let run_bytes=fs::read(config)?;
     let run:RunConfig=serde_json::from_slice(&run_bytes)?;
-    if run.levels.len()!=1 || run.native_stage.is_none() ||
+    let has_legacy_stage = run.collision_matrix.is_some() && run.stage_palette.is_some();
+    let has_inline_stage = run.native_stage.is_some() &&
+        run.collision_matrix.is_none() && run.stage_palette.is_none();
+    if run.levels.len() != 1 ||
+        !(has_inline_stage || (has_legacy_stage && run.native_stage.is_none())) ||
         run.model_manifest.is_some() || !run.model_updates.is_empty() ||
-        run.hivemind.is_some() || run.collision_matrix.is_some() ||
-        run.stage_palette.is_some() || run.python.is_some() ||
-        run.policy_worker.is_some() || !run.recover_notifications.is_empty() ||
-        !run.recover_outcome_journals.is_empty()
+        run.hivemind.is_some() || run.python.is_some() || run.policy_worker.is_some() ||
+        !run.recover_notifications.is_empty() || !run.recover_outcome_journals.is_empty()
     {
         return Ok(());
     }
-    let scene_name=&run.levels[0].scene;
-    if scene_name.is_absolute() || scene_name.components().count()!=1 ||
-        scene_name.file_name().is_none_or(|name|name=="replay-source-run.json")
+    let parent = config.parent().ok_or_else(||
+        invalid("recorded game source has no physical asset directory"))?;
+    let mut assets = Vec::new();
+    for name in std::iter::once(&run.levels[0].scene)
+        .chain(run.collision_matrix.iter()).chain(run.stage_palette.iter())
     {
-        return Ok(());
+        // Copy only sibling paths that the unchanged RunConfig will resolve
+        // from its new folder. Never substitute a differently hashed config.
+        if name.components().count() != 1 || name.file_name().is_none_or(|name|
+            name == "replay-source-run.json")
+        {
+            return Ok(());
+        }
+        let source = parent.join(name);
+        let metadata = fs::symlink_metadata(&source)?;
+        if !metadata.file_type().is_file() || metadata.len() > 4 * 1024 * 1024 {
+            return Ok(());
+        }
+        assets.push((name, fs::read(source)?));
     }
-    let parent=config.parent().ok_or_else(||
-        invalid("recorded game source has no physical scene directory"))?;
-    let scene_path=parent.join(scene_name);
-    let scene_meta=fs::symlink_metadata(&scene_path)?;
-    if !scene_meta.file_type().is_file() || scene_meta.len()>4*1024*1024 {
-        return Ok(());
-    }
-    let scene_bytes=fs::read(&scene_path)?;
     let saved=output.parent().ok_or_else(||
         invalid("recorded game has no numbered archive"))?;
     let persist=|target:&Path,bytes:&[u8]|->Result<(),Box<dyn Error>> {
@@ -5675,10 +5681,11 @@ fn archive_quick_battle_replay_source(
             )).into()),
         }
     };
-    // Scene first, run last: the frozen RunConfig acts as the presence
-    // marker. An interrupted source write can be resumed from identical
-    // original bytes without replaying or modifying any prior World.
-    persist(&saved.join(scene_name),&scene_bytes)?;
+    // Physical inputs first, run last as the archive's presence marker.
+    // An interrupted write can resume from identical source bytes.
+    for (name, bytes) in assets {
+        persist(&saved.join(name), &bytes)?;
+    }
     persist(&saved.join("replay-source-run.json"),&run_bytes)?;
     Ok(())
 }
@@ -6269,6 +6276,7 @@ fn run_library_host(settings: &NativeSavedHost, save_root: &Path,
             let output = select_library_quick_battle_output(
                 save_root, &settings.game_id, &source, true,
             )?;
+            archive_quick_battle_replay_source(&source, &output)?;
             (source, output)
         };
         // The library's LAN host is a dedicated authoritative server.

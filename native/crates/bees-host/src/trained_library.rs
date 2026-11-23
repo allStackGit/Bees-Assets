@@ -148,13 +148,25 @@ fn focus_playable_level(run: &mut Value, selected: usize) -> io::Result<()> {
     Ok(())
 }
 
-fn archive_source_scene(source: &Path, target: &Path) -> io::Result<PathBuf> {
+fn archive_source_asset(source: &Path, target: &Path) -> io::Result<()> {
     let mut input = File::open(source)?;
     let mut output = fs::OpenOptions::new().write(true).create_new(true)
         .open(target)?;
     io::copy(&mut input, &mut output)?;
-    output.sync_all()?;
-    target.canonicalize()
+    output.sync_all()
+}
+
+fn archive_stage_assets(run: &mut Value, parent: &Path) -> io::Result<()> {
+    for (field, filename) in [
+        ("collision_matrix", "replay-stage-collision-matrix.json"),
+        ("stage_palette", "replay-stage-asteroid-palette.json"),
+    ] {
+        if let Some(source) = run[field].as_str() {
+            archive_source_asset(Path::new(source), &parent.join(filename))?;
+            run[field] = json!(filename);
+        }
+    }
+    Ok(())
 }
 
 impl TrainedGame {
@@ -406,6 +418,7 @@ impl TrainedGame {
         scene_out.write_all(b"\n")?;
         scene_out.sync_all()?;
         run["levels"][0]["scene"] = json!("replay-source-scene.json");
+        archive_stage_assets(&mut run, parent)?;
         let run_path = parent.join("replay-source-run.json");
         let mut run_out = fs::OpenOptions::new().create_new(true)
             .write(true).open(&run_path)?;
@@ -449,9 +462,10 @@ impl TrainedGame {
         for (index, level) in levels.iter_mut().enumerate() {
             let source = PathBuf::from(text_field(level, "scene")?);
             let filename = format!("replay-level-{index}.scene.json");
-            archive_source_scene(&source, &parent.join(&filename))?;
+            archive_source_asset(&source, &parent.join(&filename))?;
             level["scene"] = json!(filename);
         }
+        archive_stage_assets(&mut archived_run, parent)?;
         let archived = parent.join("replay-source-run.json");
         let mut output = fs::OpenOptions::new().write(true).create_new(true)
             .open(&archived)?;
