@@ -141,6 +141,10 @@ class RemoteBattleWindow:
             self.footer_clock, text="Ready to play", command=self.ready_lobby,
             state="disabled",
         )
+        self.claim_button = ttk.Button(
+            self.footer_clock, text="Claim forfeit", command=self.claim_forfeit,
+            state="disabled",
+        )
         if not console.spectator:
             self.footer_clock.pack(fill="x", pady=(3, 0))
             for button in (self.pause_button, self.step_button, self.speed_button):
@@ -394,6 +398,13 @@ class RemoteBattleWindow:
                 self.notice("Waiting for the native host to confirm readiness")
         except (OSError, ValueError) as error:
             self.notice(f"Could not join the native match: {error}")
+
+    def claim_forfeit(self):
+        try:
+            self.console.claim_forfeit(self.state)
+            self.notice("Authoritative opponent-forfeit claim submitted")
+        except (OSError, ValueError) as error:
+            self.notice(f"Could not claim opponent forfeit: {error}")
 
     def request_host_clock(self, command):
         if not self.console.time_controls_available:
@@ -729,6 +740,19 @@ class RemoteBattleWindow:
                 "Match paused for player reconnection — connected sides: "
                 f"{state.get('connected_commander_sides', [])}"
             )
+        claim_available = (
+            state is not None and state.get("forfeit_claim_available") is True and
+            self.console.alive and not self.console.spectator
+        )
+        if claim_available:
+            if not self.claim_button.winfo_manager():
+                self.claim_button.pack(side="left", padx=7)
+            self.claim_button.state(
+                ["disabled"] if self.console.forfeit_request_id is not None
+                else ["!disabled"]
+            )
+        elif self.claim_button.winfo_manager():
+            self.claim_button.pack_forget()
         can_host_clock = (
             not self.console.spectator and self.console.alive and
             self.console.time_controls_available and state is not None and
