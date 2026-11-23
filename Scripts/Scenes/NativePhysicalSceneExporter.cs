@@ -705,9 +705,13 @@ internal static class NativePhysicalSceneExporter
                 team_retainable_mined_tsv = hasBoundPolicy
                     ? RlOneVsOneEpisodeCoordinator.GetRetainableMinedTsv(
                         level, ship.Side) : 0,
-                self_weapons = hasBoundPolicy
-                    ? ExportNonTurretSelfWeapons(ship)
-                    : new List<SourceSelfWeapon>(),
+                // These are immutable observations of the original
+                // physical Weapon slots, not policy action state. Preserve
+                // them even on ordinary game hulls, so native policy
+                // enrollment can later select the SAME source units
+                // without inventing or resampling Bomb/Charge metadata.
+                // The Rust importer ignores them for unbound controllers.
+                self_weapons = ExportNonTurretSelfWeapons(ship),
                 communication = communication,
                 observed_weapons = ExportObservedWeapons(ship),
                 turrets = ExportTurrets(ship)
