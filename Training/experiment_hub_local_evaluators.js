@@ -10,6 +10,7 @@ const path=require('node:path');
 const {execFile}=require('node:child_process');
 const {promisify}=require('node:util');
 const {evaluatorDefinition,installEvaluatorUnits}=require('./experiment_hub_systemd');
+const custom=require('./experiment_hub_tinybrains_eval_library');
 
 const run=promisify(execFile);
 const SYSTEMCTL='/usr/bin/systemctl';
@@ -53,7 +54,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
-        ...historicalSuites(options),
+        ...historicalSuites(options),...custom.customSuites(options),
     };
     const stat=fs.lstatSync(marker);
     if(!stat.isFile()||stat.isSymbolicLink()||
@@ -80,7 +81,7 @@ function suiteNames(options) {
             ?{mini:MINI_SUITE}:{}),
         ...Object.fromEntries(Object.entries(SEASON_SUITES).filter(([,name])=>
             fs.existsSync(path.join(options.suites,name+'.json')))),
-        ...historicalSuites(options),
+        ...historicalSuites(options),...custom.customSuites(options),
     };
 }
 function scheduledIds(options) {
@@ -89,7 +90,8 @@ function scheduledIds(options) {
         'nano-season','micro-season',
         ...(fs.existsSync(path.join(options.suites,MINI_SUITE+'.json'))
             ?['mini-season']:[]),
-        ...Object.keys(historicalSuites(options))];
+        ...Object.keys(historicalSuites(options)),
+        ...Object.keys(custom.customSuites(options))];
 }
 const SAFE_PATH=/^\/[A-Za-z0-9._/@:+-]+$/;
 const MACHINE=/^[a-z][a-z0-9_-]{0,47}$/;
@@ -178,7 +180,7 @@ function suiteFiles(options) {
     return Object.fromEntries(Object.entries(suiteNames(options)).map(([id,name])=>{
         const file=presentFile(path.join(options.suites,name+'.json'));
         const stat=fs.statSync(file);
-        if(stat.size<1||stat.size>8192)
+        if(stat.size<1||stat.size>(id.startsWith('mix-')?32768:8192))
             throw Error('Frozen evaluator suite has an invalid size: '+name);
         const definition=JSON.parse(fs.readFileSync(file,'utf8'));
         if(definition.suite_id!==name)
@@ -362,9 +364,9 @@ function definitions(options,overrides={}) {
             // bounded to 180 seconds. The timer waits until the service
             // finishes; permit the full bounded sweep instead of truncating
             // it at the next six-hour cadence.
-            interval:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+            interval:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-'))
                 ?'21600':'180',
-            timeout:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-'))
+            timeout:(Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-'))
                 ?'57600':'7200',
             unitId:id,
         }),
@@ -406,7 +408,7 @@ async function properties(unit) {
         .map(line=>[line.slice(0,line.indexOf('=')),line.slice(line.indexOf('=')+1)]));
 }
 function expensiveEvaluation(id) {
-    return Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-');
+    return Object.hasOwn(SEASON_SUITES,id)||id.startsWith('history-')||id.startsWith('mix-');
 }
 function evaluationCapacity(hub,options) {
     const snapshot=hub.snapshot();
@@ -508,7 +510,8 @@ async function status(hub) {
         evaluation_capacity:evaluationCapacity(hub,options),
         mini_candidates:miniCandidates(hub,options).map(({id,updates})=>({id,updates})),
         historical_candidates:historicalCandidates(hub,options)
-            .map(({id,updates,batch_size})=>({id,updates,batch_size}))};
+            .map(({id,updates,batch_size})=>({id,updates,batch_size})),
+        custom_library:custom.library(options,hub)};
 }
 async function setup(hub) {
     const o=localOptions(hub);
@@ -539,7 +542,7 @@ async function setup(hub) {
         // Full-season sweeps are expensive. Install their units without
         // taking CPU from an ongoing learner unless the operator explicitly
         // starts each schedule or invokes Run now.
-        if(!Object.hasOwn(SEASON_SUITES,id)&&!id.startsWith('history-'))
+        if(!Object.hasOwn(SEASON_SUITES,id)&&!id.startsWith('history-')&&!id.startsWith('mix-'))
             await systemctl(['start',unitFiles(o,id).timer]);
     }
     return {message:'Fast TinyBrains evaluation timers started. Full-season 2/4/6-player suites installed; use Start or Run now for each expensive sweep.'};
@@ -903,9 +906,31 @@ async function action(hub,value) {
     if(value.action==='setup-mini'&&value.id===undefined&&
         (value.source_job_id===undefined||UUID.test(value.source_job_id)))
         return setupMini(hub,value.source_job_id);
+    if(value.action==='save-custom') {
+        const o=localOptions(hub);
+        const saved=custom.saveEvaluation(o,hub,value);
+        // Immutable suite files survive incomplete service installation.
+        await setup(hub);
+        return saved;
+    }
+    if(value.action==='delete-custom') {
+        const o=localOptions(hub);
+        const current=custom.read(o).templates.find(row=>row.id===value.id);
+        if(!current||current.revision!==value.expected_revision)
+            throw Error('Saved evaluation revision changed; reload before deletion.');
+        const unit=unitFiles(o,'mix-'+current.id+'-v'+current.revision);
+        if(fs.existsSync(unit.timerFile))
+            await systemctl(['stop',unit.timer]);
+        return custom.deleteEvaluation(o,value);
+    }
     if(value.action==='freeze-history'&&value.id===undefined&&
-        UUID.test(String(value.source_job_id||'')))
-        return setupMini(hub,value.source_job_id,{historical:true});
+        UUID.test(String(value.source_job_id||''))) {
+        const result=await setupMini(hub,value.source_job_id,{historical:true});
+        if(value.opponent_name)
+            return custom.nameOpponent(localOptions(hub),
+                value.source_job_id,value.opponent_name);
+        return result;
+    }
     const options=localOptions(hub);
     if(!scheduledIds(options).includes(value.id)||
         !['start','restart','stop','run','refresh'].includes(value.action)||
