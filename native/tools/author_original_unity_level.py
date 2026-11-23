@@ -128,8 +128,33 @@ def required_source(scene: dict) -> tuple[dict, list[float], list[float]]:
             if member not in ids or member in owned:
                 raise ValueError("Source physical ship is missing or repeated across squads")
             owned.add(member)
-    if owned != ids or scene["source_pool_item_count"] <= max(squad_ids):
-        raise ValueError("Source Level has unowned physical ships or a stale Stage pool allocator")
+    if owned != ids:
+        raise ValueError("Source Level has unowned physical ships")
+    # Unity Pool.ItemCount is incremented AFTER each allocated entity ID.
+    # It is the NEXT unused Stage ID, not the most recently allocated one.
+    # Validate across all physical categories and Squad lifetime IDs, not
+    # just living ships; otherwise later beacon/carrier allocations can
+    # collide with an imported MapObject or retired command identity.
+    source_frontier = scene["source_pool_item_count"]
+    source_ids = set()
+    for category, objects in (
+        ("ship", scene["ships"]),
+        ("squad", scene["squads"]),
+        ("obstacle", scene.get("obstacles", [])),
+        ("map object", scene.get("map_objects", [])),
+    ):
+        if not isinstance(objects, list):
+            raise ValueError(f"Source Level {category} collection must be an array")
+        field = "item_id" if category == "squad" else "entity_id"
+        for item in objects:
+            if not isinstance(item, dict) or not is_int(
+                item.get(field), 1, source_frontier - 1
+            ):
+                raise ValueError(f"Source Level {category} has an out-of-pool identity")
+            value = item[field]
+            if value in source_ids:
+                raise ValueError(f"Source Level {category} collides with another physical identity")
+            source_ids.add(value)
     return {"min": bounds_min, "max": bounds_max}, half_extents, scene["ships"]
 
 
@@ -318,7 +343,9 @@ def native_game_run(
         },
         "connection_checkpoint": "connection-checkpoint.json",
         "notifications": "events.jsonl",
-        "next_squad_item_id": scene["source_pool_item_count"] + 1,
+        # Pool.ItemCount++ returned the previous value at allocation.
+        # The captured counter is already the first unused ID.
+        "next_squad_item_id": scene["source_pool_item_count"],
         "broadphase_cell_size": cell,
         "decision_period": 1,
         "max_rounds": max_rounds,
