@@ -304,7 +304,9 @@ learner. This mode does not alter the legacy Bees Experiment Manager.
 different binary hashes. Build both from one source checkout using
 \`node Training/bees_build_workers.js --platform both\`, then transfer the
 Linux/Windows worker build directories and the exact, unedited
-\`worker-build-manifest.json\` to their respective machines. The manifest
+\`worker-build-manifest.json\` to their respective machines. Store the
+manifest **outside each player directory** so copying it cannot change that
+player's own content hash. The manifest
 records the complete player-tree hash of each platform and provides a shared
 \`wan_release_sha256\`. Each agent verifies its own installed player tree
 and the shared manifest at enrollment and Start. For Linux-only groups, the
@@ -384,7 +386,10 @@ ssh -N -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=yes \
 
 Actor traffic must remain on private loopback and the authenticated broker.
 The native learner now **requires all reserved actors to register before
-beginning training**; a missing tunnel cannot silently turn the experiment
+beginning training**. Hub Compare can chart `wan_active_actors`,
+`wan_active_environments`, `wan_remote_steps_per_second`,
+`wan_trajectory_queue_batches` and `wan_backpressure_last_minute`
+alongside total training SPS. A missing tunnel cannot silently turn the experiment
 into a local-only run. The agent's machine heartbeat by itself does not
 prove that a manually installed forwarding service is available.
 
