@@ -605,7 +605,7 @@ def verify_bundle(path, job, orders):
             if identities is None and isinstance(pci_addresses, list):
                 identities = [f"hip_pci:{pci}" for pci in pci_addresses
                               if isinstance(pci, str)]
-            pci_pattern = r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\\.[0-7]"
+            pci_pattern = r"[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]"
             uuid_pattern = r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
             def valid_identity(value):
                 if not isinstance(value, str):
