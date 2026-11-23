@@ -24,7 +24,7 @@ use bees_sim::geometry::Vec2;
 use bees_sim::ship_assets::ShipAssetCatalog;
 use serde_json::{json, Value};
 
-use super::{HiveMindConfig, RunConfig};
+use super::{HiveMindConfig, RunConfig, OriginalGameSources};
 
 const SOURCE_SCENE: &str = include_str!("../../../examples/native-two-player.scene.json");
 const SOURCE_RUN: &str = include_str!("../../../examples/native-two-player.run.json");
@@ -71,13 +71,6 @@ fn original_special_class(side: usize, kind: u8) -> bool {
 /// Reuse the physically authored class contracts present in the original
 /// campaign instead of replacing Wasp/Gunship with approximate ship stats.
 /// Every selected ship still enters the same CombatWorld and squad clones.
-#[derive(Clone, Default)]
-pub(super) struct OriginalGameSources {
-    pub(super) ships: [Vec<Value>; 2],
-    pub(super) mining_asteroid: Option<Value>,
-    pub(super) map_object: Option<Value>,
-}
-
 pub(super) fn original_campaign_hulls(
     catalog_path: &Path,
 ) -> Result<OriginalGameSources, Box<dyn Error>> {
