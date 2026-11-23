@@ -1745,8 +1745,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 for(const opponent of suite.opponents) {
                     const id=opponent?.id;
                     if(!['nano','micro','tinybrains_mini_batch128_v1'].includes(id)&&
-                        !/^tinybrains_mini_[a-f0-9]{20}$/.test(String(id||'')))
+                        !/^tinybrains_(?:mini|frozen)_[a-f0-9]{20}$/.test(String(id||'')))
                         throw Error('Mixed suite includes an unapproved opponent.');
+                    if(/^tinybrains_frozen_[a-f0-9]{20}$/.test(id)&&
+                        (!SHA.test(String(opponent.checkpoint_sha256||''))||
+                         id!=='tinybrains_frozen_'+opponent.checkpoint_sha256.slice(0,20)))
+                        throw Error('Custom opponent identity does not match its frozen checkpoint hash.');
                     const folder=['nano','micro'].includes(id)
                         ?path.join(project,'upstream/ants-starter/models',id+'-bc')
                         :path.join(root,'opponents',id);
