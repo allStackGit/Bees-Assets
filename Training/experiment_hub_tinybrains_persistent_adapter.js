@@ -1412,6 +1412,71 @@ function createTinyBrainsPersistentDockerAdapter({
         console.warn('[hub-tinybrains] Optional frozen opponent library is unavailable: '+
             String(error.message||error).slice(0,160));
     }
+    function approvedTrainingOpponents(ids,pins) {
+        if(ids===undefined) {
+            if(pins!==undefined)throw Error('Training opponent pins require selected opponent IDs.');
+            return null;
+        }
+        if(!Array.isArray(ids)||!Array.isArray(pins)||!ids.length||
+            ids.length>16||ids.length!==pins.length||
+            new Set(ids).size!==ids.length)
+            throw Error('Training opponent selection differs from its frozen model pins.');
+        const pool=[],fixed=[],sources=[];
+        for(let i=0;i<ids.length;i++) {
+            const id=ids[i],pin=pins[i];
+            const source=id==='frozen'||id==='current'
+                ?{id}
+                :trainingOpponentSources.get(id);
+            if(!source||!pin||pin.id!==id||
+                (source.model_sha256??null)!==(pin.model_sha256??null)||
+                (source.checkpoint_sha256??null)!==(pin.checkpoint_sha256??null))
+                throw Error('Training opponent library fingerprint differs from the saved Design: '+String(id));
+            if(source.checkpoint_sha256) {
+                if(!source.checkpoint||
+                    modelFileSha256(source.checkpoint)!==source.checkpoint_sha256)
+                    throw Error('Original frozen opponent checkpoint is missing or has changed.');
+                const name='fixed_'+source.checkpoint_sha256.slice(0,20);
+                if(pool.includes(name))
+                    throw Error('Two selected opponent labels resolve to the same checkpoint.');
+                pool.push(name);
+                fixed.push({id:name,sha256:source.checkpoint_sha256});
+                sources.push({file:source.checkpoint,id:name,sha256:source.checkpoint_sha256});
+            }else pool.push(id);
+        }
+        return {pool,fixed,sources};
+    }
+    function freezeTrainingOpponents(out,selected) {
+        if(!selected)return;
+        const doc={pool:selected.pool,fixed:selected.fixed};
+        const manifest=path.join(out,'hub-opponents.json');
+        const raw=JSON.stringify(doc)+'\\n';
+        if(fs.existsSync(manifest)) {
+            if(fs.readFileSync(manifest,'utf8')!==raw)
+                throw Error('Frozen training opponent manifest differs from this job.');
+        }else fs.writeFileSync(manifest,raw,{flag:'wx',mode:0o600});
+        const snapshots=path.join(out,'self-play/opponents');
+        fs.mkdirSync(snapshots,{recursive:true,mode:0o700});
+        for(const item of selected.sources) {
+            const target=path.join(snapshots,'hub-'+item.id.slice(6)+'.pt');
+            if(!fs.existsSync(target))
+                stageFile(item.file,target);
+            if(modelFileSha256(target)!==item.sha256)
+                throw Error('Frozen training opponent copy differs from selected checkpoint.');
+        }
+    }
+    function checkpointTrainingOpponents(out,ids,pins) {
+        if(ids===undefined)return;
+        const selection=approvedTrainingOpponents(ids,pins);
+        const raw=JSON.stringify({pool:selection.pool,fixed:selection.fixed})+'\\n';
+        const file=path.join(out,'hub-opponents.json');
+        if(fs.readFileSync(file,'utf8')!==raw)
+            throw Error('Training checkpoint opponent roster differs from its frozen Design.');
+        for(const fixed of selection.fixed) {
+            const model=path.join(out,'self-play/opponents','hub-'+fixed.id.slice(6)+'.pt');
+            if(modelFileSha256(model)!==fixed.sha256)
+                throw Error('Training checkpoint frozen opponent has changed.');
+        }
+    }
     const designFields=described(originalSpec,'tinybrains');
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
@@ -1885,10 +1950,12 @@ function createTinyBrainsPersistentDockerAdapter({
             const {profile,profile_sha256,updates,threads,device,remote_rollouts,
                 rollout_action_weights,rollout_endpoints,import_checkpoint,import_checkpoint_sha256,
                 design_overrides,design_source_sha256,training_stage,
-                training_map_ids}=parameters;
+                training_map_ids,training_opponent_ids,training_opponent_pins}=parameters;
             approvedDesign(design_overrides);
             if(training_stage!==undefined&&!stageSupport)
                 throw Error('Install the approved TinyBrains curriculum-capable runtime before selecting a map stage.');
+            const opponents=approvedTrainingOpponents(
+                training_opponent_ids,training_opponent_pins);
             const stage=approvedStage(training_stage,
                 design_overrides?.['environment.max_turns'],training_map_ids);
             verifyStageMaps(stage,training_map_ids!==undefined);
@@ -1901,7 +1968,8 @@ function createTinyBrainsPersistentDockerAdapter({
                     'threads','device','remote_rollouts','rollout_action_weights',
                     'import_checkpoint','import_checkpoint_sha256','rollout_endpoints',
                     'design_overrides','design_source_sha256','training_stage',
-                    'training_map_ids'].includes(k))||
+                    'training_map_ids','training_opponent_ids',
+                    'training_opponent_pins'].includes(k))||
                 (design_overrides===undefined
                     ?design_source_sha256!==undefined
                     :design_source_sha256!==designSourceSha256)||
@@ -2018,6 +2086,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 fs.writeFileSync(path.join(out,'hub-start-update.json'),
                     JSON.stringify({update:startingUpdate})+'\n',{flag:'wx',mode:0o600});
             }
+            freezeTrainingOpponents(out,opponents);
             // A machine-local choice, resolved once at launch from the frozen
             // CPU lease. Explicit per-job overrides keep their old meaning.
             const chosenThreads=threads??(cpuParallelism==='allocation'
@@ -2037,6 +2106,12 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
                 '--actions',String(item.profile.rollout_actions),
+                ...(opponents?['--hub-opponents-file',
+                    path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,'hub-opponents.json'),
+                    '--hub-opponents-sha256',
+                    crypto.createHash('sha256')
+                        .update(JSON.stringify({pool:opponents.pool,fixed:opponents.fixed})+'\\n')
+                        .digest('hex')]:[]),
                 ...(stage?['--hub-stage-file',
                     path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,
                         'hub-curriculum-stage.json'),
@@ -2078,6 +2153,9 @@ function createTinyBrainsPersistentDockerAdapter({
             checkpointStage(targetFor(context),
                 context.frozen_parameters?.training_stage??null,
                 context.frozen_parameters?.training_map_ids);
+            checkpointTrainingOpponents(targetFor(context),
+                context.frozen_parameters?.training_opponent_ids,
+                context.frozen_parameters?.training_opponent_pins);
             return true;
         },
         model_checkpoint_sha256(context){
@@ -2089,6 +2167,9 @@ function createTinyBrainsPersistentDockerAdapter({
                 context.frozen_parameters?.design_overrides,true);
             checkpointStage(out,context.frozen_parameters?.training_stage??null,
                 context.frozen_parameters?.training_map_ids);
+            checkpointTrainingOpponents(out,
+                context.frozen_parameters?.training_opponent_ids,
+                context.frozen_parameters?.training_opponent_pins);
             return modelFileSha256(checkpoint);
         },
         readProgress(context){
