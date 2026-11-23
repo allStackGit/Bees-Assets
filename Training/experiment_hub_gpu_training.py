@@ -892,6 +892,7 @@ class PersistentGpuForwardPool:
             max_workers=len(devices), thread_name_prefix="hub-gpu-forward")
         self._closed = False
         self.calls = 0
+        self.prepared_calls = 0
 
     @staticmethod
     def _forward(model, parts, device, stream, grad_enabled,
@@ -923,6 +924,60 @@ class PersistentGpuForwardPool:
         # exception boundary and protecting subsequent parameter updates.
         wait(futures)
         self.calls += 1
+        return [future.result() for future in futures]
+
+    @staticmethod
+    def _prepared_forward(model, factory, device, stream, producer_event,
+                          grad_enabled, autocast_enabled, autocast_dtype):
+        with (torch.set_grad_enabled(grad_enabled),
+              torch.cuda.device(device),
+              torch.cuda.stream(stream),
+              torch.autocast("cuda", enabled=autocast_enabled,
+                             dtype=autocast_dtype)):
+            # Per-device input factories may copy tensors produced on GPU 0
+            # during the current optimizer minibatch. The producer event
+            # establishes a proper cross-device dependency without waiting
+            # for GPU 2's transfer on the host or delaying GPU 1's forward.
+            if producer_event is not None:
+                stream.wait_event(producer_event)
+            return model(*factory())
+
+    def run_prepared(self, models, input_factories, devices=None):
+        """Prepare GPU inputs and launch their forwards concurrently.
+
+        Factories are side-effect-free, single-use callables that return
+        the positional inputs for one independent model. CPU records are
+        immutable and GPU source tensors remain caller-owned until this
+        call returns. Models and optimizers are NOT cloned or stepped.
+        No GPU-wide barrier occurs: a producer event is recorded on the
+        primary stream and waited on only by the secondary streams.
+        """
+        if self._closed or current_thread() is not self._owner:
+            raise RuntimeError("GPU forward preparation requires its live owner")
+        ordinals = self.devices if devices is None else tuple(devices)
+        if (not 2 <= len(ordinals) <= len(self.devices) or
+                ordinals != self.devices[:len(ordinals)] or
+                len(models)!=len(ordinals) or
+                len(input_factories)!=len(ordinals) or
+                any(not callable(factory) for factory in input_factories)):
+            raise ValueError("GPU prepared cohort must match its leased devices")
+        streams = [torch.cuda.current_stream(device) for device in ordinals]
+        producer = torch.cuda.Event()
+        producer.record(streams[0])
+        grad_enabled = torch.is_grad_enabled()
+        autocast_enabled = torch.is_autocast_enabled("cuda")
+        autocast_dtype = torch.get_autocast_dtype("cuda")
+        futures = [self._workers.submit(
+            self._prepared_forward, model, factory, device, stream,
+            producer if i else None,
+            grad_enabled, autocast_enabled, autocast_dtype)
+            for i,(model,factory,device,stream) in enumerate(zip(
+                models,input_factories,ordinals,streams))]
+        # Join Python dispatch, not GPU completion. Original tensors and
+        # autograd operations retain their device-stream dependencies.
+        wait(futures)
+        self.calls += 1
+        self.prepared_calls += 1
         return [future.result() for future in futures]
 
     def close(self):
