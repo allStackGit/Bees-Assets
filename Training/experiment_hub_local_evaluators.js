@@ -1239,4 +1239,45 @@ async function action(hub,value) {
         ?'schedule stopped; any current evaluation may finish.'
         :value.action==='restart'?'schedule restarted.':'schedule started.')};
 }
-module.exports={status,action,mapReport};
+// A frozen job's evaluation policy is the authorization to start its
+// already installed scheduler. Resolve suite IDs through the same immutable
+// local catalog used by the manual controls, never from a supplied unit name.
+async function ensureJobSchedules(hub,machine,suiteIds) {
+    const o=localOptions(hub);
+    if(o.machine!==machine)throw Error('Evaluator machine identity changed.');
+    const names=suiteNames(o);
+    const requested=[...new Set(suiteIds)];
+    const issues=[];
+    let defs=null,remaining=null;
+    for(const suite of requested) {
+        try {
+            const id=Object.keys(names).find(key=>names[key]===suite);
+            if(!id)throw Error('No installed approved scheduler matches this frozen suite.');
+            const unit=unitFiles(o,id);
+            const current=await properties(unit.timer);
+            if(current.LoadState==='loaded'&&current.ActiveState==='active')continue;
+            // Use exact definition validation, identical to an explicit Start
+            // action, before changing systemd state.
+            if(!defs)defs=definitions(o);
+            const approved=approvedUnit(o,id,defs[id]);
+            if(expensiveEvaluation(id)) {
+                if(!remaining)remaining=evaluationCapacity(hub,o);
+                if(!remaining.ready||remaining.cpus<2||remaining.ram_mb<4096)
+                    throw Error(remaining.reason||'Waiting for independent evaluator CPU/RAM capacity.');
+            }
+            // Recheck that the frozen policy still has work on this machine
+            // after the asynchronous service observation. Released final
+            // checkpoint targets are included by the existing worklist.
+            if(!hub.evaluationTargets('tinybrains',machine,suite).length)continue;
+            await systemctl(['start',approved.timer]);
+            if(expensiveEvaluation(id)) {
+                remaining.cpus-=2;
+                remaining.ram_mb-=4096;
+            }
+        }catch(error) {
+            issues.push(suite+': '+String(error.message||error).slice(0,200));
+        }
+    }
+    return issues;
+}
+module.exports={status,action,mapReport,ensureJobSchedules};
