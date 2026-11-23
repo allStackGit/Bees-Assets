@@ -204,6 +204,36 @@ def assemble(output: Path, source_paths: list[Path],
                 "run": str(path), "run_sha256": original_sha,
                 "run_id": run["run_id"], "levels": recorded_levels,
             })
+        # Native collection partitions by a prefix or global World
+        # interval. Consecutive replicas of ONE map would otherwise
+        # occupy that entire interval and starve every other source
+        # scenario when a machine is granted fewer CPU arenas than the
+        # complete authored run. Interleave physical Levels by replica
+        # and source before exposing their World IDs.
+        ordered = []
+        cursor = 0
+        for source_index, row in enumerate(source_receipts):
+            for record_index, record in enumerate(row["levels"]):
+                ordered.append((
+                    record["source_replica"],
+                    record_index // worlds_per_source,
+                    source_index,
+                    config["levels"][cursor],
+                    record,
+                ))
+                cursor += 1
+        if cursor != count:
+            raise ValueError("native physical Level receipts lost source ownership")
+        ordered.sort(key=lambda value: value[:3])
+        config["levels"] = []
+        for index, (_, _, _, level, record) in enumerate(ordered, start=1):
+            # These are host world identities, not original physical
+            # ship/squad IDs. One World remains one canonical CombatWorld.
+            level["world_id"] = index
+            level["level_id"] = index
+            record["suite_world_id"] = index
+            record["suite_level_id"] = index
+            config["levels"].append(level)
         identity = hashlib.sha256(json.dumps(
             source_receipts, sort_keys=True, separators=(",", ":"),
         ).encode("utf-8")).hexdigest()
