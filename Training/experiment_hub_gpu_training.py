@@ -952,7 +952,12 @@ class PinnedGpuStaging:
         self.pinned_allocations += 1
         return pinned
 
-    def copy_(self, destination, source):
+    def copy_(self, destination, source, *, min_async_bytes=None):
+        if (min_async_bytes is not None and
+                (type(min_async_bytes) is not int or min_async_bytes<1)):
+            raise ValueError("Invalid pinned upload threshold")
+        threshold=(self.min_async_bytes if min_async_bytes is None
+                   else min_async_bytes)
         if (self._closed or not isinstance(destination,torch.Tensor) or
                 destination.device!=self.device or
                 not isinstance(source,torch.Tensor) or
@@ -962,7 +967,7 @@ class PinnedGpuStaging:
             raise ValueError("GPU staging requires matching leased output and CPU input")
         nbytes = source.numel()*source.element_size()
         if (not source.is_contiguous() or
-                nbytes < self.min_async_bytes or
+                nbytes < threshold or
                 nbytes > self.max_pinned_bytes//2 or
                 not self._make_stream()):
             destination.copy_(source)
@@ -1015,7 +1020,7 @@ class PinnedGpuStaging:
         self.async_copies += 1
         return destination
 
-    def upload(self, source):
+    def upload(self, source, *, min_async_bytes=None):
         """Transfer a transient PPO microbatch through the same pinned pool.
 
         Output allocation remains on the caller's compute stream. When a
@@ -1038,7 +1043,7 @@ class PinnedGpuStaging:
         identity = destination.untyped_storage().data_ptr()
         self._known_banks.discard(identity)
         try:
-            self.copy_(destination,source)
+            self.copy_(destination,source,min_async_bytes=min_async_bytes)
         finally:
             self._known_banks.discard(identity)
         if self.async_copies != previous_async:
@@ -1049,6 +1054,20 @@ class PinnedGpuStaging:
             consumer.wait_event(event)
             destination.record_stream(consumer)
         return destination
+
+    def upload_indices(self, source):
+        """Avoid blocking compute on small, consolidated PPO index banks.
+
+        Index banks are immutable, often below the observation transfer
+        threshold, and consumed immediately by gathers. A 16 KiB floor
+        avoids a separate stream/event round trip for tiny scalar copies;
+        larger banks retain the same bounded pinned lifetime and fallback
+        behavior as observation uploads.
+        """
+        if (not isinstance(source,torch.Tensor) or source.ndim!=1 or
+                source.dtype not in (torch.int32,torch.int64)):
+            raise ValueError("GPU index upload requires a flat integer bank")
+        return self.upload(source,min_async_bytes=16*1024)
 
     def finish_update(self):
         """Finish one immutable GPU upload generation, retaining host buffers.
