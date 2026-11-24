@@ -84,6 +84,7 @@ function normalize(parameters,context,approved) {
             Boolean(context.gpu_pci_address||context.gpu_pci_addresses)))
         throw Error('Bees native device must match exactly one exclusive ROCm lease or a CPU-only allocation.');
     if(parameters.worker_sha256!==approved.worker_sha256||
+        parameters.worker_payload_sha256!==approved.worker_payload_sha256||
         parameters.trainer_sha256!==approved.trainer_sha256||
         parameters.runtime_version!==approved.runtime_version)
         throw Error('Bees native job source hashes differ from the locally approved Unity worker and MA-POCA configuration.');
@@ -303,12 +304,13 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         if(parent.job_id!==parentId||
             (parent.lineage_root_id||parent.job_id)!==context.artifact_lineage_root_id||
             parent.game_sha256!==approved.worker_sha256||
+            parent.game_payload_sha256!==approved.worker_payload_sha256||
             parent.trainer_sha256!==approved.trainer_sha256||
             parent.runtime_version!==approved.runtime_version||
             parent.seed!==frozen.seed||
             (frozen.wanActors>0||parent.schema_version===3)&&(
                 frozen.wanActors===0||parent.schema_version!==3||
-                parent.game_payload_sha256!==approved.worker_payload_sha256||
+                parent.wan_release_sha256!==approved.wan_release_sha256||
                 parent.wan_key_fingerprint!==approved.wan_key_fingerprint))
             throw Error('Bees parent Unity binary, learner runtime or seed differs from the approved continuation.');
         const previous=parent.hyperparameters||{};
@@ -336,6 +338,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         if(job.job_id!==context.job_id||suite!==context.suite_id||
             job.runtime_version!==context.frozen_parameters?.runtime_version||
             job.game_sha256!==context.frozen_parameters?.worker_sha256||
+            job.game_identity_version===2&&
+                job.game_payload_sha256!==context.frozen_parameters?.worker_payload_sha256||
             (job.evaluation_seed??job.seed)!==
                 (context.frozen_parameters?.evaluation_seed??context.frozen_parameters?.seed))
             throw Error('Bees evaluation suite differs from its frozen job.');
@@ -343,6 +347,9 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             suite_id:suite,profile:job.evaluation_profile,
             matches_per_case:job.evaluation_matches,seed:job.evaluation_seed??job.seed,
             game_sha256:job.game_sha256,
+            ...(job.game_identity_version===2?{
+                game_payload_sha256:job.game_payload_sha256,
+            }:{}),
             evaluator_sha256:job.evaluator_sha256,
             evaluator_core_sha256:job.evaluator_core_sha256,
             opponent_script_sha256:job.opponent_script_sha256,
@@ -360,8 +367,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             worker_sha256:approved.worker_sha256,
             runtime_version:approved.runtime_version,
             trainer_sha256:approved.trainer_sha256,
+            worker_payload_sha256:approved.worker_payload_sha256,
             ...(key?{wan_key_fingerprint:key.fingerprint,
-                worker_payload_sha256:approved.worker_payload_sha256,
                 wan_release_sha256:approved.wan_release_sha256}:{}),
             fields:DESIGN_FIELDS.map(field=>({...field})),
             metric_catalog:{base:[...METRICS]}}},
@@ -456,6 +463,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 if(proof.schema_version!==1||proof.run_id!==job.job_id||
                     proof.candidate_sha256!==chosen.sha||
                     proof.environment_executable_sha256!==job.game_sha256||
+                    (job.game_identity_version===2&&proof.build_id!==job.game_payload_sha256)||
                     proof.evaluation_code_sha256!==job.evaluator_core_sha256||
                     proof.opponent_script_sha256!==job.opponent_script_sha256||
                     proof.opponent_path!=='scripted:'+opponent||
@@ -611,6 +619,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 expected_parent_model_sha256:parent.model_sha256,
                 expected_parent_checkpoint_sha256:parent.checkpoint_sha256,
                 game_binary:worker,game_sha256:approved.worker_sha256,
+                game_payload_sha256:approved.worker_payload_sha256,
+                game_identity_version:2,
                 runtime_version:approved.runtime_version,
                 training_script:training,training_sha256:approved.training_sha256,
                 trainer_source:trainer,trainer_sha256:approved.trainer_sha256,
@@ -620,7 +630,6 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 environment_args:frozen.environmentArgs,
                 expected_gpu_pci:context.gpu_pci_address??null,
                 ...(wan?{wan_actors:frozen.wanActors,
-                    game_payload_sha256:approved.worker_payload_sha256,
                     wan_release_sha256:approved.wan_release_sha256,
                     wan_broker_port:port,
                     wan_key_file:key.path,

@@ -132,9 +132,9 @@ def inspect_job(filename: Path) -> dict:
         "expected_parent_model_sha256", "expected_parent_checkpoint_sha256",
     }
     wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
-                "wan_key_fingerprint", "game_payload_sha256",
-                "wan_release_sha256"}
-    optional_keys = {"checkpoint_interval", "evaluation_schedule", "evaluation_seed"}
+                "wan_key_fingerprint", "wan_release_sha256"}
+    optional_keys = {"checkpoint_interval", "evaluation_schedule", "evaluation_seed",
+                     "game_payload_sha256", "game_identity_version"}
     actual_keys = set(job) - optional_keys if isinstance(job, dict) else set()
     if not isinstance(job, dict) or (
         job.get("schema_version") == 1 and actual_keys != keys
@@ -182,13 +182,17 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Invalid Bees training budget.")
     if job["device"] not in ("cpu","cuda"):
         raise ValueError("Unknown Bees learner device.")
-    if job["schema_version"] == 3:
+    if "game_identity_version" in job and job["game_identity_version"] != 2:
+        raise ValueError("Unsupported Bees Unity content identity version.")
+    if (job["schema_version"] == 3 or job.get("game_identity_version") == 2
+        or "game_payload_sha256" in job):
         from bees_unity_worker_identity import unity_worker_tree_sha256
-        if not isinstance(job["game_payload_sha256"], str) or (
+        if not isinstance(job.get("game_payload_sha256"), str) or (
             len(job["game_payload_sha256"]) != 64 or
             any(ch not in "0123456789abcdef" for ch in job["game_payload_sha256"])
         ) or unity_worker_tree_sha256(Path(job["game_binary"])) != job["game_payload_sha256"]:
-            raise ValueError("Complete Bees Unity player content differs from its frozen WAN job.")
+            raise ValueError("Complete Bees Unity player content differs from its frozen job.")
+    if job["schema_version"] == 3:
         if not isinstance(job["wan_release_sha256"], str) or (
             len(job["wan_release_sha256"]) != 64 or
             any(c not in "0123456789abcdef" for c in job["wan_release_sha256"])
@@ -298,6 +302,8 @@ def stage_parent_checkpoint(root: Path, job: dict) -> bool:
     for field in ("game_sha256", "runtime_version", "trainer_sha256", "seed"):
         if previous.get(field) != job[field]:
             raise ValueError("Parent Bees runtime or trainer differs at continuation: " + field)
+    if previous.get("game_payload_sha256") != job.get("game_payload_sha256"):
+        raise ValueError("Exact Bees continuation requires the same complete Unity player content.")
     if (previous.get("schema_version") == 3 or job["schema_version"] == 3) and (
         previous.get("schema_version") != 3 or job["schema_version"] != 3 or
         previous.get("game_payload_sha256") != job.get("game_payload_sha256") or
@@ -664,10 +670,10 @@ def publish_policy_candidate(root: Path, job: dict) -> Path:
             "model_size_bytes": candidate_model.stat().st_size,
             "optimizer_checkpoint_sha256": checkpoint_digest,
             "unity_worker_sha256": job["game_sha256"],
-            **({
-                "unity_worker_payload_sha256": job["game_payload_sha256"],
-                "wan_release_sha256": job["wan_release_sha256"],
-            } if job["schema_version"] == 3 else {}),
+            **({"unity_worker_payload_sha256": job["game_payload_sha256"]}
+               if "game_payload_sha256" in job else {}),
+            **({"wan_release_sha256": job["wan_release_sha256"]}
+               if job["schema_version"] == 3 else {}),
             "trainer_sha256": job["trainer_sha256"],
             "runtime_version": job["runtime_version"],
             "seed": job["seed"],
@@ -746,6 +752,13 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
         handle.write("\n")
     return file
 
+def benchmark_build_id(job: dict) -> str:
+    # Older receipts used only the executable hash. New jobs identify the
+    # complete, verified staged player, including Unity data and assemblies.
+    return (job["game_payload_sha256"] if job.get("game_identity_version") == 2
+            else job["game_sha256"])
+
+
 def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
                       label: str, opponent: str, model_sha256: str) -> dict:
     if report_file.is_symlink() or not report_file.is_file() or (
@@ -761,6 +774,8 @@ def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
     if(index is None or report.get("schema_version")!=1 or
        report.get("candidate_sha256")!=model_sha256 or
        report.get("environment_executable_sha256")!=job["game_sha256"] or
+       (job.get("game_identity_version") == 2 and
+        report.get("build_id") != benchmark_build_id(job)) or
        report.get("opponent_path")!="scripted:"+opponent or
        report.get("evaluation_code_sha256")!=job["evaluator_core_sha256"] or
        report.get("opponent_script_sha256")!=job["opponent_script_sha256"] or
@@ -1002,7 +1017,7 @@ def main():
     try:
         player=StagedUnityPlayer(Path(job["game_binary"]),root)
         live_binary=player.start(
-            job["game_payload_sha256"] if native_wan else None
+            job.get("game_payload_sha256")
         )
         # A Stop can arrive while a large Unity player is being staged.
         # Never launch a new learner after its owner has withdrawn Start.
@@ -1117,7 +1132,7 @@ def main():
                             "--candidate-sha256",model["sha256"],
                             "--opponent","scripted:"+opponent,
                             "--env",str(live_binary),
-                            "--build-id",job["game_sha256"],
+                            "--build-id",benchmark_build_id(job),
                             "--run-id",job["job_id"],
                             "--output-root",str(evaluation_root),
                             "--base-port",str(port),

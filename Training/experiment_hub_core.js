@@ -44,8 +44,9 @@ function supportsJobRuntime(machine,job) {
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
             pinned?.runtime_version===job.frozen_parameters?.runtime_version&&
+            SHA256.test(String(job.frozen_parameters?.worker_payload_sha256||''))&&
+            pinned?.worker_payload_sha256===job.frozen_parameters.worker_payload_sha256&&
             ((job.frozen_parameters?.wan_actors||0)===0||
-                pinned?.worker_payload_sha256===job.frozen_parameters.worker_payload_sha256&&
                 pinned?.wan_release_sha256===job.frozen_parameters.wan_release_sha256)&&
             ((job.frozen_parameters?.wan_actors||0)===0||
                 pinned?.wan_key_fingerprint===job.frozen_parameters.wan_key_fingerprint);
@@ -553,6 +554,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         'wan_release_sha256']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
         !SHA256.test(String(parameters.worker_sha256||''))||
+        !SHA256.test(String(parameters.worker_payload_sha256||''))||
         !SHA256.test(String(parameters.trainer_sha256||''))||
         !SHA256.test(String(parameters.runtime_version||''))||
         !Number.isSafeInteger(parameters.max_steps)||
@@ -562,7 +564,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         !Number.isSafeInteger(parameters.seed)||
         parameters.seed<0||parameters.seed>2147483647||
         !['cpu','cuda'].includes(parameters.device))
-        throw Error('Bees native jobs require a pinned Unity worker and MA-POCA trainer, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device.');
+        throw Error('Bees native jobs require the complete Unity worker content and MA-POCA trainer pins, 1,000–100 billion steps, 1–64 environments, a seed and a CPU/ROCm device. Re-save an older Design using its current approved build.');
     const actors=parameters.wan_actors??0;
     if(!Number.isSafeInteger(actors)||actors<0||actors>8||
         actors>0&&(!SHA256.test(String(parameters.wan_key_fingerprint||''))||
@@ -1057,7 +1059,7 @@ function validateBeesContinuation(parent,frozen) {
             parent.frozen_parameters.wan_key_fingerprint!==frozen.wan_key_fingerprint)
             throw Error('WAN checkpoint continuation must keep identical Unity content and broker key across the original lineage.');
     }
-    for(const key of ['worker_sha256','trainer_sha256','runtime_version','seed']) {
+    for(const key of ['worker_sha256','worker_payload_sha256','trainer_sha256','runtime_version','seed']) {
         if(parent.frozen_parameters?.[key]!==frozen[key])
             throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
     }

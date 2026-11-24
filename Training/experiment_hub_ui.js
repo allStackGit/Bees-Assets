@@ -4375,8 +4375,9 @@ document.addEventListener('DOMContentLoaded', () => {
             worker_sha256:choice.entry.worker_sha256,
             trainer_sha256:choice.entry.trainer_sha256,
             ...(choice.entry.worker_payload_sha256
-                ?{worker_payload_sha256:choice.entry.worker_payload_sha256,
-                    wan_release_sha256:choice.entry.wan_release_sha256}:{}),
+                ?{worker_payload_sha256:choice.entry.worker_payload_sha256}:{}),
+            ...(choice.entry.wan_release_sha256
+                ?{wan_release_sha256:choice.entry.wan_release_sha256}:{}),
             runtime_version:choice.entry.runtime_version,
             ...(choice.entry.wan_key_fingerprint
                 ?{wan_key_fingerprint:choice.entry.wan_key_fingerprint}:{}),
@@ -4651,7 +4652,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const editor=$('hub-design-editor');
         const rebind=$('hub-design-bees-rebind');
         const currentBees=project==='bees_native'?designDefinition():null;
-        rebind.hidden=!(project==='bees_native'&&!chosen&&currentBees);
+        rebind.hidden=!(project==='bees_native'&&currentBees&&
+            (!chosen||!parameters.worker_payload_sha256));
         rebind.textContent=currentBees
             ?'Use current Unity build on '+currentBees.machine.id
             :'Use current Unity build';

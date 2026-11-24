@@ -147,6 +147,7 @@ def install_checkpoint_publisher():
 def evaluate_pending(job_file):
     from experiment_hub_bees_native_train import (
         inspect_job, evaluation_cases, benchmark_recipe, collect_benchmark,
+        benchmark_build_id,
     )
     from bees_experiment_benchmark import evaluate
     from bees_unity_worker_runtime import StagedUnityPlayer
@@ -181,7 +182,7 @@ def evaluate_pending(job_file):
             label, _, _, opponent = case
             recipe = benchmark_recipe(pending, job, case, index)
             report = evaluate(recipe, model, "scripted:" + opponent, binary,
-                              job["game_sha256"], job["job_id"], pending,
+                              benchmark_build_id(job), job["job_id"], pending,
                               candidate_sha256=sha, base_port=port)
             observed.append(collect_benchmark(pending, report, job, label, opponent, sha))
             print(f"[Bees Hub evaluation] Checkpoint {step}: {index+1} cases complete.",
