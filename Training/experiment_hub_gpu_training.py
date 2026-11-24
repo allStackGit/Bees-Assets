@@ -910,19 +910,33 @@ class PinnedGpuStaging:
             self._free_pinned.append(pinned)
             self._free_events.append(event)
 
-    def _checkout(self, source):
+    def _checkout(self, source, *, size_class=False):
         self._reap_completed()
-        for index,buffer in enumerate(self._free_pinned):
-            if buffer.dtype==source.dtype and buffer.numel()==source.numel():
-                self.pinned_reuses += 1
-                self._free_pinned.pop(index)
-                if buffer.shape!=source.shape:
-                    self.pinned_cross_shape_reuses += 1
-                # A view changes no pinned allocation or lease accounting.
-                # Most PPO map groups are contiguous but use different
-                # (batch,channels,height,width) shapes of equal byte size.
-                return buffer.view(source.shape)
-        nbytes = source.numel()*source.element_size()
+        wanted=source.numel()
+        element_bytes=source.element_size()
+        # Consecutive shuffled PPO windows rarely contain exactly the same
+        # number of ant/index rows. Reuse a power-of-two pinned capacity
+        # for these one-dimensional integer banks, not a fresh allocation
+        # for each different length. Other inputs keep exact-shape reuse.
+        capacity=(1<<(wanted-1).bit_length()
+                  if size_class and wanted else wanted)
+        if capacity*element_bytes>self.max_pinned_bytes//2:
+            capacity=wanted
+        def fits(buffer):
+            return (buffer.dtype==source.dtype and
+                    (buffer.numel()>=wanted if size_class
+                     else buffer.numel()==wanted))
+        def reuse(buffer):
+            self.pinned_reuses += 1
+            if buffer.shape!=source.shape:
+                self.pinned_cross_shape_reuses += 1
+            return buffer
+
+        eligible=[i for i,b in enumerate(self._free_pinned) if fits(b)]
+        if eligible:
+            index=min(eligible,key=lambda i:self._free_pinned[i].numel())
+            return reuse(self._free_pinned.pop(index))
+        nbytes=capacity*element_bytes
         while self._pinned_total_bytes+nbytes > self.max_pinned_bytes:
             if self._free_pinned:
                 old = self._free_pinned.pop()
@@ -930,22 +944,19 @@ class PinnedGpuStaging:
                 continue
             if not self._pending:
                 return None
-            # All submitted DMA reads use one stream. Waiting for the
-            # oldest outstanding transfer releases an exact reusable
-            # pinned bank without racing an in-flight host read.
+            # All DMA reads use one stream. A completed oldest allocation
+            # may be reused, including a different-sized index-bank view.
             pinned,event,size = self._pending.popleft()
             event.synchronize()
             self._pending_bytes -= size
             self._free_events.append(event)
-            if pinned.dtype==source.dtype and pinned.numel()==source.numel():
-                self.pinned_reuses += 1
-                if pinned.shape!=source.shape:
-                    self.pinned_cross_shape_reuses += 1
-                return pinned.view(source.shape)
+            if fits(pinned):
+                return reuse(pinned)
             self._pinned_total_bytes -= size
         try:
             pinned = torch.empty(
-                source.shape,dtype=source.dtype,device='cpu',pin_memory=True)
+                (capacity,) if size_class else source.shape,
+                dtype=source.dtype,device='cpu',pin_memory=True)
         except (RuntimeError,NotImplementedError,MemoryError):
             return None
         self._pinned_total_bytes += nbytes
@@ -973,15 +984,19 @@ class PinnedGpuStaging:
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
-        pinned = self._checkout(source)
-        if pinned is None:
+        backing = self._checkout(source,size_class=(
+            min_async_bytes is not None and source.ndim==1 and
+            source.dtype in (torch.int32,torch.int64)))
+        if backing is None:
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
+        pinned=backing.view(-1).narrow(
+            0,0,source.numel()).view(source.shape)
         try:
             pinned.copy_(source)
         except (RuntimeError,NotImplementedError):
-            self._free_pinned.append(pinned)
+            self._free_pinned.append(backing)
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
@@ -1010,12 +1025,15 @@ class PinnedGpuStaging:
             self._copy_stream.synchronize()
             if event is not None:
                 self._free_events.append(event)
-            self._free_pinned.append(pinned)
+            self._free_pinned.append(backing)
             destination.copy_(source)
             self.direct_bytes += nbytes
             return destination
-        self._pending.append((pinned,event,nbytes))
-        self._pending_bytes += nbytes
+        # Charge the complete backing allocation to the pool lease until
+        # its DMA finishes. Only the requested prefix is transferred.
+        backing_bytes=backing.numel()*backing.element_size()
+        self._pending.append((backing,event,backing_bytes))
+        self._pending_bytes += backing_bytes
         self.async_bytes += nbytes
         self.async_copies += 1
         return destination
