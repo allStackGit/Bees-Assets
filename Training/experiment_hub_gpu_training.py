@@ -1031,7 +1031,16 @@ class PinnedGpuStaging:
         destination = torch.empty(
             source.shape,dtype=source.dtype,device=self.device)
         previous_async = self.async_copies
-        self.copy_(destination,source)
+        # Transient uploads have no stable bank lifetime. The allocator
+        # may recycle a previously uploaded address after compute uses
+        # it, so a remembered pointer must never bypass the producer
+        # stream dependency for the new allocation.
+        identity = destination.untyped_storage().data_ptr()
+        self._known_banks.discard(identity)
+        try:
+            self.copy_(destination,source)
+        finally:
+            self._known_banks.discard(identity)
         if self.async_copies != previous_async:
             # copy_ recorded an event on the same leased transfer stream.
             # Do not wait on its completion on the host. The stream wait
