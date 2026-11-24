@@ -58,6 +58,12 @@ const TINYBRAINS_METRIC_CATALOG={
         'total_ppo_updates','engine_steps','engine_steps_per_second',
         'ant_decisions','ant_decisions_per_second',
         'group_states','group_states_per_second',
+        'gae_trajectory_count','gae_trajectory_turns_mean',
+        'gae_trajectory_turns_min','gae_trajectory_turns_p10',
+        'gae_trajectory_turns_p50','gae_trajectory_turns_p90',
+        'gae_trajectory_turns_max','gae_trajectory_terminal_fraction',
+        'rollout_shard_count','rollout_shard_decisions_mean',
+        'rollout_shard_decisions_max',
         'update_wall_time','elapsed_training_seconds',
         'collection_seconds','optimization_seconds','overlap_seconds',
         'policy_lag_mean','policy_lag_min','policy_lag_max','policy_version_count',
@@ -434,6 +440,14 @@ function recordedTinyBrainsMetrics(row,updateWall) {
         'collector_balance_trial_sps_gain','policy_lag_mean'])
         add(name,row[name],'scalar');
     add('gae_lambda',row.gae_lambda,'ratio');
+    for(const name of ['gae_trajectory_count','gae_trajectory_turns_min',
+        'gae_trajectory_turns_p10','gae_trajectory_turns_p50',
+        'gae_trajectory_turns_p90','gae_trajectory_turns_max',
+        'rollout_shard_count','rollout_shard_decisions_max'])
+        add(name,row[name],'count');
+    for(const name of ['gae_trajectory_turns_mean','rollout_shard_decisions_mean'])
+        add(name,row[name],'scalar');
+    add('gae_trajectory_terminal_fraction',row.gae_trajectory_terminal_fraction,'ratio');
     add('gpu_optimizer_fused_adam_probe_speedup',
         row.gpu_optimizer_fused_adam_probe_speedup,'ratio');
     // A bounded async PPO batch can contain several immutable behavior
@@ -1358,6 +1372,10 @@ function createTinyBrainsPersistentDockerAdapter({
     }):[];
     const designEnabled=installedLearningPath
         .includes('HUB_DESIGN_OVERRIDES_VERSION = 1');
+    const rolloutDesignSupport=fs.readFileSync(
+        path.join(project,'src/ants_mapoca/pipeline.py'),'utf8')
+        .includes("'training.rollout_shard_actions': 0");
+    const rolloutFields=new Set(['training.rollout_batch_actions','training.rollout_shard_actions']);
     const opponentSupport=installedLearningPath.includes('--hub-opponents-json')&&
         fs.readFileSync(path.join(project,'src/ants_mapoca/pipeline.py'),'utf8')
             .includes('hub_opponents=None')&&
@@ -1522,10 +1540,14 @@ function createTinyBrainsPersistentDockerAdapter({
         }
     }
     const designFields=described(originalSpec,'tinybrains');
+    if(!rolloutDesignSupport)
+        designFields.fields=designFields.fields.filter(field=>!rolloutFields.has(field.key));
     const designSourceSha256=crypto.createHash('sha256').update(frozen).digest('hex');
     function approvedDesign(overrides) {
         if(overrides!==undefined&&!designEnabled)
             throw Error('Install a trusted TinyBrains Design-capable runtime before running overrides.');
+        if(!rolloutDesignSupport&&Object.keys(overrides||{}).some(key=>rolloutFields.has(key)))
+            throw Error('Install the approved TinyBrains rollout-design runtime before selecting rollout action targets.');
         applyOverrides(originalSpec,'tinybrains',overrides);
     }
     function checkpointDesign(out,expected,strict=false) {
@@ -2040,6 +2062,13 @@ function createTinyBrainsPersistentDockerAdapter({
                 design_overrides?.['environment.max_turns'],training_map_ids);
             verifyStageMaps(stage,training_map_ids!==undefined);
             const item=approved.get(profile);
+            const batchActions=design_overrides?.['training.rollout_batch_actions']||
+                item?.profile.rollout_actions;
+            const shardActions=design_overrides?.['training.rollout_shard_actions']||0;
+            if(shardActions>batchActions)
+                throw Error('Async rollout shard decisions cannot exceed the PPO rollout decision target.');
+            if(shardActions&&remote_rollouts!==true)
+                throw Error('Async rollout shard decisions require remote rollout collection.');
             const endpoints=approvedEndpointSubset(remote?.endpoints,rollout_endpoints);
             if(remote_rollouts===true&&!frozenRemoteKeyIntact())
                 throw Error('Remote rollout key was rotated or changed after local adapter approval.');
@@ -2185,7 +2214,7 @@ function createTinyBrainsPersistentDockerAdapter({
                 '--ram-budget-mb',String(context.ram_quota_mb),
                 '--live-matches',String(item.profile.live_matches),
                 '--waves',String(item.profile.waves),
-                '--actions',String(item.profile.rollout_actions),
+                '--actions',String(batchActions),
                 ...(opponents?['--hub-opponents-file',
                     path.join(nativeWindows?out:JOBS_IN+'/'+context.job_id,'hub-opponents.json'),
                     '--hub-opponents-sha256',
