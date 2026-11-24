@@ -4338,8 +4338,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     return {entry,machine};
             }else if(project==='bees_native') {
                 const entry=machine.design_catalog?.bees_native;
-                if(entry&&(!parameters.worker_sha256||
-                    entry.worker_sha256===parameters.worker_sha256)&&
+                if(entry&&(!entry.activation_status||entry.activation_status==='active')&&
+                    (!parameters.worker_sha256||entry.worker_sha256===parameters.worker_sha256)&&
                     (!parameters.trainer_sha256||
                         entry.trainer_sha256===parameters.trainer_sha256)&&
                     (!parameters.worker_payload_sha256||
@@ -4649,6 +4649,12 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-design-editor').contains(document.activeElement)))return;
         renderedDesignSignature=signature;
         const editor=$('hub-design-editor');
+        const rebind=$('hub-design-bees-rebind');
+        const currentBees=project==='bees_native'?designDefinition():null;
+        rebind.hidden=!(project==='bees_native'&&!chosen&&currentBees);
+        rebind.textContent=currentBees
+            ?'Use current Unity build on '+currentBees.machine.id
+            :'Use current Unity build';
         $('hub-design-availability').textContent=project==='bees'||chosen?'':(
             ['courier','tinybrains','bees_native'].includes(project)
                 ?'Editable project defaults require a connected worker with a trusted, compatible Design-capable adapter. Existing drafts remain preserved; Advanced JSON can be viewed without a worker.'
@@ -4856,6 +4862,27 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-design-training').append(note);
         }
     }
+    $('hub-design-bees-rebind').addEventListener('click',()=>{
+        try {
+            if(project!=='bees_native')return;
+            const choice=designDefinition();
+            if(!choice)throw Error('No connected learner approves a current Unity worker.');
+            const parameters=JSON.parse($('hub-config-json').value);
+            const fields=['worker_sha256','trainer_sha256','runtime_version',
+                'worker_payload_sha256','wan_release_sha256','wan_key_fingerprint'];
+            if(parameters.wan_actors>0&&!choice.entry.wan_key_fingerprint)
+                throw Error('The current Unity learner does not approve WAN training.');
+            if(!confirm('Use the current Unity worker and trainer on '+choice.machine.id+
+                '? Training settings are preserved. This only changes the draft; save it before creating new runs. Checkpoints from an incompatible older build cannot resume.'))return;
+            for(const field of fields) {
+                if(choice.entry[field]===undefined)delete parameters[field];
+                else parameters[field]=choice.entry[field];
+            }
+            $('hub-config-json').value=JSON.stringify(parameters,null,2);
+            renderDesignEditor(true);
+            feedback('hub-config-message','Draft uses the current Unity build. Save as a new configuration or revise the existing draft.');
+        }catch(error){feedback('hub-config-message',error.message);}
+    });
     $('hub-design-reset').addEventListener('click',()=>{
         try {
             const parameters=JSON.parse($('hub-config-json').value);
@@ -7730,6 +7757,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'Authenticated local native preflight passed; verify limits for each launched job. GPU not isolated.'
                 :m.native_preflight_reason||
                     capability?.reason||'No authenticated native capability report.';
+            const unity=m.design_catalog?.bees_native||m.design_catalog?.bees_rollout;
+            if(unity?.activation_status) {
+                const status=document.createElement('div');
+                status.className='hub-secondary';
+                status.textContent='Unity '+unity.loaded_build_id+' · '+
+                    (unity.activation_status==='active'?'active':
+                        unity.activation_status==='pending'?'new build awaiting idle activation':
+                        'activation failed: '+(unity.activation_issue||'inspect agent'));
+                if(unity.selected_release_sha256)
+                    status.title='Selected release '+unity.selected_release_sha256;
+                control.append(status);
+            }
             cell(tr,m.last_seen_at?.replace('T',' ').slice(0,19)||'—');
             const actions=cell(tr,'');
             actions.append(button(m.agent_enrolled?'Rotate':'Enroll',async()=>{

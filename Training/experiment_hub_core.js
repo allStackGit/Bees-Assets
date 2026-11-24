@@ -25,6 +25,7 @@ function supportsJobRuntime(machine,job) {
         const approved=machine?.design_catalog?.bees_rollout;
         const frozen=job.frozen_parameters||{};
         return ['linux','win32'].includes(machine?.agent_platform)&&
+            (!approved?.activation_status||approved.activation_status==='active')&&
             machine?.installed_projects?.includes('bees_rollout')&&
             approved?.worker_sha256===frozen.worker_sha256&&
             approved?.worker_payload_sha256===frozen.worker_payload_sha256&&
@@ -36,6 +37,7 @@ function supportsJobRuntime(machine,job) {
     if(job?.project_id==='bees_native') {
         const pinned=machine?.design_catalog?.bees_native;
         return machine?.agent_platform==='linux'&&
+            (!pinned?.activation_status||pinned.activation_status==='active')&&
             machine?.installed_projects?.includes('bees_native')&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
@@ -1396,6 +1398,11 @@ function nativeStartReadiness(snapshot, job) {
             !['cpu','memory'].every(c=>
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
+    const activation=machine.design_catalog?.[job.project_id]?.activation_status;
+    if(['bees_native','bees_rollout'].includes(job.project_id)&&activation&&activation!=='active')
+        return block(activation==='pending'
+            ?'Selected Unity release is awaiting the machine’s idle activation boundary.'
+            :'Selected Unity release activation failed; inspect the Machines tab.');
     if(!supportsJobRuntime(machine,job))
         return block('The assigned native worker does not approve this job\'s frozen simulation/runtime identity.');
     if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))

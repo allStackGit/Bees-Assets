@@ -229,6 +229,22 @@ function validateCatalog(raw,installed=[],approved={}) {
             ...(raw.courier.training_schema_sha256
                 ?{training_schema_sha256:raw.courier.training_schema_sha256}:{})};
     }
+    const unityActivation=entry=>{
+        if(entry.activation_status===undefined)return {};
+        if(!['active','pending','failed'].includes(entry.activation_status)||
+            !/^[a-f0-9]{64}$/.test(String(entry.loaded_release_sha256||''))||
+            !/^[A-Za-z0-9._-]{1,160}$/.test(String(entry.loaded_build_id||''))||
+            (entry.selected_release_sha256!==undefined&&
+                !/^[a-f0-9]{64}$/.test(entry.selected_release_sha256))||
+            (entry.activation_issue!==undefined&&
+                (typeof entry.activation_issue!=='string'||entry.activation_issue.length>180||
+                    /[\r\n\x00]/.test(entry.activation_issue))))
+            throw Error('Invalid Bees Unity local activation observation.');
+        return {activation_status:entry.activation_status,
+            loaded_release_sha256:entry.loaded_release_sha256,loaded_build_id:entry.loaded_build_id,
+            ...(entry.selected_release_sha256?{selected_release_sha256:entry.selected_release_sha256}:{}),
+            ...(entry.activation_issue?{activation_issue:entry.activation_issue}:{})};
+    };
     if(raw.bees_native!==undefined) {
         const entry=raw.bees_native;
         if(!installed.includes('bees_native')||
@@ -245,7 +261,7 @@ function validateCatalog(raw,installed=[],approved={}) {
         if(entry.wan_key_fingerprint!==undefined&&
             !/^[0-9a-f]{64}$/.test(entry.wan_key_fingerprint))
             throw Error('Bees WAN private key identity must be a pinned SHA-256 fingerprint.');
-        result.bees_native={...validateFields(entry),
+        result.bees_native={...validateFields(entry),...unityActivation(entry),
             worker_sha256:entry.worker_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,
@@ -274,7 +290,7 @@ function validateCatalog(raw,installed=[],approved={}) {
             entry.wan_forward_managed!==true&&
                 entry.wan_target_machine_id!==undefined)
             throw Error('Bees WAN actor SSH forward must have one pinned learner machine.');
-        result.bees_rollout={...validateFields(entry),
+        result.bees_rollout={...validateFields(entry),...unityActivation(entry),
             worker_sha256:entry.worker_sha256,
             worker_payload_sha256:entry.worker_payload_sha256,
             wan_release_sha256:entry.wan_release_sha256,

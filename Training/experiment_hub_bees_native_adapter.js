@@ -773,6 +773,15 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         throw Error('Native Bees policy candidate is redirected or oversized.');
                     const published=JSON.parse(fs.readFileSync(candidateManifest,'utf8'));
                     const receipt=checkpoint(context);
+                    // Historical terminal jobs belong to their own frozen
+                    // job definition, not the newly activated worker release.
+                    const input=path.join(root,'job.json');
+                    if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
+                        throw Error('Bees frozen job definition is missing or redirected.');
+                    const original=JSON.parse(fs.readFileSync(input,'utf8'));
+                    if(original.job_id!==context.job_id||
+                        (original.lineage_root_id||original.job_id)!==context.artifact_lineage_root_id)
+                        throw Error('Bees candidate job identity changed.');
                     if(published.schema_version!==1||
                         published.kind!=='bees-unity-onnx-candidate'||
                         published.deployment_status!=='not-promoted'||
@@ -781,12 +790,12 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         published.model_file!=='model.onnx'||
                         published.model_sha256!==receipt.sha256||
                         published.optimizer_checkpoint_sha256!==receipt.checkpoint_sha256||
-                        published.unity_worker_sha256!==approved.worker_sha256||
+                        published.unity_worker_sha256!==original.game_sha256||
                         (published.unity_worker_payload_sha256!==undefined&&
-                            published.unity_worker_payload_sha256!==approved.worker_payload_sha256)||
+                            published.unity_worker_payload_sha256!==original.game_payload_sha256)||
                         (published.wan_release_sha256!==undefined&&
-                            published.wan_release_sha256!==approved.wan_release_sha256)||
-                        published.runtime_version!==approved.runtime_version)
+                            published.wan_release_sha256!==original.wan_release_sha256)||
+                        published.runtime_version!==original.runtime_version)
                         throw Error('Native Bees policy candidate identity differs from its training job.');
                     const model=path.join(candidateDir,'model.onnx');
                     if(fs.realpathSync(model)!==model||

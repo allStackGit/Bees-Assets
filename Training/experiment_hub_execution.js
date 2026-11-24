@@ -22,7 +22,7 @@ const dockerCapable=supervisor=>supervisor instanceof DockerSupervisor||
     supervisor?.dockerSupervisor instanceof DockerSupervisor;
 
 class LocalExecution {
-    constructor({machineId,supervisor,projects}) {
+    constructor({machineId,supervisor,projects,beesReleaseController=null}) {
         if(!ID.test(String(machineId||''))||!supervisor||
             !Array.isArray(projects)||
             projects.some(p=>!ID.test(p)||p==='bees')||
@@ -31,6 +31,8 @@ class LocalExecution {
         this.machineId=machineId;
         this.supervisor=supervisor;
         this.projects=projects.slice();
+        this.beesReleaseController=beesReleaseController;
+        this.beesReleaseStatus=beesReleaseController?.status()||null;
         this.evaluationSuites={};
         this.refreshEvaluationSuites();
     }
@@ -54,11 +56,35 @@ class LocalExecution {
         this.evaluationSuites=next;
         return structuredClone(next);
     }
+    refreshBeesRelease({allowActivation=true}={}) {
+        if(!this.beesReleaseController)return false;
+        const idle=allowActivation&&Boolean(this.supervisor.qualifiedAt)&&
+            !this.supervisor.snapshot().some(record=>
+                !['finished','stopped','failed'].includes(record.state)||record.quarantined_at)&&
+            !this.supervisor.gpuProbeCleanupPending?.();
+        const result=this.beesReleaseController.refresh(idle);
+        if(!result)return false;
+        this.beesReleaseStatus=result.status;
+        if(!result.replacements)return false;
+        const maps=[this.supervisor.adapters];
+        if(this.supervisor instanceof MixedLinuxSupervisor)
+            maps.push(this.supervisor.native.adapters);
+        for(const role of Object.keys(result.replacements)) {
+            if(!this.projects.includes(role)||maps.some(map=>!Object.hasOwn(map,role)))
+                throw Error('Bees release activation cannot change enrolled adapter ownership.');
+        }
+        for(const map of maps)Object.assign(map,result.replacements);
+        return true;
+    }
     advertisement(){
+        const catalog=Object.assign({},...this.projects.map(project=>
+            this.supervisor.adapters?.[project]?.design_catalog||{}));
+        for(const role of ['bees_native','bees_rollout'])
+            if(catalog[role]&&this.beesReleaseStatus)
+                catalog[role]={...catalog[role],...this.beesReleaseStatus};
         return {local_executor:true,installed_projects:this.projects.slice(),
             evaluation_suites:this.refreshEvaluationSuites(),
-            design_catalog:Object.assign({},...this.projects.map(project=>
-                this.supervisor.adapters?.[project]?.design_catalog||{})),
+            design_catalog:catalog,
             tinybrains_profiles:{...this.supervisor.adapters?.tinybrains?.tinybrains_profiles},
             tinybrains_cuda_profiles:[...(this.supervisor.adapters?.tinybrains?.tinybrains_cuda_profiles||[])],
             tinybrains_thread_overrides:[...(this.supervisor.adapters?.tinybrains?.tinybrains_thread_overrides||[])],
@@ -515,6 +541,7 @@ function fromEnvironment(env=process.env,options={}) {
     // This module path is chosen by the machine administrator in local
     // environment configuration, never by the Hub, a job or a heartbeat.
     let adapters=(options.loadAdapters||require)(adapterFile);
+    let beesReleaseController=adapters?.beesReleaseController||null;
     if(!adapters||typeof adapters!=='object'||Array.isArray(adapters))
         throw Error('The enrolled machine adapter module must export a project map.');
     // Add Bees Unity to a machine's existing trusted adapter map without
@@ -535,6 +562,7 @@ function fromEnvironment(env=process.env,options={}) {
             roles.some(role=>!Object.hasOwn(addon,role))||
             adapters&&roles.some(role=>Object.hasOwn(adapters,role)))
             throw Error('Bees Unity additive adapter roles conflict with the installed machine adapters.');
+        beesReleaseController=addon.beesReleaseController||null;
         adapters={...adapters,...addon};
     }
     if(!adapters||typeof adapters!=='object'||Array.isArray(adapters)||
@@ -600,6 +628,6 @@ function fromEnvironment(env=process.env,options={}) {
             :new WindowsSupervisor(local);
     }
     return new LocalExecution({machineId,supervisor,
-        projects:Object.keys(adapters)});
+        projects:Object.keys(adapters),beesReleaseController});
 }
 module.exports={LocalExecution,fromEnvironment};

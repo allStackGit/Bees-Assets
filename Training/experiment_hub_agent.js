@@ -352,7 +352,8 @@ async function main() {
         artifactSync=work;
     };
     const nativeOwned=()=>Boolean(executor?.supervisor.snapshot().some(entry=>
-        !['finished','failed','stopped'].includes(entry.state)));
+        !['finished','failed','stopped'].includes(entry.state)||entry.quarantined_at)||
+        executor?.supervisor.gpuProbeCleanupPending?.());
     const poll=async(expedite=false)=>{
         if(stopping)return;
         if(executor) {
@@ -383,6 +384,17 @@ async function main() {
         refreshEvaluatorObservation();
         active=true;
         try{
+            // Check locally selected Unity releases only between native
+            // directives. Flush terminal reports before replacing adapters.
+            // No unrelated service or supervisor is restarted.
+            if(executor&&!once) {
+                const changed=executor.refreshBeesRelease({
+                    allowActivation:!pendingReports.length&&!pendingGpuReports.length&&
+                        !pendingEvaluatorReports.length&&!pendingRemoteRestart,
+                });
+                Object.assign(advertisement,executor.advertisement());
+                if(changed)console.log('[experiment-hub-agent] Activated selected immutable Bees Unity release.');
+            }
             const restartAwaitingReceipt=pendingRemoteRestart;
             // Track the normal request separately from the native command.
             // SIGTERM must not send a sign-off while this request can still
@@ -449,7 +461,8 @@ async function main() {
                     // promptly. An empty receipt inspection can wait until the
                     // next regular heartbeat, which bounds follow-up traffic.
                     const releasedInspect=orders[0].action==='inspect'&&orders[0].lease.status==='released';
-                    if(expedite&&(releasedInspect?(result?.evaluation||result?.evaluations?.length):
+                    if(expedite&&(releasedInspect?(result?.evaluation||result?.evaluations?.length||
+                        result?.bees_checkpoint_evaluation||result?.evaluation_failures?.length):
                         gpuResult||orders[0].action==='start'||
                         orders[0].refresh_native_observation===true||
                         ['stop_requested','finished','failed','stopped'].includes(result?.state)))

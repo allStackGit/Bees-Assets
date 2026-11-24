@@ -79,10 +79,9 @@ function tinyBrainsCpuProfiles(project,python) {
     }
     return profiles;
 }
-// Activation is performed separately by the trusted local Unity installer.
-// An agent reads the selected immutable release only on process startup;
-// running jobs retain their original executable paths and source identities.
-function installedUnityRelease() {
+// Read a bounded selector on each idle poll, not the large Unity archives.
+// The full immutable release is verified only when the selected bytes change.
+function unitySelector() {
     const configured=process.env.EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT;
     if(!configured)return null;
     const SHA=/^[0-9a-f]{64}$/;
@@ -93,7 +92,14 @@ function installedUnityRelease() {
     const marker=path.join(root,'current.json');
     if(fs.realpathSync(marker)!==marker||fs.statSync(marker).size>4096)
         throw Error('Hub Unity release needs a locally activated current.json receipt.');
-    const active=JSON.parse(fs.readFileSync(marker,'utf8'));
+    const bytes=fs.readFileSync(marker);
+    return {root,active:JSON.parse(bytes.toString('utf8')),
+        token:crypto.createHash('sha256').update(bytes).digest('hex')};
+}
+function installedUnityRelease(selection=unitySelector()) {
+    if(!selection)return null;
+    const {root,active}=selection;
+    const SHA=/^[0-9a-f]{64}$/;
     const platform=process.platform==='win32'?'WindowsPlayer':'LinuxPlayer';
     const folder=process.platform==='win32'?'Windows':'Linux';
     const entry=process.platform==='win32'?'Bees RL Training.exe':'Bees RL Training.x86_64';
@@ -139,35 +145,13 @@ function installedUnityRelease() {
         throw Error('Selected Bees Python learner/actor archive differs from the activated Unity release.');
     return Object.freeze({
         workerExecutable:binary,releaseManifestPath:manifest,
+        releaseSha256:active.release_sha256,buildId:data.build_id,
         runtimeArchive,
         runtimeSha256:runtime?.archive_sha256??null,
         runtimeVersion:runtime?.runtime_version??null,
         runtimeBuildId:runtime?data.build_id:null,
     });
 }
-const approvedBeesRelease=
-    enabled('bees_native')||enabled('bees_rollout')?installedUnityRelease():null;
-const beesWorker=()=>{
-    if(approvedBeesRelease)return approvedBeesRelease.workerExecutable;
-    return required(process.platform==='win32'
-        ?'EXPERIMENT_HUB_BEES_WINDOWS_WORKER':'EXPERIMENT_HUB_BEES_LINUX_WORKER');
-};
-const beesManifest=()=>approvedBeesRelease?.releaseManifestPath||
-    process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null;
-// The enrolled Hub worker software release already carries Training/ and
-// its trusted runtime installer. A fully installed source cartridge therefore
-// needs no duplicate project checkout on remote simulation machines.
-const beesProject=()=>process.env.EXPERIMENT_HUB_BEES_ASSETS_ROOT?
-    required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'):
-    approvedBeesRelease?.runtimeArchive?path.dirname(__dirname):
-    required('EXPERIMENT_HUB_BEES_ASSETS_ROOT');
-const beesTrainingArchive=()=>approvedBeesRelease&&approvedBeesRelease.runtimeArchive?
-    {
-        runtimeArchive:approvedBeesRelease.runtimeArchive,
-        runtimeSha256:approvedBeesRelease.runtimeSha256,
-        runtimeVersion:approvedBeesRelease.runtimeVersion,
-        runtimeBuildId:approvedBeesRelease.runtimeBuildId,
-    }:{};
 
 const adapters={};
 if(enabled('tinybrains')) {
@@ -214,55 +198,129 @@ if(enabled('courier')) {
         enableCuda:false,enableRocm:false,
     });
 }
-if(enabled('bees_native')) {
-    adapters.bees_native=createBeesNativeAdapter({
-        projectRoot:beesProject(),
-        pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
-        workerExecutable:beesWorker(),
-        artifactRoot:artifactDirectory('bees_native'),
-        wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
-        wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
-        releaseManifestPath:beesManifest(),
-        ...beesTrainingArchive(),
-    });
+const beesRoles=projects.filter(role=>['bees_native','bees_rollout'].includes(role));
+function createBeesAdapters(approvedBeesRelease) {
+    const adapters={};
+    const beesWorker=()=>{
+        if(approvedBeesRelease)return approvedBeesRelease.workerExecutable;
+        return required(process.platform==='win32'
+            ?'EXPERIMENT_HUB_BEES_WINDOWS_WORKER':'EXPERIMENT_HUB_BEES_LINUX_WORKER');
+    };
+    const beesManifest=()=>approvedBeesRelease?.releaseManifestPath||
+        process.env.EXPERIMENT_HUB_BEES_WORKER_MANIFEST||null;
+    // The enrolled Hub worker software release already carries Training/ and
+    // its trusted runtime installer. A fully installed source cartridge therefore
+    // needs no duplicate project checkout on remote simulation machines.
+    const beesProject=()=>process.env.EXPERIMENT_HUB_BEES_ASSETS_ROOT?
+        required('EXPERIMENT_HUB_BEES_ASSETS_ROOT'):
+        approvedBeesRelease?.runtimeArchive?path.dirname(__dirname):
+        required('EXPERIMENT_HUB_BEES_ASSETS_ROOT');
+    const beesTrainingArchive=()=>approvedBeesRelease&&approvedBeesRelease.runtimeArchive?
+        {
+            runtimeArchive:approvedBeesRelease.runtimeArchive,
+            runtimeSha256:approvedBeesRelease.runtimeSha256,
+            runtimeVersion:approvedBeesRelease.runtimeVersion,
+            runtimeBuildId:approvedBeesRelease.runtimeBuildId,
+        }:{};
+
+    if(enabled('bees_native')) {
+        adapters.bees_native=createBeesNativeAdapter({
+            projectRoot:beesProject(),
+            pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
+            workerExecutable:beesWorker(),
+            artifactRoot:artifactDirectory('bees_native'),
+            wanKeyPath:process.env.EXPERIMENT_HUB_BEES_WAN_KEY||null,
+            wanBrokerPort:Number(process.env.EXPERIMENT_HUB_BEES_WAN_BROKER_PORT||55051),
+            releaseManifestPath:beesManifest(),
+            ...beesTrainingArchive(),
+        });
+    }
+    if(enabled('bees_rollout')) {
+        const sshKeys=['EXPERIMENT_HUB_BEES_WAN_SSH_USER',
+            'EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP',
+            'EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE',
+            'EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE',
+            'EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'];
+        const sshEnabled=sshKeys.some(key=>process.env[key]!==undefined);
+        if(sshEnabled&&sshKeys.some(key=>!process.env[key]))
+            throw Error('Bees managed WAN SSH forwarding needs all five locally enrolled learner and credential settings.');
+        const sshPortRaw=process.env.EXPERIMENT_HUB_BEES_WAN_SSH_PORT??'22';
+        const sshPort=Number(sshPortRaw);
+        if(!/^[1-9][0-9]*$/.test(sshPortRaw)||
+            !Number.isSafeInteger(sshPort)||sshPort>65535)
+            throw Error('Bees WAN SSH listener needs a locally approved port 1–65535.');
+        adapters.bees_rollout=createBeesRolloutAdapter({
+            projectRoot:beesProject(),
+            pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
+            workerExecutable:beesWorker(),
+            artifactRoot:artifactDirectory('bees_rollout'),
+            keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
+            forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
+            releaseManifestPath:beesManifest(),
+            ...beesTrainingArchive(),
+            enableWindowsCuda:process.platform==='win32'&&
+                process.env.EXPERIMENT_HUB_BEES_WAN_CUDA==='1',
+            sshForward:sshEnabled?{
+                learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
+                tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
+                sshUser:required('EXPERIMENT_HUB_BEES_WAN_SSH_USER'),
+                identityFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE'),
+                knownHostsFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE'),
+                sshPort,
+                ...(process.env.EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE?{
+                    sshExecutable:required('EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE'),
+                }:{}),
+                brokerPort:port('EXPERIMENT_HUB_BEES_WAN_BROKER_PORT',55051),
+            }:null,
+        });
+    }
+    return adapters;
 }
-if(enabled('bees_rollout')) {
-    const sshKeys=['EXPERIMENT_HUB_BEES_WAN_SSH_USER',
-        'EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP',
-        'EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE',
-        'EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE',
-        'EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'];
-    const sshEnabled=sshKeys.some(key=>process.env[key]!==undefined);
-    if(sshEnabled&&sshKeys.some(key=>!process.env[key]))
-        throw Error('Bees managed WAN SSH forwarding needs all five locally enrolled learner and credential settings.');
-    const sshPortRaw=process.env.EXPERIMENT_HUB_BEES_WAN_SSH_PORT??'22';
-    const sshPort=Number(sshPortRaw);
-    if(!/^[1-9][0-9]*$/.test(sshPortRaw)||
-        !Number.isSafeInteger(sshPort)||sshPort>65535)
-        throw Error('Bees WAN SSH listener needs a locally approved port 1–65535.');
-    adapters.bees_rollout=createBeesRolloutAdapter({
-        projectRoot:beesProject(),
-        pythonPath:required('EXPERIMENT_HUB_BEES_PYTHON'),
-        workerExecutable:beesWorker(),
-        artifactRoot:artifactDirectory('bees_rollout'),
-        keyPath:required('EXPERIMENT_HUB_BEES_WAN_KEY'),
-        forwardPort:Number(required('EXPERIMENT_HUB_BEES_WAN_FORWARD_PORT')),
-        releaseManifestPath:beesManifest(),
-        ...beesTrainingArchive(),
-        enableWindowsCuda:process.platform==='win32'&&
-            process.env.EXPERIMENT_HUB_BEES_WAN_CUDA==='1',
-        sshForward:sshEnabled?{
-            learnerMachineId:required('EXPERIMENT_HUB_BEES_WAN_LEARNER_MACHINE'),
-            tailnetIp:required('EXPERIMENT_HUB_BEES_WAN_SSH_TAILNET_IP'),
-            sshUser:required('EXPERIMENT_HUB_BEES_WAN_SSH_USER'),
-            identityFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_IDENTITY_FILE'),
-            knownHostsFile:required('EXPERIMENT_HUB_BEES_WAN_SSH_KNOWN_HOSTS_FILE'),
-            sshPort,
-            ...(process.env.EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE?{
-                sshExecutable:required('EXPERIMENT_HUB_BEES_WAN_SSH_EXECUTABLE'),
-            }:{}),
-            brokerPort:port('EXPERIMENT_HUB_BEES_WAN_BROKER_PORT',55051),
-        }:null,
-    });
+if(beesRoles.length) {
+    const initial=unitySelector();
+    let loaded=installedUnityRelease(initial),token=initial?.token??null;
+    Object.assign(adapters,createBeesAdapters(loaded));
+    // The supervisor owns all native records. The agent may call this
+    // controller only at an idle boundary, never from a Hub job payload.
+    // Construct every replacement role before mutating either adapter map.
+    let rejectedToken=null,rejectedReason=null,retryAt=0;
+    Object.defineProperty(adapters,'beesReleaseController',{enumerable:false,value:{
+        status() {
+            return loaded?{loaded_release_sha256:loaded.releaseSha256,
+                loaded_build_id:loaded.buildId,activation_status:'active'}:null;
+        },
+        refresh(canActivate) {
+            if(!process.env.EXPERIMENT_HUB_BEES_WORKER_INSTALL_ROOT)return null;
+            const base=this.status();
+            let selected;
+            try {selected=unitySelector();}
+            catch(error) {
+                return {status:{...base,activation_status:'failed',
+                    activation_issue:String(error.message||error).replace(/\s+/g,' ').slice(0,180)}};
+            }
+            if(selected.token===token)return {status:base};
+            const desired={...base,
+                selected_release_sha256:/^[a-f0-9]{64}$/.test(String(selected.active?.release_sha256||''))
+                    ?selected.active.release_sha256:null};
+            if(!desired.selected_release_sha256)delete desired.selected_release_sha256;
+            if(!canActivate)return {status:{...desired,activation_status:'pending'}};
+            if(rejectedToken===selected.token&&Date.now()<retryAt)
+                return {status:{...desired,activation_status:'failed',activation_issue:rejectedReason}};
+            try {
+                const release=installedUnityRelease(selected);
+                const replacements=createBeesAdapters(release);
+                if(unitySelector().token!==selected.token)
+                    return {status:{...desired,activation_status:'pending'}};
+                loaded=release;token=selected.token;
+                rejectedToken=null;rejectedReason=null;
+                return {status:this.status(),replacements};
+            }catch(error) {
+                rejectedToken=selected.token;
+                rejectedReason=String(error.message||error).replace(/\s+/g,' ').slice(0,180);
+                retryAt=Date.now()+60000;
+                return {status:{...desired,activation_status:'failed',activation_issue:rejectedReason}};
+            }
+        },
+    }});
 }
 module.exports=adapters;
