@@ -93,6 +93,14 @@ def describe(project, project_root=None):
             raise ValueError("TinyBrains evaluation maps are unavailable locally.")
         for file in maps:
             files["cartridge/maps/" + file.name] = file_digest(file)
+        # Season evaluation uses explicit local board JSON paths, not the
+        # cartridge's built-in map names. Include those actual map bytes in
+        # the runtime identity so changes cannot silently alter a sweep.
+        for directory, label in (
+                (runtime.ROOT / "maps/hive-minds/boards", "season/boards/"),
+                (runtime.ROOT / "upstream/ants/maps", "upstream/maps/")):
+            for file in sorted(directory.glob("*.json")):
+                files[label + file.name] = file_digest(file)
         for label, file in (("export-heldout", runtime.ROOT / "evidence/heldout.json"),
                             ("export-reference", cartridge / "reference/observations.json")):
             files[label] = file_digest(file) if file.exists() else None
