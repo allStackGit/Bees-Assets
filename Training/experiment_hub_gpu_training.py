@@ -1976,6 +1976,8 @@ class PersistentGpuForwardPool:
         # peer wait observes the event generation at wait submission.
         self._producer_event = torch.cuda.Event()
         self._producer_event_records = 0
+        self.deferred_source_waits = 0
+        self.source_waits_avoided = 0
         self._pending_device_timings = deque()
         self._device_work_rates = {device:deque(maxlen=8)
                                    for device in self.devices}
@@ -2164,7 +2166,7 @@ class PersistentGpuForwardPool:
     @staticmethod
     def _prepared_forward(model, factory, device, stream, producer_event,
                           grad_enabled, autocast_enabled, autocast_dtype,
-                          sampled_pixels):
+                          sampled_pixels, defer_source_wait=False):
         with (torch.set_grad_enabled(grad_enabled),
               torch.cuda.device(device),
               torch.cuda.stream(stream),
@@ -2175,14 +2177,21 @@ class PersistentGpuForwardPool:
             # during the current optimizer minibatch. The producer event
             # establishes a proper cross-device dependency without waiting
             # for GPU 2's transfer on the host or delaying GPU 1's forward.
-            if producer_event is not None:
+            source_waited = False
+            def wait_for_source():
+                nonlocal source_waited
+                if producer_event is None or source_waited:
+                    return
                 try:
                     stream.wait_event(producer_event)
                 except (RuntimeError,NotImplementedError):
                     # Some HIP configurations cannot enqueue cross-device
-                    # event waits. Block only this worker, not GPU 1's
+                    # event waits. Block only this worker, not GPU 0's
                     # independent forward, while preserving input ordering.
                     producer_event.synchronize()
+                source_waited=True
+            if not defer_source_wait:
+                wait_for_source()
             # Measure only this device's actual input-copy and forward
             # service time. Starting the timer BEFORE waiting on GPU 0
             # misattributes unrelated producer backlog to GPU 1/2, causing
@@ -2195,25 +2204,41 @@ class PersistentGpuForwardPool:
                     started.record(stream)
                 except (RuntimeError,NotImplementedError,AttributeError):
                     started = None
-            result = model(*factory())
+            # A factory explicitly accepting this contract calls the wait
+            # before accessing any source-GPU tensor. Fully resident inputs
+            # on the destination stream need no producer dependency.
+            args=(factory(wait_for_source=wait_for_source)
+                  if defer_source_wait else factory())
+            result = model(*args)
+            if defer_source_wait and source_waited and sampled_pixels>0:
+                # Deferred fallback can include primary backlog in this
+                # event interval. Keep raw timing but exclude capacity use.
+                sampled_pixels=-1
             if started is not None:
                 try:
                     finished = torch.cuda.Event(enable_timing=True)
                     finished.record(stream)
                 except (RuntimeError,NotImplementedError,AttributeError):
                     started = finished = None
-            return result, (started,finished,sampled_pixels)
+            return (result,(started,finished,sampled_pixels),
+                    bool(defer_source_wait and producer_event is not None
+                         and not source_waited))
+
+    supports_deferred_source_wait = True
 
     def run_prepared(self, models, input_factories, devices=None, *,
-                     pixel_work=None):
+                     pixel_work=None, defer_source_wait=False):
         """Prepare GPU inputs and launch their forwards concurrently.
 
         Factories are side-effect-free, single-use callables that return
         the positional inputs for one independent model. CPU records are
         immutable and GPU source tensors remain caller-owned until this
         call returns. Models and optimizers are NOT cloned or stepped.
-        No GPU-wide barrier occurs: a producer event is recorded on the
-        primary stream and waited on only by the secondary streams.
+        No GPU-wide barrier occurs. By default secondary streams wait for
+        the producer event. An explicit deferred-source factory can avoid
+        that wait if all its inputs and the already-published replica are
+        resident on its stream; it MUST call the supplied wait callback
+        before reading or transferring any source-device tensor.
         """
         if self._closed or current_thread() is not self._owner:
             raise RuntimeError("GPU forward preparation requires its live owner")
@@ -2259,7 +2284,8 @@ class PersistentGpuForwardPool:
                 self._prepared_forward,models[1],input_factories[1],
                 ordinals[1],streams[1],producer,
                 grad_enabled,autocast_enabled,autocast_dtype,
-                (pixel_work[1] if comparable else -1) if sample else 0)
+                (pixel_work[1] if comparable else -1) if sample else 0,
+                defer_source_wait)
             try:
                 primary = self._prepared_forward(
                     models[0],input_factories[0],ordinals[0],streams[0],
@@ -2277,7 +2303,8 @@ class PersistentGpuForwardPool:
                 self._prepared_forward, model, factory, device, stream,
                 producer if i else None,
                 grad_enabled, autocast_enabled, autocast_dtype,
-                (pixel_work[i] if comparable else -1) if sample else 0)
+                (pixel_work[i] if comparable else -1) if sample else 0,
+                bool(i and defer_source_wait))
                 for i,(model,factory,device,stream) in enumerate(zip(
                     models,input_factories,ordinals,streams))]
             # Join Python dispatch, not GPU completion. Original tensors
@@ -2286,14 +2313,17 @@ class PersistentGpuForwardPool:
             collected = [future.result() for future in futures]
         self.calls += 1
         self.prepared_calls += 1
+        if defer_source_wait:
+            self.deferred_source_waits+=len(ordinals)-1
+            self.source_waits_avoided+=sum(skipped for _,_,skipped in collected)
         if sample:
-            for device,(_,timing) in zip(ordinals,collected):
+            for device,(_,timing,_) in zip(ordinals,collected):
                 begin,end,pixels = timing
                 if begin is not None and end is not None:
                     self._pending_device_timings.append(
                         (device,begin,end,pixels))
         self._collect_device_timings()
-        return [output for output,_ in collected]
+        return [output for output,_,_ in collected]
 
     def close(self):
         if current_thread() is not self._owner:
