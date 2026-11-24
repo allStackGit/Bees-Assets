@@ -181,3 +181,81 @@ def qualify_bf16_training_forward(models, methods, *, device, channels,
             MemoryError,torch.OutOfMemoryError):
         return result
     return result
+
+
+def qualify_channels_last_training_forward(models, methods, *, device,
+                                           channels, bf16=False,
+                                           min_speedup=.08,
+                                           max_parameter_bytes=16*1048576):
+    """Admit NHWC physical input layout only after real model gradient/timing checks.
+
+    Logical tensor axes remain NCHW. Keep parameter and Adam storage untouched;
+    only the shared input is converted, and include that conversion in the
+    measured forward/backward cost. This exercises the actual model padding,
+    convolution, normalization and pooling, not an isolated conv benchmark.
+    """
+    result=dict(qualified=0,enabled=0,speedup=0.)
+    if (not isinstance(device,torch.device) or device.type!='cuda' or
+            not isinstance(models,(tuple,list)) or not models or
+            len(models)!=len(methods) or
+            not all(isinstance(m,nn.Module) for m in models) or
+            any(_stateful_training_layers(m) for m in models) or
+            type(channels) is not int or not 1<=channels<=256 or
+            type(bf16) is not bool or not 0<=min_speedup<=.5):
+        return result
+    parameters=tuple(p for m in models for p in m.parameters())
+    if (sum(p.numel()*p.element_size() for p in parameters)>max_parameter_bytes or
+            any(p.dtype!=torch.float32 or p.device.type!='cuda' for p in parameters)):
+        return result
+    try:
+        clones=tuple(deepcopy(m).to(device) for m in models)
+        reference_total=candidate_total=0.
+        for batch,height,width in ((8,32,32),(4,64,64),(2,47,59)):
+            # Real rollout observations are integral. Time the same input
+            # conversion that the PPO path performs on cached int8 boards.
+            amount=batch*channels*height*width
+            board=(torch.arange(amount,device=device,dtype=torch.int32)
+                   .remainder(9)-4).to(torch.int8).reshape(
+                       batch,channels,height,width)
+            def run(layout):
+                converted=board.float(memory_format=layout)
+                return _compute(clones,methods,converted,bf16)
+            ref,ref_grad=run(torch.contiguous_format)
+            trial,trial_grad=run(torch.channels_last)
+            # Keep the original precision mode in both arms. Differences
+            # from a layout-specific kernel must be small relative to the
+            # established precision, including every trainable parameter.
+            output_tol=.02 if bf16 else .0005
+            grad_tol=.05 if bf16 else .002
+            if (any(_relative_error(a,b)>output_tol for a,b in zip(ref,trial)) or
+                any((a is None)!=(b is None) or
+                    (a is not None and _relative_error(a,b)>grad_tol)
+                    for a,b in zip(ref_grad,trial_grad))):
+                return result
+            timings={torch.contiguous_format:[],torch.channels_last:[]}
+            for attempt in range(4):
+                order=(torch.contiguous_format,torch.channels_last)
+                if attempt%2:
+                    order=order[::-1]
+                for layout in order:
+                    torch.cuda.synchronize(device)
+                    started=perf_counter()
+                    for _ in range(2):
+                        run(layout)
+                    torch.cuda.synchronize(device)
+                    timings[layout].append((perf_counter()-started)/2)
+            eager=median(timings[torch.contiguous_format])
+            candidate=median(timings[torch.channels_last])
+            if not eager>0 or candidate>eager*1.08:
+                # Do not admit a globally faster layout that substantially
+                # penalizes an entire representative board-size class.
+                return result
+            reference_total+=eager
+            candidate_total+=candidate
+        result['qualified']=1
+        if candidate_total<reference_total*(1-min_speedup):
+            result.update(enabled=1,speedup=1-candidate_total/reference_total)
+    except (RuntimeError,ValueError,TypeError,NotImplementedError,
+            MemoryError,torch.OutOfMemoryError):
+        return result
+    return result
