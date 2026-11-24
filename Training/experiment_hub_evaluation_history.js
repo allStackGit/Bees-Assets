@@ -509,6 +509,15 @@ class EvaluationHistory {
             throw error;
         }
     }
+    matchesReceipt(job,receipt) {
+        const data=this.load(job.id,job.project_id);
+        const raw=data.seen.get(checkpointIdentity(receipt));
+        if(!raw)return false;
+        const archived=evaluationEvidence(JSON.parse(raw),{
+            suite_id:receipt.suite_id,suite_sha256:receipt.suite_sha256,
+        },job.dispatch_id);
+        return JSON.stringify(archived)===JSON.stringify(receipt);
+    }
     latestFailure(job,suiteId) {
         if(!UUID.test(String(job?.id))||
             !PROJECT.test(String(job?.project_id))||

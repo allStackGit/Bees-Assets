@@ -317,29 +317,29 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     }
 
     function evaluationJob(context) {
-    if(context?.project_id!=='bees_native'||
-        !UUID.test(String(context.dispatch_id||''))||
-        !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
-        throw Error('Invalid Bees evaluation dispatch or suite.');
-    const root=jobPath(artifacts,context);
-    const input=path.join(root,'job.json');
-    if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
-        throw Error('Frozen Bees evaluation job is unavailable.');
-    const job=JSON.parse(fs.readFileSync(input,'utf8'));
-    const suite=BEES_FINAL_SUITES[job.evaluation_profile];
-    if(job.job_id!==context.job_id||suite!==context.suite_id||
-        job.runtime_version!==context.frozen_parameters?.runtime_version||
-        job.game_sha256!==context.frozen_parameters?.worker_sha256)
-        throw Error('Bees evaluation suite differs from its frozen job.');
-    const definition=JSON.stringify({
-        suite_id:suite,profile:job.evaluation_profile,
-        matches_per_case:job.evaluation_matches,seed:job.seed,
-        game_sha256:job.game_sha256,
-        evaluator_sha256:job.evaluator_sha256,
-        evaluator_core_sha256:job.evaluator_core_sha256,
-        opponent_script_sha256:job.opponent_script_sha256,
-        runtime_sha256:job.runtime_version,
-    });
+        if(context?.project_id!=='bees_native'||
+            !UUID.test(String(context.dispatch_id||''))||
+            !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
+            throw Error('Invalid Bees evaluation dispatch or suite.');
+        const root=jobPath(artifacts,context);
+        const input=path.join(root,'job.json');
+        if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
+            throw Error('Frozen Bees evaluation job is unavailable.');
+        const job=JSON.parse(fs.readFileSync(input,'utf8'));
+        const suite=BEES_FINAL_SUITES[job.evaluation_profile];
+        if(job.job_id!==context.job_id||suite!==context.suite_id||
+            job.runtime_version!==context.frozen_parameters?.runtime_version||
+            job.game_sha256!==context.frozen_parameters?.worker_sha256)
+            throw Error('Bees evaluation suite differs from its frozen job.');
+        const definition=JSON.stringify({
+            suite_id:suite,profile:job.evaluation_profile,
+            matches_per_case:job.evaluation_matches,seed:job.seed,
+            game_sha256:job.game_sha256,
+            evaluator_sha256:job.evaluator_sha256,
+            evaluator_core_sha256:job.evaluator_core_sha256,
+            opponent_script_sha256:job.opponent_script_sha256,
+            runtime_sha256:job.runtime_version,
+        });
         return {root,job,suite,definition,
             suiteHash:crypto.createHash('sha256').update(definition,'utf8').digest('hex')};
     }
@@ -384,12 +384,19 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     entry.isDirectory()&&!entry.isSymbolicLink()&&SHA.test(entry.name))
                     .map(entry=>{
                         const dir=path.join(complete,entry.name);
-                        const file=path.join(dir,'summary.json');
-                        return {dir,sha:entry.name,time:fs.statSync(file).mtimeMs};
-                    }).sort((a,b)=>a.time-b.time||a.sha.localeCompare(b.sha));
+                        const file=path.join(dir,'snapshot.json');
+                        if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile()||
+                            fs.statSync(file).size>4096)
+                            throw Error('Invalid Bees completed snapshot identity.');
+                        const snapshot=JSON.parse(fs.readFileSync(file,'utf8'));
+                        if(snapshot.schema_version!==1||snapshot.model_sha256!==entry.name||
+                            !Number.isSafeInteger(snapshot.step)||snapshot.step<0)
+                            throw Error('Bees completed checkpoint identity changed.');
+                        return {dir,sha:entry.name,step:snapshot.step};
+                    }).sort((a,b)=>a.step-b.step||a.sha.localeCompare(b.sha));
             };
             let chosen,receipt;
-            if(context.state==='running') {
+            if(context.state==='running'||context.checkpoint_history===true) {
                 const rows=snapshots();
                 const prior=rows.findIndex(row=>row.sha===context.evaluation_archive_ack);
                 // The next result is not presented until the preceding
@@ -400,7 +407,8 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 receipt=checkpoint(context);
                 if(receipt.sha256!==context.final_checkpoint_sha256)return null;
                 chosen=snapshots().find(row=>row.sha===receipt.sha256)||
-                    {dir:path.join(root,'evaluations'),sha:receipt.sha256};
+                    {dir:path.join(root,'evaluations'),sha:receipt.sha256,
+                        step:receipt.steps_completed};
             }
             const summary=path.join(chosen.dir,'summary.json');
             if(!fs.existsSync(summary))return null;
@@ -421,6 +429,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         'p'+players+'_map'+size+'_'+opponent,opponent])));
             if(data.schema_version!==1||data.job_id!==job.job_id||
                 data.profile!==job.evaluation_profile||data.model_sha256!==chosen.sha||
+                (chosen.step!==undefined&&data.steps_completed!==chosen.step)||
                 data.case_count!==cases.length||!Array.isArray(data.cases)||
                 data.cases.length!==cases.length)
                 throw Error('Bees checkpoint evaluation inventory is inconsistent.');

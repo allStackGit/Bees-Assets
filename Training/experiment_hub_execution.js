@@ -320,7 +320,8 @@ class LocalExecution {
             (owned.artifact_lineage_root_id||owned.job_id)===
                 (job.artifact_lineage_root_id||job.id);
         if(ownsArtifacts&&(state==='running'&&lease.status==='acknowledged'||
-            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256)&&activeEvaluation(job)&&
+            lease.status==='released'&&['finished','stopped'].includes(state)&&job.final_checkpoint_sha256&&
+                (job.project_id!=='bees_native'||job.bees_final_evaluation_needed!==false))&&activeEvaluation(job)&&
             supportsEvaluation(this.evaluationSuites,job)) {
             const results=[],failures=[],issues=[];
             for(const rule of evaluationRules(activeEvaluation(job))) {
@@ -410,6 +411,7 @@ class LocalExecution {
         }
         if(job.project_id==='bees_native'&&ownsArtifacts&&lease.status==='acknowledged'&&
             ['finished','stopped'].includes(state)&&report.checkpoint_model_sha256&&
+            job.bees_final_evaluation_needed!==false&&
             activeEvaluation(job)&&supportsEvaluation(this.evaluationSuites,job)) {
             const rule=evaluationRules(activeEvaluation(job))[0];
             try {
@@ -426,6 +428,33 @@ class LocalExecution {
             }catch(error) {
                 report.evaluation_issue=(rule.suite_id+': '+String(error.message||error)).slice(0,160);
                 report.evaluation_issues=[report.evaluation_issue];
+            }
+        }
+        // Once PPO stops, continue draining immutable intermediate
+        // evaluations separately from the authoritative final model receipt.
+        if(job.project_id==='bees_native'&&ownsArtifacts&&
+            ['stop_requested','finished','stopped','failed'].includes(state)&&
+            activeEvaluation(job)&&supportsEvaluation(this.evaluationSuites,job)&&
+            typeof localAdapter?.readEvaluation==='function') {
+            const rule=evaluationRules(activeEvaluation(job))[0];
+            try {
+                const receipt=await localAdapter.readEvaluation(Object.freeze({
+                    job_id:job.id,project_id:job.project_id,
+                    artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                    continuation_of_job_id:job.continuation_of_job_id||null,
+                    frozen_parameters:job.frozen_parameters,state,checkpoint_history:true,
+                    evaluation_archive_ack:job.evaluation_archive_ack||null,
+                    dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+                }));
+                report.bees_evaluation_history_pending=Boolean(receipt);
+                if(receipt)
+                    report.bees_checkpoint_evaluation=evaluationEvidence(receipt,rule,order.dispatch_id);
+            }catch(error) {
+                report.bees_evaluation_history_pending=true;
+                const issue=(rule.suite_id+': checkpoint history: '+
+                    String(error.message||error)).slice(0,160);
+                report.evaluation_issues=[...new Set([...(report.evaluation_issues||[]),issue])].slice(-8);
+                report.evaluation_issue=report.evaluation_issues.at(-1);
             }
         }
         if(job.project_id==='bees_native'&&ownsArtifacts&&

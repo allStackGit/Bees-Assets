@@ -984,8 +984,9 @@ function finalEvaluationPending(snapshot,job,observedAt) {
     }
     return observedAt<deadline;
 }
-function beesFailureArchivePending(job,observedAt) {
-    if(job.project_id!=='bees_native'||job.bees_evaluation_failure_pending!==true||
+function beesEvaluationArchivePending(job,observedAt) {
+    if(job.project_id!=='bees_native'||
+        !(job.bees_evaluation_failure_pending===true||job.bees_evaluation_history_pending===true)||
         !['finished','stopped','failed'].includes(job.status))return false;
     const at=Date.parse(job.capacity_released_at||job.execution_updated_at);
     return Number.isFinite(at)&&observedAt<at+FINAL_EVALUATION_GRACE_MS;
@@ -1074,7 +1075,9 @@ function beesCandidateWanRequest(snapshot,parent,value) {
         value.reuse_wan_group!==true)
         throw Error('Confirm reuse of the winning Bees WAN learner and its original actor layout.');
     const bundle=parent.resource_bundle;
-    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===bundle?.id)
+    if(!bundle||!UUID.test(String(bundle.id||'')))
+        throw Error('Winning Bees WAN candidate has no frozen resource bundle.');
+    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===bundle.id)
         .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
     if(!bundle||bundle.index!==1||bundle.size!==parent.frozen_parameters.wan_actors+1||
         members.length!==bundle.size||members[0]?.id!==parent.id||
@@ -5295,16 +5298,16 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
-            // A terminal Bees owner may still owe durable failed-attempt
-            // records. Its independent archive cursor never grants capacity.
+            // Terminal evaluation archives are observational only. Keep
+            // draining both receipt streams without reopening native capacity.
             if(job.project_id==='bees_native'&&supportsEvaluation(evaluationSuites,job)&&
                 ['finished','stopped','failed'].includes(report.state)&&
-                (!['finished','stopped','failed'].includes(job.status)||job.status===report.state)&&
-                typeof report.bees_evaluation_failure_pending==='boolean'&&
-                job.bees_evaluation_failure_pending!==report.bees_evaluation_failure_pending) {
-                job.bees_evaluation_failure_pending=report.bees_evaluation_failure_pending;
-                changed=true;
-            }
+                (!['finished','stopped','failed'].includes(job.status)||job.status===report.state))
+                for(const field of ['bees_evaluation_failure_pending','bees_evaluation_history_pending'])
+                    if(typeof report[field]==='boolean'&&job[field]!==report[field]) {
+                        job[field]=report[field];
+                        changed=true;
+                    }
             // Released capacity stays released. A matching terminal Inspect
             // may add evidence for the exact final checkpoint only.
             if(lease.status==='released'&&lease.released_at&&
@@ -5691,7 +5694,7 @@ class ExperimentHub {
                 ['finished','stopped'].includes(j.status)||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
                 (finalEvaluationPending(snapshot,j,observedAt)||
-                    beesFailureArchivePending(j,observedAt))||
+                    beesEvaluationArchivePending(j,observedAt))||
              j.dispatch_id&&j.status==='finished'&&
                 Boolean(j.checkpoint_reinspection_requested_at)||
              j.status==='waiting_adapter'&&
@@ -5735,7 +5738,7 @@ class ExperimentHub {
                 l.machine_id===machineId&&(l.status==='acknowledged'||
                     (l.status==='released'&&l.released_at&&
                         (finalEvaluationPending(snapshot,job,observedAt)||
-                         beesFailureArchivePending(job,observedAt)||
+                         beesEvaluationArchivePending(job,observedAt)||
                          Boolean(job.checkpoint_reinspection_requested_at)))));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
@@ -5840,13 +5843,10 @@ class ExperimentHub {
                     }:{}),
                     ...(job.evaluation_monitor?{evaluation_monitor:copy(job.evaluation_monitor)}:{}),
                     ...(job.project_id==='bees_native'&&activeEvaluation(job)?{
-                        evaluation_archive_ack:(()=>{
-                            try {
-                                return this.evaluationHistory.latestAccepted(job,
-                                    evaluationRules(activeEvaluation(job))[0].suite_id)
-                                    ?.checkpoint_sha256||null;
-                            }catch {return null;}
-                        })(),
+                        evaluation_archive_ack:job.bees_evaluation_archive_cursor||null,
+                        ...(['finished','stopped','failed'].includes(job.status)?{
+                            bees_final_evaluation_needed:missingFinalEvaluationRules(job,true).length>0,
+                        }:{}),
                         evaluation_failure_archive_ack:(()=>{
                             try {
                                 return this.evaluationHistory.latestFailure(job,
@@ -6312,7 +6312,11 @@ class ExperimentHub {
         // Keep non-authoritative history independent from the native Stop
         // path. Only a separate, explicitly opted-in and immutable receipt
         // regression decision may request native Stop after fsynced archive.
-        const regressionStops=new Map();
+        const regressionStops=new Map(),beesArchiveCursors=new Map();
+        const advanceBeesArchive=(job,receipt)=>{
+            if(this.evaluationHistory.matchesReceipt(job,receipt))
+                beesArchiveCursors.set(job.id,receipt);
+        };
         for(const report of reports) {
             const job=this.state.jobs.find(j=>j.id===report.job_id);
             const policy=activeEvaluation(job);
@@ -6368,6 +6372,8 @@ class ExperimentHub {
                         ?.receipts?.[receipt.suite_id];
                     if(stored&&JSON.stringify(stored)===JSON.stringify(receipt)) {
                         this.evaluationHistory.record(job,receipt);
+                        if(job.project_id==='bees_native'&&report.state==='running'&&
+                            acceptedReports.has(job.id))advanceBeesArchive(job,receipt);
                         if(report.state==='running'&&job.status==='running'&&
                             acceptedReports.has(job.id)&&
                             job.evaluation_monitor?.regression_alert?.stop_on_regression===true) {
@@ -6377,14 +6383,46 @@ class ExperimentHub {
                     }
                 }catch { /* Reject unaccepted or unrelated receipt observations. */ }
             }
+            // A late intermediate checkpoint is never a final receipt or
+            // success/regression Stop trigger. Preserve its measurements in
+            // the durable chart history without replacing candidate cohorts.
+            if((beesTerminal||job.project_id==='bees_native'&&
+                job.status==='stop_requested'&&report.state==='stop_requested'&&
+                acceptedReports.has(job.id))&&report.bees_checkpoint_evaluation!=null) {
+                const rule=evaluationRules(policy)[0];
+                try {
+                    const receipt=evaluationEvidence(report.bees_checkpoint_evaluation,rule,job.dispatch_id);
+                    const pinned=job.evaluation_suite_definitions?.[rule.suite_id];
+                    if(!receipt.suite_sha256||!receipt.runtime_sha256||
+                        (pinned&&pinned!==receipt.suite_sha256)||
+                        conflictingEvaluationReceipt(job,receipt))
+                        throw Error('Conflicting or unpinned Bees intermediate checkpoint receipt.');
+                    this.evaluationHistory.record(job,receipt);
+                    advanceBeesArchive(job,receipt);
+                }catch(error) {
+                    this.evaluationHistory.recordIssue(job,
+                        (rule.suite_id+': checkpoint history: '+String(error.message||error)).slice(0,160),
+                        rule.suite_id);
+                }
+            }
         }
         // Commit an independent regression Stop as a normal durable native
         // lifecycle transition, never as a model-selection or continuation
         // authorization. The original authenticated owner remains responsible
         // for stopping, verifying checkpoints and releasing resources.
-        if(regressionStops.size) {
+        if(regressionStops.size||beesArchiveCursors.size) {
             const updated=copy(this.state);
             let stopChanged=false;
+            for(const [jobId,receipt] of beesArchiveCursors) {
+                const job=updated.jobs.find(item=>item.id===jobId);
+                if(!job||job.dispatch_id!==receipt.dispatch_id)continue;
+                if(job.bees_evaluation_archive_cursor!==receipt.checkpoint_sha256) {
+                    job.bees_evaluation_archive_cursor=receipt.checkpoint_sha256;
+                    job.evaluation_suite_definitions={...job.evaluation_suite_definitions,
+                        [receipt.suite_id]:receipt.suite_sha256};
+                    stopChanged=true;
+                }
+            }
             for(const [jobId,evidence] of regressionStops) {
                 const job=updated.jobs.find(j=>j.id===jobId);
                 const lease=updated.reservations.find(l=>
