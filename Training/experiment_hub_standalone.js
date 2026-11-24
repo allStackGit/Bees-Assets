@@ -324,15 +324,24 @@ function createAdminServer(hub,{frontend,dataRoot,releases=null,runtime=null,
             if(req.method==='GET'&&route==='/api/hub/software/version') {
                 const candidate=releases?.workerSourceCommit||
                     releases?.latest?.worker?.source_commit;
+                const checkout=releases?.localVersions?.worker||runtime?.source_commit;
+                const activated=releases?.bootVersions?.worker||runtime?.source_commit;
+                const sourcePending=SHA.test(candidate||'')&&
+                    (candidate!==checkout||candidate!==activated);
                 return json(res,200,{
                     ...runtime,
+                    checkout_commit:checkout||null,
+                    activated_source_commit:activated||null,
+                    latest_source_commit:candidate||null,
+                    pending_source_commit:sourcePending?candidate:null,
+                    release_error:releases?.failures?.worker||null,
                     frontend_revision:frontend.current.revision,
                     frontend_commit:frontend.current.source_commit,
                     pending_commit:frontend.backendPending&&SHA.test(candidate||'')&&
                         candidate!==runtime?.source_commit?candidate:null,
                     pending_agent_commit:frontend.agentPending&&SHA.test(candidate||'')&&
                         candidate!==runtime?.source_commit?candidate:null,
-                    activation_reason:frontend.backendPending||frontend.agentPending
+                    activation_reason:frontend.backendPending||frontend.agentPending||sourcePending
                         ?frontend.activationReason||'Safe activation is pending the next release check.'
                         :null,
                 });
@@ -529,8 +538,10 @@ async function main(argv=process.argv.slice(2)) {
             });
             if(signature!==observedReleaseSignature) {
                 observedReleaseSignature=signature;
+                const checkoutPending=candidate&&
+                    candidate!==releases.localVersions.worker;
                 if(frontend.backendPending||frontend.agentPending||
-                    simulationSourcePending) {
+                    checkoutPending||simulationSourcePending) {
                     frontend.activationReason='Waiting for a stable software release revision before activating.';
                     // Coalesce consecutive commits, without an unnecessary
                     // two-minute wait once the release has settled.
