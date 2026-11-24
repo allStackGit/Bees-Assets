@@ -4634,7 +4634,7 @@ document.addEventListener('DOMContentLoaded', () => {
             note.className='muted hub-design-note';
             note.textContent='Persistent colony PPO uses training.colony_batch_size (default 16) for optimizer minibatches. The legacy training.batch_size is ignored. Training checkpoint interval controls when immutable model versions are available to independent evaluation; changes apply to future jobs.';
             $('hub-design-training').append(note);
-            if(fields.some(field=>field.key==='training.rollout_shard_actions')) {
+            if(entry.fields.some(field=>field.key==='training.rollout_shard_actions')) {
                 const rolloutNote=document.createElement('p');
                 rolloutNote.className='muted hub-design-note';
                 rolloutNote.textContent='PPO rollout decision target sets the total experience collected for an update (0 uses the profile). Async rollout shard decisions controls the target per independent collector shard before GAE (0 uses the previous automatic rule: min(8192, PPO target / 4), rounded down). This target must not exceed the PPO rollout target and requires remote rollout collection. Actual trajectory turns depend on concurrent games, colony populations and episode endings; compare the GAE trajectory metrics.';
