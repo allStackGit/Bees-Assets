@@ -59,6 +59,8 @@ function fieldsFor(config,project) {
                 'training.ppo_clip':[0.000000001,0.999999],
                 'training.learning_rate':[0.000000001,1],
                 'training.colony_batch_size':[1,65536],
+                'training.rollout_batch_actions':[0,1048576],
+                'training.rollout_shard_actions':[0,1048576],
                 'training.checkpoint_every':[1,1000000],
                 'training.max_grad_norm':[0.000000001,1000000],
                 'training.entropy_coefficient':[0,1000000],
@@ -100,6 +102,16 @@ function fieldsFor(config,project) {
         fields.push({key:'training.colony_batch_size',section:'training',
             label:'Colony PPO minibatch size',type:'integer',
             default:16,min:1,max:65536});
+    if(project==='tinybrains'&&base.training?.algorithm==='colony_ppo') {
+        for(const [key,label] of [
+            ['rollout_batch_actions','PPO rollout decision target (0 = profile default)'],
+            ['rollout_shard_actions','Async rollout shard decisions (0 = automatic)'],
+        ]) {
+            if(base.training[key]===undefined)
+                fields.push({key:'training.'+key,section:'training',
+                    label,type:'integer',default:0,min:0,max:1048576});
+        }
+    }
     if(fields.length>128)throw Error('Installed configuration has too many editable fields.');
     return fields;
 }
@@ -130,7 +142,9 @@ function applyOverrides(config,project,overrides) {
             target=target[part];
         }
         if(!Object.hasOwn(target,segments.at(-1))&&
-            !(project==='tinybrains'&&key==='training.colony_batch_size'&&
+            !(project==='tinybrains'&&[
+                'training.colony_batch_size','training.rollout_batch_actions',
+                'training.rollout_shard_actions'].includes(key)&&
                 target.algorithm==='colony_ppo'))
             throw Error('Design parameter missing: '+key);
         target[segments.at(-1)]=value;
