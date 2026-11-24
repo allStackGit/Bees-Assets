@@ -8,6 +8,7 @@ const path=require('node:path');
 const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
+const {fields:environmentFields,validateEnvironmentArgs}=require('./experiment_hub_bees_environment');
 const {prepare: prepareImmutableRuntime}=require('./experiment_hub_bees_immutable_runtime');
 const {privateKey,brokerPort}=require('./experiment_hub_bees_wan_identity');
 const {unityWorkerTreeSha256,pinnedWorkerRelease}=
@@ -89,10 +90,7 @@ function normalize(parameters,context,approved) {
         parameters.trainer_sha256!==approved.trainer_sha256||
         parameters.runtime_version!==approved.runtime_version)
         throw Error('Bees native job source hashes differ from the locally approved Unity worker and MA-POCA configuration.');
-    const envArgs=parameters.environment_args??[];
-    if(!Array.isArray(envArgs)||envArgs.length>32||
-        envArgs.some(arg=>typeof arg!=='string'||arg.length>256||!FLAGS.test(arg)))
-        throw Error('Bees native environment arguments must be 32 or fewer approved --rl-* tokens.');
+    const envArgs=validateEnvironmentArgs(parameters.environment_args??[]);
     const overrides=parameters.hyperparameters??{};
     if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
         Object.keys(overrides).some(key=>!Object.hasOwn(HYPER,key)))
@@ -136,8 +134,9 @@ function normalize(parameters,context,approved) {
 }
 
 const DESIGN_FIELDS=Object.freeze([
+    ...environmentFields,
     {key:'max_steps',label:'Training environment steps',section:'training',
-        type:'integer',default:100000,min:1000,max:1000000000},
+        type:'integer',default:100000,min:1000,max:100000000000},
     {key:'checkpoint_interval',label:'Checkpoint interval (environment steps)',
         section:'training',type:'integer',default:2000000,min:1000,max:100000000000},
     {key:'envs',label:'Parallel Unity environments',section:'environment',

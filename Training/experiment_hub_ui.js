@@ -4469,6 +4469,20 @@ document.addEventListener('DOMContentLoaded', () => {
             ' Running jobs retain their frozen checkpoint interval.';
     }
     $('hub-evaluation-frequency').addEventListener('input',refreshEvaluationCheckpointNotice);
+    const beesFlag=field=>'--rl-'+field.key.slice('environment_args.'.length).replaceAll('_','-');
+    function beesArgumentValue(parameters,field) {
+        const args=parameters.environment_args||[];
+        const flag=beesFlag(field);
+        const find=name=>args.find(arg=>arg.split('=')[0].toLowerCase()===name);
+        const existing=find(flag)||
+            (['--rl-map-size-min','--rl-map-size-max'].includes(flag)?find('--rl-map-size'):null);
+        if(!existing)return field.default;
+        const index=existing.indexOf('=');
+        const raw=index<0?'true':existing.slice(index+1);
+        if(field.type==='boolean')return ['true','on','yes','1'].includes(raw.toLowerCase());
+        if(field.type==='enum')return raw.toLowerCase();
+        return Number(raw);
+    }
     function readDesignControls() {
         const controls=[...$('hub-design-editor').querySelectorAll('[data-design-key]')];
         const runControls=[...$('hub-design-run').querySelectorAll('[data-design-run]')];
@@ -4496,6 +4510,7 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters.updates??=1000;
         }
         const overrides={...parameters.design_overrides};
+        const beesEnv=new Map();
         for(const field of choice.entry.fields) {
             const input=controls.find(el=>el.dataset.designKey===field.key);
             if(!input)throw Error('Reload Design: a project parameter field is missing.');
@@ -4513,7 +4528,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw Error(field.label+' must be within the approved range.');
             }
             if(project==='bees_native') {
-                if(field.key.startsWith('hyperparameters.')) {
+                if(field.key.startsWith('environment_args.')) {
+                    beesEnv.set(beesFlag(field),{value,field});
+                }else if(field.key.startsWith('hyperparameters.')) {
                     const name=field.key.slice('hyperparameters.'.length);
                     if(!parameters.hyperparameters)parameters.hyperparameters={};
                     if(value===field.default)delete parameters.hyperparameters[name];
@@ -4521,6 +4538,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 }else parameters[field.key]=value;
             }else if(value===field.default)delete overrides[field.key];
             else overrides[field.key]=value;
+        }
+        if(project==='bees_native'&&beesEnv.size) {
+            const previous=parameters.environment_args||[];
+            const fixed='--rl-map-size',lo='--rl-map-size-min',hi='--rl-map-size-max';
+            const existing=new Set(previous.map(arg=>arg.split('=')[0].toLowerCase()));
+            const args=previous.filter(arg=>{
+                const flag=arg.split('=')[0].toLowerCase();
+                return !beesEnv.has(flag)&&flag!==fixed;
+            });
+            for(const [flag,{value,field}] of beesEnv) {
+                if(flag===lo||flag===hi)continue;
+                if(value!==field.default||existing.has(flag))args.push(flag+'='+String(value));
+            }
+            const min=beesEnv.get(lo)?.value,max=beesEnv.get(hi)?.value;
+            if(min!==undefined&&max!==undefined) {
+                if(min>max)throw Error('Minimum map size cannot exceed maximum map size.');
+                if(min!==max)args.push(lo+'='+min,hi+'='+max);
+                else if(min!==30||existing.has(fixed)||existing.has(lo)||existing.has(hi))
+                    args.push(fixed+'='+min);
+            }
+            for(const input of $('hub-design-editor').querySelectorAll('[data-bees-roster]')) {
+                const flag=input.dataset.beesRoster;
+                const index=args.findIndex(arg=>arg.split('=')[0].toLowerCase()===flag);
+                if(index>=0)args.splice(index,1);
+                const roster=input.value.trim();
+                if(roster)args.push(flag+'='+roster);
+            }
+            parameters.environment_args=args;
         }
         if(project==='courier') {
             const effective=Object.fromEntries(choice.entry.fields.map(field=>[
@@ -4789,6 +4834,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const designFieldValue=field=>{
             if(project!=='bees_native')
                 return parameters.design_overrides?.[field.key]??field.default;
+            if(field.key.startsWith('environment_args.'))return beesArgumentValue(parameters,field);
             let value=parameters;
             for(const segment of field.key.split('.')) {
                 if(value==null||!Object.hasOwn(value,segment))
@@ -4845,6 +4891,28 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             $(field.section==='training'?'hub-design-training':
                 'hub-design-environment').append(label);
+        }
+        if(project==='bees_native'&&entry.fields.some(f=>f.key.startsWith('environment_args.'))) {
+            for(const [flag,title,placeholder] of [
+                ['--rl-bee-ship-types','Bee ship roster','Default: Wasp (fixed) or built-in sampled pool'],
+                ['--rl-human-ship-types','Human ship roster','Default: Gunship (fixed) or built-in sampled pool'],
+            ]) {
+                const label=document.createElement('label');
+                label.textContent=title;
+                const input=document.createElement('input');
+                input.type='text';input.maxLength=192;input.placeholder=placeholder;
+                input.dataset.beesRoster=flag;
+                const arg=(parameters.environment_args||[]).find(value=>value.split('=')[0].toLowerCase()===flag);
+                input.value=arg?.slice(arg.indexOf('=')+1)||'';
+                input.addEventListener('change',()=>{
+                    try{readDesignControls();feedback('hub-config-message','');}
+                    catch(error){feedback('hub-config-message',error.message);}
+                });
+                const hint=document.createElement('small');
+                hint.textContent='Comma-separated ship types. Leave blank for Unity defaults. In fixed mode use one type or one per ship; sampled mode chooses from a unique pool.';
+                label.append(input,hint);
+                $('hub-design-environment').append(label);
+            }
         }
         for(const section of ['training','environment']) {
             const target=$('hub-design-'+section);

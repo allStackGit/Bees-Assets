@@ -18,6 +18,7 @@ const {evaluationPolicy,monitoringPolicy,compatibleMonitoringStop,activeEvaluati
 const {ProgressHistory}=require('./experiment_hub_history');
 const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
+const {validateEnvironmentArgs}=require('./experiment_hub_bees_environment');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {ThroughputHistory}=require('./experiment_hub_throughput');
 function supportsJobRuntime(machine,job) {
@@ -588,11 +589,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         (parameters.evaluation_seed??parameters.seed)<0||
         (parameters.evaluation_seed??parameters.seed)>2147483647)
         throw Error('Native Bees scripted benchmark requires a supported profile, independent seed and 1–100 matches per scenario.');
-    const args=parameters.environment_args??[];
-    if(!Array.isArray(args)||args.length>32||
-        args.some(arg=>typeof arg!=='string'||arg.length>256||
-            !/^--rl-[a-z0-9-]+(?:=[^\\r\\n\\x00]{0,192})?$/i.test(arg)))
-        throw Error('Bees native environment arguments must contain approved --rl- options only.');
+    validateEnvironmentArgs(parameters.environment_args??[]);
     const overrides=parameters.hyperparameters??{};
     const ranges={
         batch_size:[1,65536,true],buffer_size:[64,4194304,true],
