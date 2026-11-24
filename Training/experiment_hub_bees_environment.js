@@ -31,7 +31,7 @@ const bools={true:true,on:true,yes:true,'1':true,false:false,off:false,no:false,
 const numeric=/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
 const rosterNames={
     '--rl-bee-ship-types':new Set(['beehive','bumblebee','carpenterbee','honeybee','hornet','leafcutter','queen','wasp','yellowjacket']),
-    '--rl-human-ship-types':new Set(['barge','carrier','cruiser','dreadnought','factory','firebarge','flagship','frigate','gunship','scout','warpgate']),
+    '--rl-human-ship-types':new Set(['barge','carrier','cruiser','dreadnought','factory','firebarge','flagship','frigate','gunship','scout','warpgate','beacon','drone','striker','humantarget']),
 };
 function validateEnvironmentArgs(args=[]) {
     if(!Array.isArray(args)||args.length>32)throw Error('Bees environment accepts at most 32 options.');

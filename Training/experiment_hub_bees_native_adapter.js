@@ -9,6 +9,7 @@ const crypto=require('node:crypto');
 const {spawnSync}=require('node:child_process');
 const {validateProgress}=require('./experiment_hub_progress');
 const {fields:environmentFields,validateEnvironmentArgs}=require('./experiment_hub_bees_environment');
+const trainerSettings=require('./experiment_hub_bees_hyperparameters');
 const {prepare: prepareImmutableRuntime}=require('./experiment_hub_bees_immutable_runtime');
 const {privateKey,brokerPort}=require('./experiment_hub_bees_wan_identity');
 const {unityWorkerTreeSha256,pinnedWorkerRelease}=
@@ -16,19 +17,10 @@ const {unityWorkerTreeSha256,pinnedWorkerRelease}=
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
-const HUB_NATIVE_JOB_PROTOCOL=2;
+const HUB_NATIVE_JOB_PROTOCOL=3;
+const MIN_NATIVE_JOB_PROTOCOL=2;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-, ]+$/;
-const FLAGS=/^--rl-[a-z0-9-]+(?:=[^\r\n\x00]{0,192})?$/i;
-const HYPER={
-    batch_size:[1,65536,true],
-    buffer_size:[64,4194304,true],
-    learning_rate:[0.000001,0.1,false],
-    beta:[0,0.5,false],
-    epsilon:[0.01,0.5,false],
-    lambd:[0.7,1,false],
-    num_epoch:[1,32,true],
-};
 
 function fileHash(source) {
     const digest=crypto.createHash('sha256');
@@ -91,20 +83,8 @@ function normalize(parameters,context,approved) {
         parameters.runtime_version!==approved.runtime_version)
         throw Error('Bees native job source hashes differ from the locally approved Unity worker and MA-POCA configuration.');
     const envArgs=validateEnvironmentArgs(parameters.environment_args??[]);
-    const overrides=parameters.hyperparameters??{};
-    if(!overrides||typeof overrides!=='object'||Array.isArray(overrides)||
-        Object.keys(overrides).some(key=>!Object.hasOwn(HYPER,key)))
-        throw Error('Unknown Bees native PPO hyperparameter.');
-    for(const [key,value] of Object.entries(overrides)) {
-        const [min,max,integer]=HYPER[key];
-        if(typeof value!=='number'||!Number.isFinite(value)||value<min||value>max||
-            integer&&!Number.isSafeInteger(value))
-            throw Error('Invalid Bees native PPO hyperparameter: '+key);
-    }
-    if(overrides.buffer_size!==undefined&&overrides.batch_size!==undefined&&
-        (overrides.buffer_size<overrides.batch_size||
-        overrides.buffer_size%overrides.batch_size!==0))
-        throw Error('Bees native PPO buffer size must be a multiple of batch size.');
+    const overrides=trainerSettings.validate(parameters.hyperparameters??{},
+        approved.protocol,approved.trainer_defaults);
     const batching=parameters.batch_inference??true;
     if(typeof batching!=='boolean')
         throw Error('Bees batched cross-worker inference must be a boolean.');
@@ -145,20 +125,6 @@ const DESIGN_FIELDS=Object.freeze([
         type:'integer',default:42,min:0,max:2147483647},
     {key:'device',label:'Learner device',section:'training',
         type:'enum',default:'cuda',options:['cuda','cpu']},
-    {key:'hyperparameters.batch_size',label:'PPO minibatch size',section:'training',
-        type:'integer',default:4096,min:1,max:65536},
-    {key:'hyperparameters.buffer_size',label:'PPO buffer size',section:'training',
-        type:'integer',default:65536,min:64,max:4194304},
-    {key:'hyperparameters.learning_rate',label:'PPO learning rate',section:'training',
-        type:'number',default:0.001,min:0.000001,max:0.1},
-    {key:'hyperparameters.beta',label:'Entropy coefficient',section:'training',
-        type:'number',default:0.01,min:0,max:0.5},
-    {key:'hyperparameters.epsilon',label:'PPO clip epsilon',section:'training',
-        type:'number',default:0.15,min:0.01,max:0.5},
-    {key:'hyperparameters.lambd',label:'GAE lambda',section:'training',
-        type:'number',default:0.99,min:0.7,max:1},
-    {key:'hyperparameters.num_epoch',label:'PPO epochs',section:'training',
-        type:'integer',default:3,min:1,max:32},
     {key:'batch_inference',label:'Batch policy inference across Unity environments',
         section:'training',type:'boolean',default:true},
     {key:'wan_actors',label:'Remote WAN simulation actor machines',
@@ -234,19 +200,28 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     const opponentScript=trustedFile(pinned.opponentScript,'Frozen Bees scripted opponent library');
     if(path.basename(worker)!=='Bees RL Training.x86_64')
         throw Error('Bees native Hub requires the dedicated Linux Unity worker.');
+    const paths=Object.fromEntries(trainerSettings.SCHEMA.slice(0,protocol>=3?undefined:7)
+        .map(row=>[row[0],row[6].split('.')]));
     const probe=spawnSync(python,['-c',
-        'import sys,mlagents,torch,yaml,tensorboard;'+
-        'assert sys.version_info[:2]==(3,10);'+
-        'assert __import__("importlib.metadata",fromlist=["version"]).version("mlagents")=="1.1.0"'],
+        'import json,sys,mlagents,torch,yaml,tensorboard\n'+
+        'assert sys.version_info[:2]==(3,10)\n'+
+        'assert __import__("importlib.metadata",fromlist=["version"]).version("mlagents")=="1.1.0"\n'+
+        'behavior=yaml.safe_load(open(sys.argv[1],encoding="utf-8"))["behaviors"]["BeesRL1v1"]\n'+
+        'assert behavior["trainer_type"]=="poca"\n'+
+        'def lookup(keys):\n    value=behavior\n    for key in keys: value=value[key]\n    return value\n'+
+        'print(json.dumps({key:lookup(keys) for key,keys in json.loads(sys.argv[2]).items()}))',
+        trainer,JSON.stringify(paths)],
         {cwd:project,timeout:20000,encoding:'utf8',windowsHide:true,maxBuffer:16384});
     if(probe.error||probe.status!==0)
         throw Error('Bees native adapter requires an installed Python 3.10 ML-Agents 1.1.0 learner with PyTorch and TensorBoard.');
+    const defaults=JSON.parse(String(probe.stdout||'').trim().split(/\r?\n/).at(-1));
+    const hyperFields=trainerSettings.fields(protocol,defaults);
     const key=wanKeyPath?privateKey(wanKeyPath):null;
     const port=brokerPort(wanBrokerPort);
     const release=releaseManifestPath?
         pinnedWorkerRelease(releaseManifestPath,worker):null;
     const payload=release?.worker_payload_sha256??unityWorkerTreeSha256(worker);
-    const approved={
+    const approved={protocol,trainer_defaults:Object.freeze(defaults),
         ...(key?{wan_key_fingerprint:key.fingerprint}:{}),
         worker_payload_sha256:payload,
         wan_release_sha256:key?(release?.release_sha256??payload):null,
@@ -375,7 +350,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
             worker_payload_sha256:approved.worker_payload_sha256,
             ...(key?{wan_key_fingerprint:key.fingerprint,
                 wan_release_sha256:approved.wan_release_sha256}:{}),
-            fields:DESIGN_FIELDS.map(field=>({...field})),
+            fields:[...DESIGN_FIELDS,...hyperFields].map(field=>({...field})),
             metric_catalog:{base:[...METRICS]}}},
         gpu_verify_args(parameters,context) {
             if(parameters?.device!=='cuda'||!PCI.test(String(context.gpu_pci_address||'')))
@@ -577,7 +552,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         },
         args(parameters,context) {
             jobPath(artifacts,context);
-            if(protocol!==HUB_NATIVE_JOB_PROTOCOL)
+            if(protocol<MIN_NATIVE_JOB_PROTOCOL||protocol>HUB_NATIVE_JOB_PROTOCOL)
                 throw Error('The selected Unity release contains an obsolete native runner. Rebuild and activate a current worker release.');
             const frozen=normalize(parameters,context,approved);
             if(fileHash(worker)!==approved.worker_sha256||
@@ -628,7 +603,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 expected_parent_checkpoint_sha256:parent.checkpoint_sha256,
                 game_binary:worker,game_sha256:approved.worker_sha256,
                 game_payload_sha256:approved.worker_payload_sha256,
-                game_identity_version:HUB_NATIVE_JOB_PROTOCOL,
+                game_identity_version:2,
                 runtime_version:approved.runtime_version,
                 training_script:training,training_sha256:approved.training_sha256,
                 trainer_source:trainer,trainer_sha256:approved.trainer_sha256,

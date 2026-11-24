@@ -25,7 +25,8 @@ from tensorboard.backend.event_processing.event_file_loader import EventFileLoad
 from bees_unity_port_reservation import reserve_base_port
 from bees_unity_worker_runtime import StagedUnityPlayer, clone_or_copy
 
-HUB_NATIVE_JOB_PROTOCOL = 2
+HUB_NATIVE_JOB_PROTOCOL = 3
+GAME_IDENTITY_VERSION = 2
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
 MAX_EVENT_ROWS_PER_POLL = 4096
@@ -185,7 +186,7 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Unknown Bees learner device.")
     if "game_identity_version" in job and job["game_identity_version"] != 2:
         raise ValueError("Unsupported Bees Unity content identity version.")
-    if (job["schema_version"] == 3 or job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL
+    if (job["schema_version"] == 3 or job.get("game_identity_version") == GAME_IDENTITY_VERSION
         or "game_payload_sha256" in job):
         from bees_unity_worker_identity import unity_worker_tree_sha256
         if not isinstance(job.get("game_payload_sha256"), str) or (
@@ -389,15 +390,42 @@ def freeze_trainer(job: dict, root: Path) -> Path:
     if "checkpoint_interval" in job:
         behavior["checkpoint_interval"]=job["checkpoint_interval"]
     frozen=job["hyperparameters"]
-    if not isinstance(frozen,dict) or any(
-        key not in ("batch_size","buffer_size","learning_rate","beta","epsilon","lambd","num_epoch")
-        for key in frozen
-    ):
-        raise ValueError("Unrecognized Bees hyperparameter.")
+    paths = {
+        "batch_size": ("hyperparameters", "batch_size"),
+        "buffer_size": ("hyperparameters", "buffer_size"),
+        "learning_rate": ("hyperparameters", "learning_rate"),
+        "beta": ("hyperparameters", "beta"),
+        "epsilon": ("hyperparameters", "epsilon"),
+        "lambd": ("hyperparameters", "lambd"),
+        "num_epoch": ("hyperparameters", "num_epoch"),
+        "gamma": ("reward_signals", "extrinsic", "gamma"),
+        "time_horizon": ("time_horizon",),
+        "self_play_save_steps": ("self_play", "save_steps"),
+        "self_play_team_change": ("self_play", "team_change"),
+        "self_play_swap_steps": ("self_play", "swap_steps"),
+        "self_play_window": ("self_play", "window"),
+        "self_play_latest_ratio": ("self_play", "play_against_latest_model_ratio"),
+        "self_play_initial_elo": ("self_play", "initial_elo"),
+        "summary_freq": ("summary_freq",),
+        "keep_checkpoints": ("keep_checkpoints",),
+    }
+    if not isinstance(frozen,dict) or any(key not in paths for key in frozen):
+        raise ValueError("Unrecognized Bees trainer override.")
     for key,value in frozen.items():
         if isinstance(value,bool) or not isinstance(value,(float,int)) or not math.isfinite(value):
-            raise ValueError("Invalid Bees hyperparameter.")
-        behavior["hyperparameters"][key]=value
+            raise ValueError("Invalid Bees trainer setting.")
+        target = behavior
+        segments = paths[key]
+        for segment in segments[:-1]:
+            target = target[segment]
+        if segments[-1] not in target:
+            raise ValueError("Pinned trainer setting is missing: " + key)
+        target[segments[-1]] = value
+    hp=behavior["hyperparameters"]
+    if hp["batch_size"] < 1 or hp["buffer_size"] < hp["batch_size"] or (
+        hp["buffer_size"] % hp["batch_size"]
+    ):
+        raise ValueError("Frozen PPO buffer must be a positive multiple of minibatch size.")
     target=root/"trainer.yaml"
     with target.open("x",encoding="utf-8") as handle:
         yaml.safe_dump(content,handle,sort_keys=False)
@@ -756,7 +784,7 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
 def benchmark_build_id(job: dict) -> str:
     # Older receipts used only the executable hash. New jobs identify the
     # complete, verified staged player, including Unity data and assemblies.
-    return (job["game_payload_sha256"] if job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL
+    return (job["game_payload_sha256"] if job.get("game_identity_version") == GAME_IDENTITY_VERSION
             else job["game_sha256"])
 
 
@@ -775,7 +803,7 @@ def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
     if(index is None or report.get("schema_version")!=1 or
        report.get("candidate_sha256")!=model_sha256 or
        report.get("environment_executable_sha256")!=job["game_sha256"] or
-       (job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL and
+       (job.get("game_identity_version") == GAME_IDENTITY_VERSION and
         report.get("build_id") != benchmark_build_id(job)) or
        report.get("opponent_path")!="scripted:"+opponent or
        report.get("evaluation_code_sha256")!=job["evaluator_core_sha256"] or

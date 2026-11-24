@@ -19,6 +19,7 @@ const {ProgressHistory}=require('./experiment_hub_history');
 const {EvaluationHistory}=require('./experiment_hub_evaluation_history');
 const {validateCatalog,supportsDesign}=require('./experiment_hub_design_fields');
 const {validateEnvironmentArgs}=require('./experiment_hub_bees_environment');
+const beesTrainerSettings=require('./experiment_hub_bees_hyperparameters');
 const {ObservationArchive}=require('./experiment_hub_observations');
 const {ThroughputHistory}=require('./experiment_hub_throughput');
 function supportsJobRuntime(machine,job) {
@@ -42,7 +43,9 @@ function supportsJobRuntime(machine,job) {
             (!pinned?.activation_status||pinned.activation_status==='active'||
                 Boolean(job.lease_id))&&
             machine?.installed_projects?.includes('bees_native')&&
-            pinned?.native_job_protocol===2&&
+            [2,3].includes(pinned?.native_job_protocol)&&
+            Object.keys(job.frozen_parameters?.hyperparameters||{}).every(key=>
+                pinned.fields?.some(field=>field.key==='hyperparameters.'+key))&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
             pinned?.runtime_version===job.frozen_parameters?.runtime_version&&
@@ -590,22 +593,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
         (parameters.evaluation_seed??parameters.seed)>2147483647)
         throw Error('Native Bees scripted benchmark requires a supported profile, independent seed and 1–100 matches per scenario.');
     validateEnvironmentArgs(parameters.environment_args??[]);
-    const overrides=parameters.hyperparameters??{};
-    const ranges={
-        batch_size:[1,65536,true],buffer_size:[64,4194304,true],
-        learning_rate:[0.000001,0.1,false],beta:[0,0.5,false],
-        epsilon:[0.01,0.5,false],lambd:[0.7,1,false],
-        num_epoch:[1,32,true],
-    };
-    if(!object(overrides)||Object.entries(overrides).some(([key,value])=>{
-        const bounds=ranges[key];
-        return !bounds||typeof value!=='number'||!Number.isFinite(value)||
-            value<bounds[0]||value>bounds[1]||
-            bounds[2]&&!Number.isSafeInteger(value);
-    }))throw Error('Bees native PPO hyperparameters contain an unsupported or out-of-range value.');
-    const batch=overrides.batch_size??4096,buffer=overrides.buffer_size??65536;
-    if(buffer<batch||buffer%batch!==0)
-        throw Error('Bees native PPO buffer size must be a positive multiple of minibatch size.');
+    beesTrainerSettings.validate(parameters.hyperparameters??{});
     if(resources!==null) {
         if(parameters.envs>resources.cpus||
             (parameters.device==='cuda'

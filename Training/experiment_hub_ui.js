@@ -4338,7 +4338,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return {entry,machine};
             }else if(project==='bees_native') {
                 const entry=machine.design_catalog?.bees_native;
-                if(entry?.native_job_protocol===2&&(!entry.activation_status||entry.activation_status==='active')&&
+                if([2,3].includes(entry?.native_job_protocol)&&(!entry.activation_status||entry.activation_status==='active')&&
                     (!parameters.worker_sha256||entry.worker_sha256===parameters.worker_sha256)&&
                     (!parameters.trainer_sha256||
                         entry.trainer_sha256===parameters.trainer_sha256)&&
@@ -4497,7 +4497,8 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters.worker_sha256??=choice.entry.worker_sha256;
             parameters.trainer_sha256??=choice.entry.trainer_sha256;
             parameters.worker_payload_sha256??=choice.entry.worker_payload_sha256;
-            parameters.wan_release_sha256??=choice.entry.wan_release_sha256;
+            if(choice.entry.wan_release_sha256)
+                parameters.wan_release_sha256??=choice.entry.wan_release_sha256;
             parameters.runtime_version??=choice.entry.runtime_version;
             if(choice.entry.wan_key_fingerprint)
                 parameters.wan_key_fingerprint??=choice.entry.wan_key_fingerprint;
@@ -4641,6 +4642,14 @@ document.addEventListener('DOMContentLoaded', () => {
             parameters[key]=value;
         }
         if(project==='bees_native') {
+            const effective=Object.fromEntries(choice.entry.fields.filter(f=>
+                f.key.startsWith('hyperparameters.')).map(f=>[
+                    f.key.slice('hyperparameters.'.length),
+                    parameters.hyperparameters?.[f.key.slice('hyperparameters.'.length)]??f.default,
+                ]));
+            if(effective.buffer_size<effective.batch_size||
+                effective.buffer_size%effective.batch_size!==0)
+                throw Error('PPO buffer size must be a positive multiple of minibatch size.');
             delete parameters.design_overrides;
             delete parameters.design_source_sha256;
             delete parameters.training_schema_sha256;
@@ -7828,7 +7837,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 :m.native_preflight_reason||
                     capability?.reason||'No authenticated native capability report.';
             const unity=m.design_catalog?.bees_native||m.design_catalog?.bees_rollout;
-            if(m.design_catalog?.bees_native&&m.design_catalog.bees_native.native_job_protocol!==2) {
+            if(m.design_catalog?.bees_native&&![2,3].includes(m.design_catalog.bees_native.native_job_protocol)) {
                 const warning=document.createElement('div');
                 warning.className='hub-secondary';
                 warning.textContent='Native runner outdated: rebuild and activate a current Unity release before queuing training.';
