@@ -1018,6 +1018,29 @@ def main():
         print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues: "
               + " ".join(str(reason).split())[:160], file=sys.stderr, flush=True)
 
+    def checkpoint_failure_reason(result):
+        if not result:
+            return "Checkpoint evaluator produced no summary"
+        reason = "Checkpoint evaluator exited with status " + str(result)
+        # The diagnostic file belongs to this exact pending model, not to
+        # the trainer's interleaved stdout or a previous evaluation.
+        diagnostic = pending / "evaluator-stderr.txt"
+        try:
+            with diagnostic.open("rb") as stream:
+                stream.seek(max(0, os.fstat(stream.fileno()).st_size - 8192))
+                lines = stream.read(8192).decode("utf-8", errors="replace").splitlines()
+            prefix = "[Bees Hub evaluation] "
+            detail = next((line[len(prefix):] for line in reversed(lines)
+                           if line.startswith(prefix) and line[len(prefix):].strip()), "")
+            if not detail:
+                detail = next((line.strip() for line in reversed(lines)
+                               if line.strip()), "")
+            if detail:
+                reason += ": " + detail
+        except OSError:
+            pass
+        return reason
+
     def poll_evaluation(allow_start=True):
         nonlocal evaluation_child
         if schedule is None:
@@ -1038,9 +1061,7 @@ def main():
                 else:
                     pending.rename(destination)
             else:
-                archive_checkpoint_failure(
-                    "Checkpoint evaluator exited with status " + str(result)
-                    if result else "Checkpoint evaluator produced no summary")
+                archive_checkpoint_failure(checkpoint_failure_reason(result))
         if allow_start and pending.is_dir():
             environment = os.environ.copy()
             threads = str(schedule["cpu_threads"])
@@ -1049,12 +1070,13 @@ def main():
                 "OPENBLAS_NUM_THREADS": threads, "MKL_NUM_THREADS": threads,
             })
             try:
-                evaluation_child = subprocess.Popen([
-                    sys.executable, "-B",
-                    str(Path(job["training_script"]).with_name("bees_hub_checkpoint_evaluation.py")),
-                    "--job", str(root / "job.json"),
-                ], cwd=str(Path(job["training_script"]).parent),
-                    env=environment, start_new_session=True)
+                with (pending / "evaluator-stderr.txt").open("xb") as diagnostics:
+                    evaluation_child = subprocess.Popen([
+                        sys.executable, "-B",
+                        str(Path(job["training_script"]).with_name("bees_hub_checkpoint_evaluation.py")),
+                        "--job", str(root / "job.json"),
+                    ], cwd=str(Path(job["training_script"]).parent),
+                        env=environment, stderr=diagnostics, start_new_session=True)
             except OSError as error:
                 # An independently owned evaluator failing to spawn is not
                 # a learner failure. Retire the immutable snapshot exactly
