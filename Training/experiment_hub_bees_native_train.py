@@ -1018,13 +1018,9 @@ def main():
         print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues: "
               + " ".join(str(reason).split())[:160], file=sys.stderr, flush=True)
 
-    def checkpoint_failure_reason(result):
-        if not result:
-            return "Checkpoint evaluator produced no summary"
-        reason = "Checkpoint evaluator exited with status " + str(result)
-        # The diagnostic file belongs to this exact pending model, not to
-        # the trainer's interleaved stdout or a previous evaluation.
-        diagnostic = pending / "evaluator-stderr.txt"
+    def evaluator_failure_reason(reason, diagnostic):
+        # Read a bounded tail from this exact attempt, never the trainer's
+        # interleaved stdout or a previous evaluation.
         try:
             with diagnostic.open("rb") as stream:
                 stream.seek(max(0, os.fstat(stream.fileno()).st_size - 8192))
@@ -1061,7 +1057,10 @@ def main():
                 else:
                     pending.rename(destination)
             else:
-                archive_checkpoint_failure(checkpoint_failure_reason(result))
+                reason = ("Checkpoint evaluator exited with status " + str(result)
+                          if result else "Checkpoint evaluator produced no summary")
+                archive_checkpoint_failure(evaluator_failure_reason(
+                    reason, pending / "evaluator-stderr.txt"))
         if allow_start and pending.is_dir():
             environment = os.environ.copy()
             threads = str(schedule["cpu_threads"])
@@ -1309,10 +1308,11 @@ def main():
                             "--output-root",str(evaluation_root),
                             "--base-port",str(port),
                         ]
-                        with output.open("xb") as stream:
+                        diagnostic=evaluation_root/("stderr-"+label+".txt")
+                        with output.open("xb") as stream, diagnostic.open("xb") as errors:
                             child=subprocess.Popen(command,
                                 cwd=str(Path(job["training_script"]).parent),
-                                stdout=stream,start_new_session=True,
+                                stdout=stream,stderr=errors,start_new_session=True,
                                 env={**os.environ, "BEES_HUB_EVAL_THREADS":
                                      str(schedule["cpu_threads"] if schedule else 2)})
                             while child.poll() is None:
@@ -1321,7 +1321,9 @@ def main():
                                 time.sleep(0.25)
                         if stopped: return 0
                         if child.returncode!=0:
-                            raise RuntimeError("Independent Bees evaluation failed for "+label)
+                            raise RuntimeError(evaluator_failure_reason(
+                                "Independent Bees evaluation failed for "+label+
+                                " (exit "+str(child.returncode)+")", diagnostic))
                         if output.stat().st_size>16384:
                             raise RuntimeError("Benchmark output path exceeded the expected size.")
                         lines=output.read_text(encoding="utf-8").strip().splitlines()
