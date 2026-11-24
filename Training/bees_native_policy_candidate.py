@@ -10,10 +10,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import sys
+import tempfile
 from typing import Any
+import zipfile
 
 SHA = re.compile(r"^[0-9a-f]{64}$")
 UUID = re.compile(r"^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$")
@@ -239,6 +242,117 @@ def verify_candidate(directory: Path) -> dict[str, Any]:
         "evaluation": evaluation,
     }
 
+def reconstruct_hub_candidate(parts: list[Path], job_id: str,
+                              destination: Path) -> dict[str, Any]:
+    """Reassemble only the selected job's policy package from Hub ZIP parts.
+
+    Never extract archive paths. Each chunk is verified against the Hub part
+    manifest, then the reconstructed directory passes the policy verifier.
+    """
+    _uuid(job_id, "export job")
+    destination = destination.absolute()
+    if destination.exists() or destination.is_symlink():
+        raise ValueError("Candidate reconstruction destination already exists.")
+    if not destination.parent.is_dir():
+        raise ValueError("Candidate reconstruction parent directory does not exist.")
+    prefixes = [
+        f"jobs/{job_id}/artifacts/policy-candidate/",
+        f"jobs/{job_id}/external/mounted-artifacts/policy-candidate/",
+        f"jobs/{job_id}/external/agent-artifacts/policy-candidate/",
+    ]
+    limits = {
+        "manifest.json": MAX_MANIFEST_SIZE,
+        "model.onnx": MAX_MODEL_SIZE,
+        "trainer.yaml": MAX_TRAINER_SIZE,
+        "evaluation-summary.json": MAX_EVALUATION_SIZE,
+    }
+    chunk_bytes = 24_000_000  # Experiment Hub export format
+    groups: dict[str, dict[str, dict[int, tuple]]] = {}
+    seen_parts = set()
+    for part in parts:
+        part = _required_file(part.absolute(), 500_000_000)
+        resolved = part.resolve(strict=True)
+        if resolved in seen_parts:
+            raise ValueError("Duplicate Hub export part.")
+        seen_parts.add(resolved)
+        with zipfile.ZipFile(part) as bundle:
+            infos = bundle.infolist()
+            by_name = {item.filename: item for item in infos}
+            if len(infos) != len(by_name):
+                raise ValueError("Duplicate ZIP member in Hub export.")
+            meta = by_name.get("part-manifest.json")
+            if meta is None or not 0 < meta.file_size <= 64 * 1024**2:
+                raise ValueError("Missing or oversized Hub part manifest.")
+            data = json.loads(bundle.read(meta))
+            if (not isinstance(data, dict) or data.get("project_id") != "bees_native" or
+                    not isinstance(data.get("entries"), list)):
+                raise ValueError("Not a native Bees Hub export part.")
+            for item in data["entries"]:
+                if not isinstance(item, dict) or not isinstance(item.get("source"), str):
+                    raise ValueError("Malformed Hub export entry.")
+                source = item["source"]
+                prefix = next((value for value in prefixes if source.startswith(value)), None)
+                if prefix is None:
+                    continue
+                name = source[len(prefix):]
+                if name not in limits:
+                    raise ValueError("Unexpected Bees candidate export member.")
+                size = item.get("original_file_bytes")
+                index = item.get("segment")
+                length = item.get("uncompressed_bytes")
+                if (type(size) is not int or not 0 < size <= limits[name] or
+                        type(index) is not int or not 1 <= index <= (size + chunk_bytes - 1)//chunk_bytes or
+                        type(length) is not int or
+                        length != min(chunk_bytes, size - (index - 1)*chunk_bytes)):
+                    raise ValueError("Invalid Bees candidate export segment dimensions.")
+                target = source if size <= chunk_bytes else f"{source}.part{index:05d}"
+                entry = by_name.get(target)
+                if item.get("name") != target or entry is None or entry.file_size != length:
+                    raise ValueError("Missing or mismatched Bees candidate export segment.")
+                segments = groups.setdefault(prefix, {}).setdefault(name, {})
+                if index in segments:
+                    raise ValueError("Duplicate Bees candidate export segment.")
+                segments[index] = (part, target, size, length, _digest(item.get("sha256"), "export segment"))
+
+    # Prefer the original local/mounted package to the asynchronous mirror.
+    # A candidate is reconstructed from one source only, never from mixed
+    # snapshots. Missing members will be diagnosed by the package verifier.
+    prefix = next((value for value in prefixes if value in groups), None)
+    if prefix is None:
+        raise ValueError("Selected job has no policy candidate in these export parts.")
+    with tempfile.TemporaryDirectory(prefix=".bees-candidate-", dir=destination.parent) as temp:
+        staged = Path(temp) / "candidate"
+        staged.mkdir(mode=0o700)
+        for name, segments in groups[prefix].items():
+            first = segments.get(1)
+            if first is None:
+                raise ValueError("Missing first segment of " + name)
+            size = first[2]
+            count = (size + chunk_bytes - 1)//chunk_bytes
+            if len(segments) != count:
+                raise ValueError("Missing export segments of " + name)
+            with (staged / name).open("xb") as writer:
+                os.chmod(staged / name, 0o600)
+                for index in range(1, count + 1):
+                    part, target, declared_size, length, digest = segments[index]
+                    if declared_size != size:
+                        raise ValueError("Inconsistent export length for " + name)
+                    with zipfile.ZipFile(part) as bundle:
+                        content = bundle.read(target)
+                    if len(content) != length or hashlib.sha256(content).hexdigest() != digest:
+                        raise ValueError("Export segment integrity failure for " + name)
+                    writer.write(content)
+                writer.flush()
+                os.fsync(writer.fileno())
+        result = verify_candidate(staged)
+        if result["job_id"] != job_id:
+            raise ValueError("Reconstructed candidate belongs to another job.")
+        if destination.exists() or destination.is_symlink():
+            raise ValueError("Candidate reconstruction destination appeared during export.")
+        staged.rename(destination)
+    return result
+
+
 def import_candidate(directory: Path, store_root: Path, worker_manifest: Path,
                      expected_model_sha256: str, config_file: Path | None = None) -> dict:
     """Register only an explicitly selected, build-pinned candidate.
@@ -247,7 +361,6 @@ def import_candidate(directory: Path, store_root: Path, worker_manifest: Path,
     evidence. The existing continual evaluation/promotion gate remains the
     only authority that can replace the current champion.
     """
-    import zipfile
     from types import SimpleNamespace
     import yaml
     from bees_release_runtime import verify_runtime
@@ -342,25 +455,32 @@ def import_candidate(directory: Path, store_root: Path, worker_manifest: Path,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path, help="Exported policy-candidate directory")
+    parser.add_argument("directory", type=Path, help="Policy-candidate directory (new destination with --hub-export-part).")
+    parser.add_argument("--hub-export-part", type=Path, action="append", default=[],
+                        help="Hub job-export ZIP part; repeat for every downloaded part.")
+    parser.add_argument("--job-id", help="Selected Bees Hub job UUID when reconstructing an export.")
     parser.add_argument("--import-root", type=Path, help="Explicitly register as a candidate in an initialized continual-learning store.")
     parser.add_argument("--worker-manifest", type=Path, help="Locally trusted original worker manifest (with its bees-runtime.zip).")
     parser.add_argument("--expected-model-sha256", help="Exact final checkpoint digest observed in Experiment Hub.")
     parser.add_argument("--config", type=Path, help="Receiving continual-learning store configuration.")
     args = parser.parse_args()
     try:
+        if bool(args.hub_export_part) != bool(args.job_id):
+            parser.error("Reconstruction requires --hub-export-part and --job-id.")
+        if args.import_root and (not args.worker_manifest or not args.expected_model_sha256):
+            parser.error("Import requires --worker-manifest and --expected-model-sha256.")
+        if not args.import_root and (args.worker_manifest or args.expected_model_sha256 or args.config):
+            parser.error("Import options require --import-root.")
+        reconstructed = (reconstruct_hub_candidate(args.hub_export_part, args.job_id, args.directory)
+                         if args.hub_export_part else None)
         if args.import_root:
-            if not args.worker_manifest or not args.expected_model_sha256:
-                parser.error("Import requires --worker-manifest and --expected-model-sha256.")
             result = import_candidate(args.directory, args.import_root, args.worker_manifest,
                                       args.expected_model_sha256, args.config)
         else:
-            if args.worker_manifest or args.expected_model_sha256 or args.config:
-                parser.error("Import options require --import-root.")
-            result = verify_candidate(args.directory)
+            result = reconstructed if reconstructed is not None else verify_candidate(args.directory)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (OSError, ValueError, TypeError, KeyError, RuntimeError, ImportError) as error:
+    except (OSError, ValueError, TypeError, KeyError, RuntimeError, ImportError, zipfile.BadZipFile) as error:
         print("Bees policy candidate verification failed: " + str(error),
               file=sys.stderr)
         return 2
