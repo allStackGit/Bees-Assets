@@ -31,7 +31,8 @@ function safeLogPath(relative,allowBeesCandidate=false) {
         DENIED_NAMES.some(name=>s.toLowerCase().includes(name))||
         s==='.'||s==='..'))return false;
     return SUFFIXES.has(path.posix.extname(relative).toLowerCase())||
-        (allowBeesCandidate&&relative==='policy-candidate/model.onnx');
+        (allowBeesCandidate&&(relative==='policy-candidate/model.onnx'||
+            relative==='policy-candidate/trainer.yaml'));
 }
 function fail(message,status=400) {
     const error=Error(message);

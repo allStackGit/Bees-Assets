@@ -2,7 +2,8 @@
 
 The loopback coordinator pins all job IDs and the artifact root in a private
 specification. This tool never scans checkouts, executes training or copies
-model/checkpoint binaries. Every ZIP part is independently readable and <=500MB.
+arbitrary model/checkpoint binaries. A verified Bees policy candidate is the
+sole exception. Every ZIP part is independently readable and <=500MB.
 Remote-only artifacts remain explicitly absent from the manifest.
 """
 from __future__ import annotations
@@ -74,28 +75,44 @@ def safe_source(root: Path, source: Path, include_replays: bool) -> bool:
 
 
 
-def safe_bees_policy_model(root: Path, source: Path, project: str, job_id: str) -> bool:
-    """Admit exactly one proven ONNX artifact, not arbitrary trainer binaries.
+def bees_policy_files(root: Path, job_id: str) -> list[tuple[Path, str]]:
+    """Return the complete importable package, with pinned member hashes.
 
-    A source may be a machine-mounted job folder or the Hub's authenticated
-    remote artifact mirror. The same portable policy verifier checks either.
+    The source can be the local trainer or an asynchronous remote mirror.
+    Never admit an arbitrary YAML or ONNX file from a job directory.
     """
-    if project != "bees_native" or source.relative_to(root).as_posix() != (
-        "policy-candidate/model.onnx"
-    ):
-        return False
-    if source.is_symlink() or not source.is_file() or (
-        source.stat().st_nlink != 1 or source.resolve(strict=True) != source.absolute()
-    ):
-        raise ValueError("Bees policy candidate model was redirected or replaced.")
-    from bees_native_policy_candidate import verify_candidate
-    try:
-        verified = verify_candidate(source.parent)
-    except (OSError, ValueError, TypeError, KeyError) as error:
-        raise ValueError("Bees policy candidate is not exportable: " + str(error)) from error
-    if verified["job_id"] != job_id:
-        raise ValueError("Bees policy candidate does not belong to selected Hub job.")
-    return True
+    from bees_native_policy_candidate import MAX_MANIFEST_SIZE, verify_candidate
+
+    if root.is_symlink() or root.resolve(strict=True) != root.absolute():
+        raise ValueError("Bees policy candidate directory was redirected.")
+    manifest_file = root / "manifest.json"
+    if (manifest_file.is_symlink() or not manifest_file.is_file() or
+            not 0 < manifest_file.stat().st_size <= MAX_MANIFEST_SIZE):
+        raise ValueError("Bees policy candidate manifest is unavailable.")
+    body = manifest_file.read_bytes()
+    manifest = json.loads(body)
+    verified = verify_candidate(root)
+    if (verified["job_id"] != job_id or manifest_file.read_bytes() != body or
+            verified["schema_version"] != manifest["schema_version"] or
+            verified["model_sha256"] != manifest["model_sha256"]):
+        raise ValueError("Bees policy candidate identity changed or belongs to another job.")
+    members = {
+        "manifest.json": hashlib.sha256(body).hexdigest(),
+        "model.onnx": verified["model_sha256"],
+    }
+    if verified["schema_version"] == 2:
+        members["trainer.yaml"] = verified["training_config_sha256"]
+    if verified["evaluation"] is not None:
+        members["evaluation-summary.json"] = manifest["evaluation"]["sha256"]
+    result = []
+    for name, digest in members.items():
+        source = root / name
+        if (source.is_symlink() or not source.is_file() or
+                source.stat().st_nlink != 1 or
+                source.resolve(strict=True) != source.absolute()):
+            raise ValueError("Bees policy candidate member was redirected or replaced.")
+        result.append((source, digest))
+    return result
 
 
 class SelectedObservationRows:
@@ -407,7 +424,7 @@ def export(spec: dict, output: Path) -> dict:
         for i, offset in enumerate(range(0, len(body), CHUNK_BYTES), 1):
             write_chunk(name, body[offset:offset + CHUNK_BYTES], len(body), i)
 
-    def add_file(source: Path, name: str, observer=None) -> None:
+    def add_file(source: Path, name: str, observer=None, expected_sha256=None) -> None:
         # Keep one opened file identity throughout the read. A job may append
         # during export; capture its initial prefix and disclose that omission
         # rather than silently labelling the archive a complete final history.
@@ -424,6 +441,7 @@ def export(spec: dict, output: Path) -> dict:
             size = before.st_size
             index = 0
             remaining = size
+            digest = hashlib.sha256() if expected_sha256 is not None else None
             while remaining:
                 block = handle.read(min(CHUNK_BYTES, remaining))
                 if not block:
@@ -431,6 +449,8 @@ def export(spec: dict, output: Path) -> dict:
                 index += 1
                 if observer is not None:
                     observer.feed(block)
+                if digest is not None:
+                    digest.update(block)
                 write_chunk(name, block, size, index)
                 remaining -= len(block)
             if index == 0:
@@ -440,6 +460,9 @@ def export(spec: dict, output: Path) -> dict:
                 after.st_size == size and after.st_mtime_ns != before.st_mtime_ns
             ):
                 raise OSError("Telemetry source was rewritten during export: " + name)
+            if digest is not None and (after.st_size != size or
+                    digest.hexdigest() != expected_sha256):
+                raise ValueError("Immutable Bees policy member changed during export: " + name)
             if after.st_size > size:
                 manifest["files_extended_during_copy_count"] += 1
                 if len(manifest["files_extended_during_copy"]) < 100:
@@ -581,15 +604,28 @@ def export(spec: dict, output: Path) -> dict:
                            counts_as_trainer: bool = True) -> None:
             if project == "bees_native":
                 candidate = folder / "policy-candidate"
-                metadata = candidate / "manifest.json"
-                model = candidate / "model.onnx"
-                if metadata.is_file() and not metadata.is_symlink() and (
-                    model.is_symlink() or not model.is_file()
-                ):
-                    missing_sources.append({
-                        "job_id": job_id, "label": "policy-candidate",
-                        "reason": "onnx_model_not_available_in_export_source",
-                    })
+                if candidate.exists() or candidate.is_symlink():
+                    try:
+                        members = bees_policy_files(candidate, job_id)
+                    except (OSError, ValueError, TypeError, KeyError) as error:
+                        # A remote mirror publishes each member separately.
+                        # Preserve ordinary metrics even while a package is
+                        # incomplete; do not export misleading partial models.
+                        missing_sources.append({
+                            "job_id": job_id, "label": "policy-candidate",
+                            "reason": "candidate_incomplete_or_invalid",
+                            "detail": str(error)[:240],
+                        })
+                    else:
+                        for source, digest in members:
+                            add_file(source, name_prefix + "/" +
+                                     source.relative_to(folder).as_posix(),
+                                     expected_sha256=digest)
+                            found_by_job[job_id] += 1
+                            if counts_as_trainer:
+                                trainer_files_by_job[job_id] += 1
+                            if entry_count > MAX_SOURCE_FILES:
+                                raise ValueError("Too many export entries")
             if not spec.get("include_replays", False) and any(
                 part.lower() == "replays" for part in folder.parts
             ):
@@ -599,13 +635,13 @@ def export(spec: dict, output: Path) -> dict:
                 # Do not traverse sensitive folders at all; the same rule
                 # also rejects individual files and nested credential paths.
                 dirs[:] = sorted(d for d in dirs if not forbidden_part(d)
+                    and not (project == "bees_native" and current == folder and
+                             (d == "policy-candidate" or d.startswith("policy-candidate-")))
                     and (bool(spec.get("include_replays", False)) or d.lower() != "replays")
                     and not (current / d).is_symlink())
                 for filename in sorted(files):
                     source = current / filename
-                    if not safe_source(folder, source, bool(spec.get("include_replays", False))) and (
-                        not safe_bees_policy_model(folder, source, project, job_id)
-                    ):
+                    if not safe_source(folder, source, bool(spec.get("include_replays", False))):
                         continue
                     add_file(source, name_prefix + "/" +
                              source.relative_to(folder).as_posix())
