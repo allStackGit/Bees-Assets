@@ -509,6 +509,14 @@ function config(value) {
     if (serialized.length > 65536) throw Error('Configuration exceeds 64 KiB.');
     return JSON.parse(serialized);
 }
+// Execution topology is owned by the resource plan, never by a saved Design.
+// Older configurations may contain these fields; ignore them for new jobs.
+function tinyBrainsDesignParameters(parameters) {
+    const result=config(parameters);
+    delete result.remote_rollouts;
+    delete result.rollout_action_weights;
+    return result;
+}
 // Validate the persisted capability pin at configuration save and job freeze,
 // not only during placement. A stale Design page must not queue jobs that can
 // never be admitted by a worker supporting the requested PPO overrides.
@@ -6313,7 +6321,8 @@ class ExperimentHub {
         if (!object(value)) throw Error('Missing configuration.');
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
-        const params = config(value.parameters);
+        const params = project.id==='tinybrains'
+            ?tinyBrainsDesignParameters(value.parameters):config(value.parameters);
         const previous=value.id?this.state.configurations.find(c=>
             c.id===value.id&&c.project_id===project.id&&
             c.revision===value.revision):null;
@@ -6883,7 +6892,8 @@ class ExperimentHub {
             Object.keys(value).some(k=>!['confirm_prepare','learner','collector'].includes(k))||
             !object(value.learner)||!object(value.collector)||
             Object.keys(value.learner).some(k=>!['configuration_id','expected_revision',
-                'machine_id','resources','metric_selection','continuation_of_job_id'].includes(k))||
+                'machine_id','resources','metric_selection','continuation_of_job_id',
+                'rollout_action_weights'].includes(k))||
             Object.keys(value.collector).some(k=>!['machine_id','endpoint','resources','threads'].includes(k))||
             !ID.test(String(value.learner.machine_id||''))||
             !ID.test(String(value.collector.machine_id||''))||
@@ -6905,7 +6915,7 @@ class ExperimentHub {
             learner.tinybrains_rollout_subset!==true||
             !learner.tinybrains_remote_rollout_endpoints?.includes(endpoint)||
             !SHA256.test(String(learner.tinybrains_remote_key_fingerprint||''))||
-            !config||config.parameters?.remote_rollouts!==true||
+            !config||
             !worker||worker.id===learner.id||worker.status!=='connected'||
             worker.agent_enrolled!==true||worker.local_executor_enabled!==true||
             !['win32','linux'].includes(worker.agent_platform)||
@@ -6914,10 +6924,12 @@ class ExperimentHub {
             snapshot.projects.find(p=>p.id==='tinybrains_rollout')?.adapter!=='unconfigured'||
             !supportsTinyBrainsProfile(learner,{
                 project_id:'tinybrains',resources:learnerBudget,
-                frozen_parameters:{...config.parameters,
+                frozen_parameters:{...tinyBrainsDesignParameters(config.parameters),
                     training_stage:config.parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(config.parameters,learnerBudget),
-                    rollout_endpoints:[endpoint]},
+                    remote_rollouts:true,rollout_endpoints:[endpoint],
+                    ...(value.learner.rollout_action_weights===undefined?{}:
+                        {rollout_action_weights:value.learner.rollout_action_weights})},
                 continuation_of_job_id:value.learner.continuation_of_job_id??null,
             }))
             throw Error('The learner, approved one-collector endpoint or remote CPU machine is ineligible.');
@@ -7025,7 +7037,7 @@ class ExperimentHub {
             !object(value.learner)||
             Object.keys(value.learner).some(key=>
                 !['configuration_id','expected_revision','machine_id','resources',
-                    'continuation_of_job_id','metric_selection'].includes(key))||
+                    'continuation_of_job_id','metric_selection','rollout_action_weights'].includes(key))||
             !ID.test(String(value.learner.machine_id||''))||
             !Array.isArray(value.collectors))
             throw Error('Confirm the saved learner, its machine, and one resource budget for each approved remote collector.');
@@ -7082,8 +7094,12 @@ class ExperimentHub {
             ancestor.assigned_machine_id!==value.learner.machine_id))
             throw Error('Distributed continuation requires a verified resumable learner checkpoint, released capacity and the same learner machine.');
         const resources=resourceRequest(value.learner.resources);
-        const parameters=config?.parameters;
-        if(!config||parameters?.remote_rollouts!==true||
+        const parameters=config?tinyBrainsDesignParameters(config.parameters):null;
+        const topology={remote_rollouts:true,
+            ...(byMachine?{rollout_endpoints:endpoints}:{}),
+            ...(value.learner.rollout_action_weights===undefined?{}:
+                {rollout_action_weights:value.learner.rollout_action_weights})};
+        if(!config||
             !learnerMachine||learnerMachine.status!=='connected'||
             !['linux','win32'].includes(learnerMachine.agent_platform)||
             learnerMachine.local_executor_enabled!==true||
@@ -7094,7 +7110,7 @@ class ExperimentHub {
                 project_id:'tinybrains',frozen_parameters:{...parameters,
                     training_stage:parameters.training_stage??'full_multiplayer',
                     device:tinyBrainsDeviceForLease(parameters,resources),
-                    ...(byMachine?{rollout_endpoints:endpoints}:{})},
+                    ...topology},
                 resources,
                 continuation_of_job_id:ancestorId,
             })||
@@ -7106,8 +7122,7 @@ class ExperimentHub {
         if(rolloutProject?.adapter!=='unconfigured')
             throw Error('TinyBrains internal collector role is unavailable; verify the Hub project registry.');
         const next=copy(this.state);
-        const learner=this.queueIn(next,value.learner,
-            byMachine?{rollout_endpoints:endpoints}:undefined);
+        const learner=this.queueIn(next,value.learner,topology);
         if(learner.status!=='waiting_adapter')
             throw Error('Distributed group claims require an immediately eligible, released predecessor.');
         // Only groups queued as one transaction opt into automatic sidecar
@@ -7810,7 +7825,8 @@ class ExperimentHub {
             throw Error('Draft changed since selection; reload before queueing.');
         // Freeze the exact input and resources. No executable, shell snippet,
         // directory, or process arguments can be supplied in the job request.
-        const frozen = config(selected.parameters);
+        const frozen = project.id==='tinybrains'
+            ?tinyBrainsDesignParameters(selected.parameters):config(selected.parameters);
         // New TinyBrains jobs must freeze the complete map/player-count stage.
         // Older saved designs omitted it and silently inherited basic-tiny-2p
         // from their checkpoints, even when the run was labeled Full Maps.

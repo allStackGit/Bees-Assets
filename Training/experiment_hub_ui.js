@@ -2906,19 +2906,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ' · '+r.samples+' paired updates · observed decisions/s ['+
                 r.rates.map(format).join(', ')+'] · current weights ['+
                 r.current.join(', ')+'] · proposed ['+r.weights.join(', ')+']. ';
-            const action=button('Use proposed weights in Design',()=>{
-                const key=r.profile+':'+r.profile_sha256;
-                if(![...tinyBrainsSelect.options].some(option=>option.value===key)) {
-                    feedback('hub-compare-scaling-note',
-                        'The original learner profile is not available in Design. Review the printed weights and the current approved machines manually.');
-                    return;
-                }
-                tinyBrainsSelect.value=key;
-                tinyBrainsRemote.checked=true;
-                tinyBrainsWeights.value=r.weights.join(',');
-                selectTab('design');
-                feedback('hub-config-message',
-                    'Proposed weights copied to the Design input only. Click Use profile and update count, review the entire draft (including approved remote count and checkpoint lineage), and Save. No job or reservation was changed.');
+            const action=button('Copy proposed weights to Train',()=>{
+                distributedWeights.value=r.weights.join(',');
+                selectTab('train');
+                feedback('hub-job-message',
+                    'Proposed weights copied to remote collector placement. Select the matching learner profile and collectors in the same order before queueing. No job was changed.');
             });
             entry.append(action);
             rolloutRecommendations.append(entry);
@@ -3966,11 +3958,6 @@ document.addEventListener('DOMContentLoaded', () => {
         new Option('Stage 2 — Tiny two-player maps','tiny_two_player'),
         new Option('Stage 3 — Small two-player maps','small_two_player'),
         new Option('Stage 4 — All two-player maps','all_two_player'));
-    const tinyBrainsRemote=document.createElement('input');
-    const tinyBrainsWeights=document.createElement('input');
-    tinyBrainsRemote.type='checkbox';
-    tinyBrainsWeights.type='text';
-    tinyBrainsWeights.placeholder='Optional: 2,8,4 (local, then each remote)';
     tinyBrainsDevice.append(new Option('From resource allocation',''),
         new Option('CPU only','cpu'),
         new Option('Dedicated two-GPU split PPO (CUDA/ROCm)','dual'),
@@ -3994,21 +3981,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const dualGpu=tinyBrainsDevice.value==='dual';
         const stage=JSON.parse($('hub-config-json').value).training_stage||tinyBrainsStage.value;
         const multiGpu=tinyBrainsDevice.value==='multi';
-        const remoteRollouts=tinyBrainsRemote.checked;
-        const weightText=tinyBrainsWeights.value.trim();
-        const weights=weightText?weightText.split(',').map(s=>Number(s.trim())):[];
-        if(weightText&&(!remoteRollouts||weights.length<2||weights.length>9||
-            weights.some(w=>!Number.isSafeInteger(w)||w<1||w>1024)||
-            !(state?.machines||[]).some(machine=>
-                machine.status==='connected'&&
-                machine.tinybrains_profiles?.[profile]===digest&&
-                (machine.tinybrains_remote_rollout_endpoints?.length===weights.length-1||
-                    machine.tinybrains_rollout_subset===true&&
-                    machine.tinybrains_remote_rollout_endpoints?.length>=weights.length-1)))) {
-            feedback('hub-config-message',
-                'Fixed action weights require one integer from 1–1024 for the learner and each selected remote collector.');
-            return;
-        }
         if(hasThreads&&(!Number.isSafeInteger(threads)||threads<1||threads>256)) {
             feedback('hub-config-message','CPU threads must be a whole number from 1 to 256.');
             return;
@@ -4046,16 +4018,6 @@ document.addEventListener('DOMContentLoaded', () => {
             feedback('hub-config-message','No connected CUDA/ROCm worker approves 3–8 GPU split PPO collectors for this profile.');
             return;
         }
-        if(remoteRollouts&&!(state?.machines||[]).some(machine=>
-            machine.status==='connected'&&
-            ['linux','win32'].includes(machine.agent_platform)&&
-            machine.tinybrains_profiles?.[profile]===digest&&
-            machine.tinybrains_remote_rollout_profiles?.includes(profile)&&
-            (!cpuFallback||machine.tinybrains_remote_cpu_learner===true&&
-                machine.tinybrains_cpu_fallback_profiles?.includes(profile)))) {
-            feedback('hub-config-message','Remote rollouts require an approved native learner for this device mode and locally installed private-network worker configuration.');
-            return;
-        }
         if(!profile||!digest||!Number.isSafeInteger(updates)||updates<1||updates>10000000) {
             feedback('hub-config-message','Select an approved profile and enter 1–10,000,000 updates.');
             return;
@@ -4067,8 +4029,6 @@ document.addEventListener('DOMContentLoaded', () => {
             ...(hasThreads?{threads}:{}),
             ...(cpuFallback?{device:'cpu'}:dualGpu?{device:'dual'}:
                 multiGpu?{device:'multi'}:{}),
-            ...(remoteRollouts?{remote_rollouts:true}:{}),
-            ...(weights.length?{rollout_action_weights:weights}:{}),
             ...(stage?{training_stage:stage}:{}),
             ...(current.profile===profile&&current.profile_sha256===digest&&
                 Array.isArray(current.training_map_ids)
@@ -4100,7 +4060,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 :'Use a configuration without an import for checkpoint-continuation stages. ')+
             (stage?'The map stage and turn limit are pinned at launch by the trusted runtime; advance only after independent held-out evaluation. ':'')+
             (hasThreads?'The CPU thread override does not change the job CPU quota. ':'')+
-            (remoteRollouts?'In Train, use Queue and reserve entire group to atomically assign learner and approved remote collector CPU/GPU budgets before any Start. ':'')+
+            'In Train, queue locally or reserve a group with selected remote collectors. '+
             (weights.length?'Fixed action weights change rollout work shares, not hardware reservations. ':'')+
             'Save the draft to retain these settings.');
     });
@@ -4109,14 +4069,9 @@ document.addEventListener('DOMContentLoaded', () => {
     for(const [caption,control] of [['Approved profile ',tinyBrainsSelect],
         ['Updates ',tinyBrainsUpdates],['CPU threads (optional) ',tinyBrainsThreads],
         ['Execution device ',tinyBrainsDevice],
-        ['Use approved remote rollout collectors ',tinyBrainsRemote],
-        ['Fixed rollout action weights (optional; local then remotes) ',tinyBrainsWeights],
         ['Approved checkpoint import (optional) ',tinyBrainsImport]]) {
         const label=document.createElement('label');
-        if(control===tinyBrainsRemote) {
-            label.className='hub-toggle-row hub-tinybrains-remote';
-            label.append(control,document.createTextNode(caption.trim()));
-        }else label.append(caption,control);
+        label.append(caption,control);
         tinyBrainsFields.append(label);
     }
     const tinyBrainsActions=document.createElement('div');
@@ -4239,8 +4194,6 @@ document.addEventListener('DOMContentLoaded', () => {
         tinyBrainsDevice.value=parameters.device||'';
         tinyBrainsStage.value=parameters.training_stage||'full_multiplayer';
         tinyBrainsCustomMaps.checked=Array.isArray(parameters.training_map_ids);
-        tinyBrainsRemote.checked=parameters.remote_rollouts===true;
-        tinyBrainsWeights.value=(parameters.rollout_action_weights||[]).join(',');
         displayTinyBrainsImports();
         const key=parameters.import_checkpoint&&parameters.import_checkpoint_sha256
             ?parameters.import_checkpoint+':'+parameters.import_checkpoint_sha256:null;
@@ -5657,8 +5610,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 if(setting('food_spawn_mode')==='patches')add('patches');
                 if(params.reporting_benchmarks===true)add('reporting');
             }
-            if(project==='tinybrains'&&params.remote_rollouts===true)
-                add('remote_rollouts');
             if(gpuEnabled)add('gpu');
         }
         // Archived observations are genuine evidence only for the exact saved
@@ -8575,6 +8526,19 @@ document.addEventListener('DOMContentLoaded', () => {
     distributedMachineLabel.append('Learner machine ',distributedMachine);
     const distributedBudgetsLabel=document.createElement('label');
     distributedBudgetsLabel.append('Remote worker budgets (JSON array) ',distributedBudgets);
+    const distributedWeights=document.createElement('input');
+    distributedWeights.type='text';
+    distributedWeights.placeholder='Optional: 2,8,4 (local, then remotes)';
+    const distributedWeightsLabel=document.createElement('label');
+    distributedWeightsLabel.append('Fixed rollout action weights (local, then approved remote order) ',distributedWeights);
+    function selectedRolloutWeights(count) {
+        const raw=distributedWeights.value.trim();
+        if(!raw)return {};
+        const weights=raw.split(',').map(s=>Number(s.trim()));
+        if(weights.length!==count+1||weights.some(w=>!Number.isSafeInteger(w)||w<1||w>1024))
+            throw Error('Enter one integer from 1–1024 for the learner and each selected collector.');
+        return {rollout_action_weights:weights};
+    }
     // Missing software is prepared from the Train workflow, not by copying
     // repositories to Exeter. Queue intent is frozen until that machine's
     // authenticated agent advertises the selected physical listener.
@@ -8599,8 +8563,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const prepareQueue=button('Install collector and queue when ready',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
-        if(!selected||selected.parameters?.remote_rollouts!==true||
-            !distributedMachine.value||!prepareHost.value||!prepareEndpoint.value)return;
+        if(!selected||!distributedMachine.value||!prepareHost.value||!prepareEndpoint.value)return;
         const cpus=Number(prepareCpus.value),ram_mb=Number(prepareRam.value);
         if(!Number.isSafeInteger(cpus)||cpus<1||
             !Number.isSafeInteger(ram_mb)||ram_mb<128) {
@@ -8622,6 +8585,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources:resource,
                     metric_selection:hubDistributedMetricSelection(selectedJobMetrics(),1),
+                    ...selectedRolloutWeights(1),
                     ...(ancestor?{continuation_of_job_id:ancestor}:{})},
                 collector:{machine_id:prepareHost.value,endpoint:prepareEndpoint.value,
                     resources:{cpus,ram_mb,gpu_count:0},threads:cpus},
@@ -8637,8 +8601,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const distributedQueue=button('Queue and reserve entire group',async()=>{
         const selected=state?.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
-        if(!selected||selected.parameters?.remote_rollouts!==true||
-            !distributedMachine.value)return;
+        if(!selected||!distributedMachine.value)return;
         try {
             const predecessor=$('hub-job-predecessor').value;
             if(predecessor) {
@@ -8683,6 +8646,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 learner:{configuration_id:selected.id,expected_revision:selected.revision,
                     machine_id:distributedMachine.value,resources,
                     metric_selection:metricSelection,
+                    ...selectedRolloutWeights(budgets.length),
                     ...(predecessor?{continuation_of_job_id:predecessor}:{})},
                 ...budgetRequest,
             });
@@ -8694,7 +8658,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }catch(error){distributedFeedback.textContent=String(error.message||error);}
     });
     distributedPanel.append(distributedLegend,distributedMachineLabel,preparePanel,
-        distributedBudgetsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
+        distributedBudgetsLabel,distributedWeightsLabel,distributedMatch.label,distributedDetails,distributedQueue,distributedFeedback);
     $('hub-job-queue-actions').insertAdjacentElement('afterend',distributedPanel);
     // Courier reuses the same native group claims, but unlike TinyBrains
     // each remote process trains its own immutable recurrent PPO lineage.
@@ -8966,8 +8930,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!state)return;
         const selected=state.configurations.find(c=>
             c.project_id==='tinybrains'&&c.id===$('hub-job-configuration').value);
-        distributedPanel.hidden=project!=='tinybrains'||
-            selected?.parameters?.remote_rollouts!==true;
+        distributedPanel.hidden=project!=='tinybrains'||!selected;
         if(distributedPanel.hidden)return;
         const prior=distributedMachine.value;
         const machines=state.machines.filter(m=>m.status==='connected'&&
@@ -9187,6 +9150,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(distributed==='tinybrains'){
                 distributedMatch.input.checked=false;
                 distributedBudgets.value=JSON.stringify(budgets,null,2);
+                distributedWeights.value=(job.frozen_parameters?.rollout_action_weights||[]).join(',');
             }else{
                 courierMatch.input.checked=matching;
                 courierBudgets.value=JSON.stringify(budgets,null,2);
