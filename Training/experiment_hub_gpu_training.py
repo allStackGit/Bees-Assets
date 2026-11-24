@@ -1281,9 +1281,11 @@ class ImmutableGpuRowCache:
         self.partial_bytes_saved = 0
         self._seed_ready = None
         self._seed_sources = []
+        self._indexed_seeds = {}
+        self.indexed_seed_hits = 0
         self.seeded_rows = self.seeded_bytes = 0
 
-    def seed_bank(self, identities, source):
+    def seed_bank(self, identities, source, *, index_key=None):
         """Bulk-stage one frequently reused immutable shape bank.
 
         The source is already a contiguous GPU bank belonging to the
@@ -1299,6 +1301,8 @@ class ImmutableGpuRowCache:
                 len(identities)!=len(source) or
                 len(set(identities))!=len(identities) or
                 any(key in self.rows for key in identities)):
+            return 0
+        if index_key is not None and index_key in self._indexed_seeds:
             return 0
         bytes_needed=source.numel()*source.element_size()
         if not bytes_needed or self.resident_bytes+bytes_needed>self.max_bytes:
@@ -1318,6 +1322,10 @@ class ImmutableGpuRowCache:
             return 0
         for index,key in enumerate(identities):
             self.rows[key]=remote[index:index+1]
+        if index_key is not None:
+            # The caller supplies stable source-bank row positions. The
+            # mirrored prefix retains those exact positions on this GPU.
+            self._indexed_seeds[index_key]=(remote,frozenset(identities))
         self._seed_ready=ready
         self._seed_sources.append(source)
         self.seeded_rows += len(identities)
@@ -1352,6 +1360,42 @@ class ImmutableGpuRowCache:
             return torch.as_strided(
                 first,(len(views),*first.shape[1:]),stride)
         return None
+
+    def fetch_indexed_seed(self, index_key, identifiers, boards, *,
+                           indices=None, start=None):
+        """Use the existing device index plan to select a seeded board bank.
+
+        Only a complete hit in the mirrored prefix is eligible. The caller
+        derives indices from that same source bank, so no host index upload
+        or concatenation of individual cached row views is needed.
+        """
+        seeded=self._indexed_seeds.get(index_key)
+        if seeded is None or not identifiers:
+            return None
+        bank,keys=seeded
+        if (bank.shape[1:]!=boards.shape[1:] or bank.dtype!=boards.dtype or
+                len(identifiers)!=len(boards) or
+                any(key not in keys for key in identifiers)):
+            return None
+        if start is not None:
+            if (type(start) is not int or start<0 or
+                    start+len(identifiers)>len(bank)):
+                return None
+        elif (not isinstance(indices,torch.Tensor) or
+              indices.device!=self.device or indices.ndim!=1 or
+              len(indices)!=len(identifiers) or
+              indices.dtype not in (torch.int32,torch.int64)):
+            return None
+        self._wait_seed()
+        try:
+            result=(bank.narrow(0,start,len(identifiers)) if start is not None
+                    else bank.index_select(0,indices))
+        except torch.OutOfMemoryError:
+            return None
+        self.indexed_seed_hits+=1
+        self.hits+=len(identifiers)
+        self.bytes_saved+=result.numel()*result.element_size()
+        return result
 
     def fetch(self, identifiers, boards, *, producer_stream=None):
         if (not isinstance(boards,torch.Tensor) or boards.ndim<1 or
@@ -1483,6 +1527,7 @@ class ImmutableGpuRowCache:
             self._seed_ready.synchronize()
             self._seed_ready=None
         self._seed_sources.clear()
+        self._indexed_seeds.clear()
         self.rows.clear()
         self.resident_bytes = 0
 
@@ -1496,6 +1541,7 @@ class ImmutableGpuRowCache:
             cached_peer_oom_evictions=self.oom_evictions,
             cached_peer_seeded_rows=self.seeded_rows,
             cached_peer_seeded_bytes=self.seeded_bytes,
+            cached_peer_indexed_seed_hits=self.indexed_seed_hits,
             cached_peer_contiguous_view_hits=self.contiguous_view_hits,
             cached_peer_partial_hits=self.partial_hits,
             cached_peer_partial_bytes_saved=self.partial_bytes_saved)
