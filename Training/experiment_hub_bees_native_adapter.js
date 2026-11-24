@@ -499,6 +499,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     include_baseline:Boolean(monitor&&monitor.include_baseline!==false),
                     include_final:monitor?.include_final!==false,
                     cpu_threads:Math.max(1,Math.min(2,context.cpu_quota)),
+                    stop_on_regression:monitor?.regression_alert?.stop_on_regression===true,
                     stop_min_trials:stop?.min_trials??null,
                     stop_min_success_rate:stop?.min_success_rate??null,
                 };

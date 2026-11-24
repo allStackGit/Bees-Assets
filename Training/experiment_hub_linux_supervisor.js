@@ -816,7 +816,8 @@ class LinuxSupervisor {
                     const proof=path.join(path.dirname(record.checkpoint_stop_file),
                         'evaluation-stop.json');
                     const value=JSON.stringify({schema_version:1,
-                        checkpoint_sha256:record.evaluation_stop_checkpoint_sha256})+'\n';
+                        checkpoint_sha256:record.evaluation_stop_checkpoint_sha256,
+                        ...(record.evaluation_stop_kind?{kind:record.evaluation_stop_kind}:{})})+'\n';
                     const temp=proof+'.tmp-'+crypto.randomUUID();
                     try {
                         if(!this.fs.existsSync(proof)) {
@@ -1041,6 +1042,9 @@ class LinuxSupervisor {
         const record=this.state.records.find(r=>r.job_id===jobId);
         if(!record)throw Error('Unknown locally supervised job.');
         const evaluated=options.evaluationCheckpointSha256;
+        const kind=options.evaluationStopKind;
+        if(kind!==undefined&&(kind!=='regression'||evaluated===undefined))
+            throw Error('Invalid Bees evaluation Stop kind.');
         if(evaluated!==undefined&&
             (record.project_id!=='bees_native'||!record.checkpoint_stop_file||
              !/^[0-9a-f]{64}$/.test(String(evaluated))))
@@ -1057,7 +1061,8 @@ class LinuxSupervisor {
         // service-manager call or agent crashes while signal delivery is unknown.
         const updated={...record,state:'stop_requested',
             stop_requested_at:new Date().toISOString(),
-            ...(evaluated?{evaluation_stop_checkpoint_sha256:evaluated}:{})};
+            ...(evaluated?{evaluation_stop_checkpoint_sha256:evaluated}:{ }),
+            ...(kind?{evaluation_stop_kind:kind}:{})};
         this.commit(this.state.records.map(r=>r.job_id===jobId?updated:r));
         // A checkpoint-aware adapter receives a STOP marker instead of a
         // systemd SIGINT. Its normal successful exit is verified by the

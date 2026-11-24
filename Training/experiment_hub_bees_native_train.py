@@ -897,7 +897,7 @@ def main():
     stop_file=root/"stop.request"
 
     def evaluation_stop_identity():
-        if schedule is None or schedule["stop_min_trials"] is None:
+        if schedule is None:
             return None
         proof_file = root / "evaluation-stop.json"
         if not proof_file.exists():
@@ -907,6 +907,14 @@ def main():
             raise ValueError("Invalid Bees evaluation Stop provenance.")
         proof = json.loads(proof_file.read_text(encoding="utf-8"))
         sha = proof.get("checkpoint_sha256")
+        kind = proof.get("kind", "success")
+        if kind not in ("success", "regression"):
+            raise ValueError("Unknown Bees evaluation Stop kind.")
+        if kind == "regression":
+            if not schedule.get("stop_on_regression") or not schedule["include_final"]:
+                raise ValueError("Regression Stop is not enabled for this Bees job.")
+        elif schedule["stop_min_trials"] is None:
+            raise ValueError("Success Stop is not enabled for this Bees job.")
         if (proof.get("schema_version") != 1 or not isinstance(sha, str) or
             len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha)):
             raise ValueError("Invalid Bees evaluation Stop checkpoint identity.")
@@ -919,9 +927,13 @@ def main():
         if (summary.get("job_id") != job["job_id"] or
             summary.get("profile") != job["evaluation_profile"] or
             summary.get("model_sha256") != sha or
-            type(trials) is not int or trials < schedule["stop_min_trials"] or
-            type(wins) is not int or not 0 <= wins <= trials or
-            wins / trials < schedule["stop_min_success_rate"]):
+            type(trials) is not int or trials <= 0 or
+            type(wins) is not int or not 0 <= wins <= trials):
+            raise ValueError("Bees evaluation Stop proof is not a valid local benchmark.")
+        if kind == "success" and (
+            trials < schedule["stop_min_trials"] or
+            wins / trials < schedule["stop_min_success_rate"]
+        ):
             raise ValueError("Bees evaluation Stop proof does not meet the frozen threshold.")
         return sha
     def stop(_signum,_frame):
@@ -1014,14 +1026,14 @@ def main():
                 print("[Bees native Hub] Stop has no verified resumable checkpoint: "+str(error),
                       file=sys.stderr,flush=True)
                 return 1
-            # Manual Stops remain prompt. A success-threshold Stop is a
-            # completed training sequence and must separately evaluate the
-            # exact final saved model (which may differ from its trigger).
+            # Manual Stops remain prompt. An authorized evaluation Stop
+            # separately benchmarks the exact final saved model, including
+            # regression Stops that are not successful training sequences.
             if not target_stop_sha:
                 return 0
             ignore_stop_marker = True
             stopped = False
-            print("[Bees Hub evaluation] Threshold met; verifying final saved checkpoint.",
+            print("[Bees Hub evaluation] Evaluation Stop; verifying final saved checkpoint.",
                   flush=True)
         else:
             if result!=0:

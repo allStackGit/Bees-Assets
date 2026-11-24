@@ -5703,6 +5703,12 @@ class ExperimentHub {
                         evaluationComplete(job.evaluation_stop_evidence,
                             job.evaluation_stop,job.dispatch_id)?{
                         evaluation_stop_checkpoint_sha256:job.evaluation_stop_evidence.checkpoint_sha256,
+                    }:action==='stop'&&job.project_id==='bees_native'&&
+                        job.evaluation_monitor?.regression_alert?.stop_on_regression===true&&
+                        job.evaluation_regression_stop_evidence?.dispatch_id===job.dispatch_id&&
+                        SHA256.test(String(job.evaluation_regression_stop_evidence?.checkpoint_sha256||''))?{
+                        evaluation_stop_checkpoint_sha256:job.evaluation_regression_stop_evidence.checkpoint_sha256,
+                        evaluation_stop_kind:'regression',
                     }:{}),
                     ...(job.evaluation_monitor?{evaluation_monitor:copy(job.evaluation_monitor)}:{}),
                     ...(job.project_id==='bees_native'&&activeEvaluation(job)?{

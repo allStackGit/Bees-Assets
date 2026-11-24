@@ -22,10 +22,15 @@ SHA = re.compile(r"^[a-f0-9]{64}$")
 
 
 def validate_schedule(schedule, profile, matches):
-    if not isinstance(schedule, dict) or set(schedule) != {
+    required = {
         "every_n_checkpoints", "min_seconds", "include_baseline", "include_final",
         "cpu_threads", "stop_min_trials", "stop_min_success_rate",
-    }:
+    }
+    if (not isinstance(schedule, dict) or
+        not required <= set(schedule) <= required | {"stop_on_regression"} or
+        type(schedule.get("stop_on_regression", False)) is not bool or
+        (schedule.get("stop_on_regression") and not schedule["include_final"])):
+
         raise ValueError("Invalid frozen Bees checkpoint evaluation schedule.")
     cases = {"scripted-maps-v1": 4, "scripted-coverage-v2": 48}.get(profile)
     if cases is None or (
