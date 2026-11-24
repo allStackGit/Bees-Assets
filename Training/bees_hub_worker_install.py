@@ -266,7 +266,8 @@ def activate(root: Path, release: str) -> dict:
     root = safe_root(root)
     record = installed(root, release)
     # The marker contains no arbitrary executable or user-supplied paths.
-    # Running agents retain their already-open worker until restarted.
+    # Running jobs retain their pinned worker. Agents adopt the selected
+    # release after the coordinator acknowledges the idle admission boundary.
     selection = {
         key: record[key]
         for key in ("schema_version", "release_sha256", "build_id", "platform",
@@ -282,7 +283,7 @@ def activate(root: Path, release: str) -> dict:
         os.replace(temporary, root / "current.json")
     finally:
         temporary.unlink(missing_ok=True)
-    return {**record, "activated": True, "agent_restart_required": True}
+    return {**record, "activated": True, "agent_activation": "at-idle-boundary"}
 
 
 def current(root: Path) -> dict:

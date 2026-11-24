@@ -336,6 +336,10 @@ async function main() {
             evaluatorObservation={at:tick,value:evaluatorHealth(id)};
         Object.assign(advertisement,evaluatorObservation.value);
     };
+    // A pending selection must be acknowledged by the coordinator before
+    // activation. Its subsequent offer list is the admission barrier:
+    // already reserved old-release groups may finish on their exact pins.
+    let beesActivationApproved=false;
     let active=false,executingNative=false,busyHeartbeat=null,
         normalHeartbeat=null,stopping=false,reconnectTimer=null,
         reconnectDelay=2500,last='initial',receipts=[],pendingReports=[],pendingGpuReports=[],
@@ -389,7 +393,8 @@ async function main() {
             // No unrelated service or supervisor is restarted.
             if(executor&&!once) {
                 const changed=executor.refreshBeesRelease({
-                    allowActivation:!pendingReports.length&&!pendingGpuReports.length&&
+                    allowActivation:beesActivationApproved&&
+                        !pendingReports.length&&!pendingGpuReports.length&&
                         !pendingEvaluatorReports.length&&!pendingRemoteRestart,
                 });
                 Object.assign(advertisement,executor.advertisement());
@@ -411,6 +416,13 @@ async function main() {
             pendingReports=[];
             pendingGpuReports=[];
             pendingEvaluatorReports=[];
+            const releaseStatus=advertisement.design_catalog?.bees_native||
+                advertisement.design_catalog?.bees_rollout;
+            beesActivationApproved=Boolean(releaseStatus&&
+                ['pending','failed'].includes(releaseStatus.activation_status)&&
+                Array.isArray(response.lease_offers)&&response.lease_offers.every(offer=>
+                    typeof offer.project_id==='string'&&
+                    !['bees_native','bees_rollout'].includes(offer.project_id)));
             // A shutdown requested while this HTTP call was pending cannot
             // execute a newly offered native Start or evaluator directive.
             // The replacement owner must reconcile any durable offer.
@@ -505,6 +517,7 @@ async function main() {
             if(reconnectTimer)clearTimeout(reconnectTimer);
             reconnectTimer=null;
         }catch(error){
+            beesActivationApproved=false;
             const message=String(error.message||error);
             if(last!==message)console.error('[experiment-hub-agent] '+message);
             last=message;

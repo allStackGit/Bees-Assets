@@ -25,7 +25,8 @@ function supportsJobRuntime(machine,job) {
         const approved=machine?.design_catalog?.bees_rollout;
         const frozen=job.frozen_parameters||{};
         return ['linux','win32'].includes(machine?.agent_platform)&&
-            (!approved?.activation_status||approved.activation_status==='active')&&
+            (!approved?.activation_status||approved.activation_status==='active'||
+                Boolean(job.lease_id))&&
             machine?.installed_projects?.includes('bees_rollout')&&
             approved?.worker_sha256===frozen.worker_sha256&&
             approved?.worker_payload_sha256===frozen.worker_payload_sha256&&
@@ -37,7 +38,8 @@ function supportsJobRuntime(machine,job) {
     if(job?.project_id==='bees_native') {
         const pinned=machine?.design_catalog?.bees_native;
         return machine?.agent_platform==='linux'&&
-            (!pinned?.activation_status||pinned.activation_status==='active')&&
+            (!pinned?.activation_status||pinned.activation_status==='active'||
+                Boolean(job.lease_id))&&
             machine?.installed_projects?.includes('bees_native')&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
@@ -1399,10 +1401,12 @@ function nativeStartReadiness(snapshot, job) {
                 machine.execution_capabilities?.cgroup_controllers.includes(c))))
         return block('Linux cgroup v2 CPU and memory controllers are unavailable.');
     const activation=machine.design_catalog?.[job.project_id]?.activation_status;
-    if(['bees_native','bees_rollout'].includes(job.project_id)&&activation&&activation!=='active')
-        return block(activation==='pending'
-            ?'Selected Unity release is awaiting the machine’s idle activation boundary.'
-            :'Selected Unity release activation failed; inspect the Machines tab.');
+    // An existing claim retains the loaded release. New claims are
+    // paused separately so a partially dispatched WAN group is never
+    // stranded merely because an operator selected a later build.
+    if(['bees_native','bees_rollout'].includes(job.project_id)&&
+        !job.lease_id&&activation&&activation!=='active')
+        return block('Selected Unity release awaits activation; inspect Machines.');
     if(!supportsJobRuntime(machine,job))
         return block('The assigned native worker does not approve this job\'s frozen simulation/runtime identity.');
     if(!supportsDesign(machine.design_catalog,job.project_id,job.frozen_parameters))
@@ -3524,6 +3528,10 @@ class ExperimentHub {
         if(machine.software_update_blocked)
             throw Error(softwareActivationBlock(this.snapshot(),machine.id)||
                 'Machine software update is activating; new leases are blocked.');
+        const activation=machine.design_catalog?.[project.id]?.activation_status;
+        if(['bees_native','bees_rollout'].includes(project.id)&&
+            activation&&activation!=='active')
+            throw Error('New Bees claims are paused while the selected Unity release is being activated on '+machine.id+'.');
         const place=resourcePlacements([machine],next.reservations,wanted)[0];
         if(!place.online || !place.capacity_fits)
             throw Error('Requested capacity is unavailable on this machine.');
@@ -6709,7 +6717,7 @@ class ExperimentHub {
                 x.machine_id===machine.id && x.issued_by==='experiment-hub' &&
                 ['offered','acknowledged'].includes(x.status)
             ).map(x=>({
-                id:x.id,status:x.status,resources:copy(x.resources),
+                id:x.id,status:x.status,project_id:x.project_id,resources:copy(x.resources),
                 // This is an expected PCI binding, not GPU isolation or
                 // a process launch token. The agent checks it against sysfs.
                 gpu_bindings:physicalGpuBindings(machine,report,x.resources,x.gpu_bindings)||[],
@@ -7063,6 +7071,8 @@ class ExperimentHub {
             const machine=machines.get(actor.machine_id);
             if(!eligible(machine)||!machine.installed_projects?.includes('bees_rollout')||
                 !machine.design_catalog?.bees_rollout||
+                (machine.design_catalog.bees_rollout.activation_status&&
+                    machine.design_catalog.bees_rollout.activation_status!=='active')||
                 machine.design_catalog.bees_rollout.wan_key_fingerprint!==key||
                 ['wan_release_sha256','trainer_sha256','runtime_version'].some(field=>
                     machine.design_catalog.bees_rollout[field]!==configRow.parameters[field])||

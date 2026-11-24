@@ -7763,7 +7763,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 status.className='hub-secondary';
                 status.textContent='Unity '+unity.loaded_build_id+' · '+
                     (unity.activation_status==='active'?'active':
-                        unity.activation_status==='pending'?'new build awaiting idle activation':
+                        unity.activation_status==='pending'?'new build awaiting old Bees claims and idle activation':
                         'activation failed: '+(unity.activation_issue||'inspect agent'));
                 if(unity.selected_release_sha256)
                     status.title='Selected release '+unity.selected_release_sha256;

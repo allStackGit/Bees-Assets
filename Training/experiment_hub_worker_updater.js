@@ -136,16 +136,51 @@ async function status(base,env,entry,state,message='') {
         });
     }catch(error){console.error('[worker-updater] Report: '+error.message);}
 }
-function journalActive(root) {
-    const file=path.join(root,process.platform==='win32'
-        ?'NativeState/windows-supervisor-v1.json':'native-state/supervisor-v1.json');
-    if(!fs.existsSync(file))return false; // No native job has ever been dispatched.
-    const state=JSON.parse(fs.readFileSync(file,'utf8'));
-    if(!Array.isArray(state.records))throw Error('Invalid native job journal.');
-    const lock=path.join(path.dirname(file),process.platform==='win32'
-        ?'windows-supervisor.lock':'supervisor.lock');
-    if(fs.existsSync(lock))throw Error('Native ownership journal locked; update blocked.');
-    return state.records.some(record=>!TERMINAL.has(record.state));
+function journalActive(root,env={}) {
+    const native=env.EXPERIMENT_HUB_LOCAL_ROOT||path.join(root,
+        process.platform==='win32'?'NativeState':'native-state');
+    if(!path.isAbsolute(native))
+        throw Error('Native supervisor root must be an absolute local path.');
+    // All owners share this ledger directory, including the mixed Linux
+    // systemd/Docker owner. Absence of one journal is not proof of idleness.
+    const journals=process.platform==='win32'
+        ?['windows-supervisor-v1.json']
+        :['supervisor-v1.json','docker-owner.json'];
+    const locks=process.platform==='win32'
+        ?['windows-supervisor.lock']
+        :['supervisor.lock','docker-owner.lock','mixed-launch.lock',
+            'gpu-preflight-pending.json','docker-gpu-probe.json'];
+    for(const name of locks)
+        if(fs.existsSync(path.join(native,name)))
+            throw Error('Native ownership or GPU probe is unresolved; update blocked.');
+    for(const name of journals) {
+        const file=path.join(native,name);
+        if(!fs.existsSync(file))continue;
+        if(fs.lstatSync(file).isSymbolicLink()||!fs.statSync(file).isFile())
+            throw Error('Native ownership journal is redirected.');
+        const state=JSON.parse(fs.readFileSync(file,'utf8'));
+        if(!Array.isArray(state.records)||
+            state.records.some(record=>!record||typeof record.state!=='string'))
+            throw Error('Invalid native job journal.');
+        if(state.records.some(record=>!TERMINAL.has(record.state)||record.quarantined_at))
+            return true;
+    }
+    return false;
+}
+// Only rewrite the installer-owned default adapter path. A custom local
+// adapter (notably Halifax's mixed ROCm Docker/native map) is not part of
+// the remote worker release and must retain its enrollment and Python pins.
+function managedAdapterPath(root,adapter) {
+    if(!adapter)return true;
+    if(!path.isAbsolute(adapter)||path.basename(adapter)!=='experiment_hub_worker_adapters.js')
+        return false;
+    const source=path.join(root,process.platform==='win32'?'Sources':'sources',
+        'Bees-Assets','Training','experiment_hub_worker_adapters.js');
+    if(path.resolve(adapter)===path.resolve(source))return true;
+    const base=path.join(root,'Software','Releases','worker');
+    const relative=path.relative(base,adapter).split(path.sep);
+    return relative.length===3&&SHA.test(relative[0])&&relative[1]==='Training'&&
+        relative[2]==='experiment_hub_worker_adapters.js';
 }
 function validRelease(entry,name) {
     if(!entry||entry.component!==name||!SHA.test(entry.version||'')||
@@ -597,6 +632,10 @@ async function confirmAgentReplacement(base,env,priorInstance) {
 }
 async function apply(root,envFile,previous,changes,confirmReplacement=null,rolloutKeys={}) {
     const hasWorker=changes.worker;
+    const localEnv=config(envFile);
+    const managedAdapters=managedAdapterPath(root,localEnv.EXPERIMENT_HUB_LOCAL_ADAPTERS);
+    if(!managedAdapters&&(changes.tinybrains||changes.courier))
+        throw Error('Custom native adapter owns simulation source and Python paths; update its approved runtime locally instead of replacing enrollment.');
     const entries={};
     let nativeServiceBinary=null;
     if(hasWorker&&process.platform==='win32') {
@@ -622,7 +661,7 @@ async function apply(root,envFile,previous,changes,confirmReplacement=null,rollo
         entries.EXPERIMENT_HUB_WINDOWS_HELPER_SHA256=
             crypto.createHash('sha256').update(fs.readFileSync(owner)).digest('hex');
     }
-    if(hasWorker)entries.EXPERIMENT_HUB_LOCAL_ADAPTERS=path.join(
+    if(hasWorker&&managedAdapters)entries.EXPERIMENT_HUB_LOCAL_ADAPTERS=path.join(
         changes.worker,'Training','experiment_hub_worker_adapters.js');
     if(changes.tinybrains)
         entries.EXPERIMENT_HUB_TINYBRAINS_PROJECT_ROOT=
@@ -633,7 +672,6 @@ async function apply(root,envFile,previous,changes,confirmReplacement=null,rollo
     // Install only the coordinator-requested simulations, retaining all
     // previously installed components. Private keys are never stored in
     // published source archives or replaced silently.
-    const localEnv=config(envFile);
     const selected=new Set((localEnv.EXPERIMENT_HUB_WORKER_PROJECTS||'')
         .split(',').filter(Boolean));
     const privateDir=path.join(root,process.platform==='win32'?'Private':'private');
@@ -782,12 +820,18 @@ async function main(argv=process.argv.slice(2)) {
                     'Coordinator has not yet activated matching learner/worker source.');
                 continue;
             }
+            if(['tinybrains','courier'].includes(name)&&
+                !managedAdapterPath(root,env.EXPERIMENT_HUB_LOCAL_ADAPTERS)) {
+                await status(base,env,entry,'waiting',
+                    'Machine has a locally owned custom simulation adapter; its runtime pins require local approval.');
+                continue;
+            }
             plan[name]={directory,entry};
         }
         if(baselineSaved)save(activeFile,JSON.stringify(active,null,2)+'\n');
         if(!dirty||!Object.keys(plan).length)return;
         let busy;
-        try{busy=journalActive(root)||manifest.pending_native_jobs.length>0;}catch(error) {
+        try{busy=journalActive(root,env)||manifest.pending_native_jobs.length>0;}catch(error) {
             for(const item of Object.values(plan))
                 await status(base,env,item.entry,'waiting',error.message);
             return;
@@ -821,7 +865,7 @@ async function main(argv=process.argv.slice(2)) {
                         'A native job was dispatched during staging.');
                 return;
             }
-            if(!liveOverride&&journalActive(root)) {
+            if(!liveOverride&&journalActive(root,env)) {
                 for(const item of Object.values(plan))
                     await status(base,env,item.entry,'waiting',
                         'A native owner became active during staging.');
@@ -860,4 +904,4 @@ async function main(argv=process.argv.slice(2)) {
 if(require.main===module)main().catch(error=>{
     console.error('[worker-updater] '+String(error.message||error));process.exitCode=1;
 });
-module.exports={main,config,journalActive,validRelease};
+module.exports={main,config,journalActive,validRelease,managedAdapterPath};

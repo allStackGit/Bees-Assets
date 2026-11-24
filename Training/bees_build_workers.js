@@ -408,7 +408,7 @@ async function build(argv = process.argv.slice(2)) {
             throw Error('Local Unity worker installer did not return the expected verified release receipt.');
         console.log('Host worker release installed: ' + receipt.release_sha256);
         if (activateLocalNow)
-            console.log('Host worker release activated for future idle Hub agent starts.');
+            console.log('Host worker release selected; the Hub agent adopts it at a safe idle boundary.');
     }
     if (arg.inventory) {
         // Do not repackage or infer a release from an older build. The trusted
