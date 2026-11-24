@@ -408,6 +408,17 @@ const HUB_METRIC_DESCRIPTIONS=Object.freeze({
     ant_decisions: "Policy actions produced across all ants in the update. Direct unit of experience production; not identical to engine ticks.",
     group_states: "Joint multi-agent states collected for group-based learning. Indicates the optimizer's group-experience volume.",
     group_states_per_second: "Group states processed per full update second. Useful for throughput scaling when group-size distributions are comparable.",
+    gae_trajectory_count: "Number of colony trajectories or truncated fragments used for GAE in the committed PPO update.",
+    gae_trajectory_turns_mean: "Mean observed colony-turn records per GAE fragment, pooled across all admitted collector shards.",
+    gae_trajectory_turns_min: "Shortest observed GAE fragment in the PPO update.",
+    gae_trajectory_turns_p10: "10th percentile of observed GAE fragment lengths, in colony turns.",
+    gae_trajectory_turns_p50: "Median GAE fragment length in colony turns.",
+    gae_trajectory_turns_p90: "90th percentile of observed GAE fragment lengths, in colony turns.",
+    gae_trajectory_turns_max: "Longest observed GAE fragment in the PPO update.",
+    gae_trajectory_terminal_fraction: "Fraction of GAE fragments ending in a real match outcome rather than a critic-bootstrap boundary.",
+    rollout_shard_count: "Number of complete collector shards admitted to this PPO update.",
+    rollout_shard_decisions_mean: "Mean actual ant decisions per admitted shard, including collection overshoot.",
+    rollout_shard_decisions_max: "Largest actual ant-decision count in an admitted shard.",
     rollout_model_refresh_seconds: "Time spent updating rollout workers with the latest policy weights. Large overhead can offset adding collectors.",
     rollout_engine_step_seconds: "Time spent executing game simulation during collection. If dominant, increase simulation parallelism or reduce engine overhead.",
     rollout_learner_inference_seconds: "Time to compute learner actions during rollouts. High share suggests inference, batching or device limits.",
@@ -4623,6 +4634,12 @@ document.addEventListener('DOMContentLoaded', () => {
             note.className='muted hub-design-note';
             note.textContent='Persistent colony PPO uses training.colony_batch_size (default 16) for optimizer minibatches. The legacy training.batch_size is ignored. Training checkpoint interval controls when immutable model versions are available to independent evaluation; changes apply to future jobs.';
             $('hub-design-training').append(note);
+            if(fields.some(field=>field.key==='training.rollout_shard_actions')) {
+                const rolloutNote=document.createElement('p');
+                rolloutNote.className='muted hub-design-note';
+                rolloutNote.textContent='PPO rollout decision target sets the total experience collected for an update (0 uses the profile). Async rollout shard decisions controls the target per independent collector shard before GAE (0 uses the previous automatic rule: min(8192, PPO target / 4), rounded down). This target must not exceed the PPO rollout target and requires remote rollout collection. Actual trajectory turns depend on concurrent games, colony populations and episode endings; compare the GAE trajectory metrics.';
+                $('hub-design-training').append(rolloutNote);
+            }
         }
     }
     $('hub-design-reset').addEventListener('click',()=>{
@@ -5309,6 +5326,9 @@ document.addEventListener('DOMContentLoaded', () => {
             'training_score_rate','training_win_rate',
             'training_mean_score_margin','training_completed_matches',
             'food_gathered_exact','ant_decisions_per_second',
+            'gae_trajectory_turns_mean','gae_trajectory_turns_p50',
+            'gae_trajectory_turns_p90','gae_trajectory_terminal_fraction',
+            'rollout_shard_decisions_mean',
             'total_ppo_updates','update_wall_time','job_cpu_cores',
             'host_gpu_busy_pct',
         ],
