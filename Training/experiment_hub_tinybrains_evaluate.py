@@ -236,6 +236,7 @@ def evaluate(checkpoint, digest, suite, work, *, on_result=None):
 def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     from ants_mapoca.artifacts import export
     from ants_mapoca.runtime import STARTER, configure, dump, run_cli
+    from ants_mapoca.season import board_path
 
     configure(threads=1)
     pinned = work / "checkpoint.pt"
@@ -267,6 +268,12 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
     wins = trials = 0
     for map_index, board in enumerate(suite["maps"]):
         seats = board_seats(board)
+        # The pinned cartridge ships basic-tiny-2p by name. Season boards
+        # are separate source-controlled JSON files, as in the learner's
+        # full-map rollout and built-in season benchmark. Keep the logical
+        # board ID for suite identity and outcome reports, not CLI lookup.
+        match_map = (board if board == "basic-tiny-2p"
+                     else str(board_path(board).resolve(strict=True)))
         for seed_index, seed in enumerate(suite["seeds"]):
             # Every candidate seat is evaluated once per configured rotation.
             for scheduled in range(seats * suite.get("rotations", 1)):
@@ -285,7 +292,7 @@ def _evaluate(checkpoint, digest, suite, work, *, on_result=None):
                 dump(match_file, {
                     "game": "ants", "vars": {"max_turns": suite["max_turns"]},
                     "rows": [{
-                        "id": match, "seed": seed, "map": board, "seat_count": seats,
+                        "id": match, "seed": seed, "map": match_map, "seat_count": seats,
                         "seats": [{"seat": index, "weights": str(model / "model.onnx"),
                                    "manifest": str(model / "manifest.json"),
                                    "label": "candidate" if index == seat else (
