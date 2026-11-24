@@ -1006,6 +1006,18 @@ def main():
             stream.flush()
             os.fsync(stream.fileno())
         temporary.rename(directory / "failure.json")
+    def archive_checkpoint_failure(reason):
+        identity = json.loads((pending / "snapshot.json").read_text(encoding="utf-8"))
+        sha, step = identity["model_sha256"], identity["step"]
+        if (identity.get("schema_version") != 1 or not isinstance(sha, str)
+            or len(sha) != 64 or any(ch not in "0123456789abcdef" for ch in sha)
+            or type(step) is not int or step < 0):
+            raise RuntimeError("Invalid checkpoint evaluation output identity.")
+        record_evaluation_failure(pending, sha, step, reason)
+        pending.rename(checkpoint_root / "failed" / (sha + "-" + uuid.uuid4().hex))
+        print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues: "
+              + " ".join(str(reason).split())[:160], file=sys.stderr, flush=True)
+
     def poll_evaluation(allow_start=True):
         nonlocal evaluation_child
         if schedule is None:
@@ -1026,13 +1038,9 @@ def main():
                 else:
                     pending.rename(destination)
             else:
-                record_evaluation_failure(
-                    pending, sha, identity["step"],
+                archive_checkpoint_failure(
                     "Checkpoint evaluator exited with status " + str(result)
                     if result else "Checkpoint evaluator produced no summary")
-                pending.rename(checkpoint_root / "failed" / (sha + "-" + uuid.uuid4().hex))
-                print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues.",
-                      file=sys.stderr, flush=True)
         if allow_start and pending.is_dir():
             environment = os.environ.copy()
             threads = str(schedule["cpu_threads"])
@@ -1040,12 +1048,18 @@ def main():
                 "BEES_HUB_EVAL_THREADS": threads, "OMP_NUM_THREADS": threads,
                 "OPENBLAS_NUM_THREADS": threads, "MKL_NUM_THREADS": threads,
             })
-            evaluation_child = subprocess.Popen([
-                sys.executable, "-B",
-                str(Path(job["training_script"]).with_name("bees_hub_checkpoint_evaluation.py")),
-                "--job", str(root / "job.json"),
-            ], cwd=str(Path(job["training_script"]).parent),
-                env=environment, start_new_session=True)
+            try:
+                evaluation_child = subprocess.Popen([
+                    sys.executable, "-B",
+                    str(Path(job["training_script"]).with_name("bees_hub_checkpoint_evaluation.py")),
+                    "--job", str(root / "job.json"),
+                ], cwd=str(Path(job["training_script"]).parent),
+                    env=environment, start_new_session=True)
+            except OSError as error:
+                # An independently owned evaluator failing to spawn is not
+                # a learner failure. Retire the immutable snapshot exactly
+                # once so the next checkpoint remains eligible.
+                archive_checkpoint_failure("Checkpoint evaluator launch failed: " + str(error))
     def close_evaluation():
         nonlocal evaluation_child
         poll_evaluation(False)
