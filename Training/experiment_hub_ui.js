@@ -1267,6 +1267,13 @@ function approvedTinyBrainsProfiles(machines) {
                     :' · Update time unavailable')+
                 (data.frontend_commit&&data.frontend_commit!==data.source_commit
                     ?' · UI '+data.frontend_commit.slice(0,12):'')+
+                (data.activated_source_commit&&data.activated_source_commit!==data.source_commit
+                    ?' · Active source '+data.activated_source_commit.slice(0,12):'')+
+                (data.checkout_commit&&data.checkout_commit!==(data.activated_source_commit||data.source_commit)
+                    ?' · Checkout '+data.checkout_commit.slice(0,12):'')+
+                (data.pending_source_commit
+                    ?' · Source update pending ('+data.pending_source_commit.slice(0,12)+')':'')+
+                (data.release_error?' · Release check: '+data.release_error:'')+
                 (data.pending_commit
                     ?' · Coordinator update waiting to activate ('+
                         data.pending_commit.slice(0,12)+')':'')+
