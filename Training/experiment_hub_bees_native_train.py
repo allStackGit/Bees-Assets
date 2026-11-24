@@ -134,7 +134,7 @@ def inspect_job(filename: Path) -> dict:
     wan_keys = {"wan_actors", "wan_broker_port", "wan_key_file",
                 "wan_key_fingerprint", "game_payload_sha256",
                 "wan_release_sha256"}
-    optional_keys = {"checkpoint_interval", "evaluation_schedule"}
+    optional_keys = {"checkpoint_interval", "evaluation_schedule", "evaluation_seed"}
     actual_keys = set(job) - optional_keys if isinstance(job, dict) else set()
     if not isinstance(job, dict) or (
         job.get("schema_version") == 1 and actual_keys != keys
@@ -235,7 +235,9 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Cross-worker inference batching must be a boolean.")
     if job["evaluation_profile"] not in ("off","scripted-maps-v1","scripted-coverage-v2") or (
         type(job["evaluation_matches"]) is not int or
-        not 1 <= job["evaluation_matches"] <= 100
+        not 1 <= job["evaluation_matches"] <= 100 or
+        type(job.get("evaluation_seed", job["seed"])) is not int or
+        not 0 <= job.get("evaluation_seed", job["seed"]) <= 2147483647
     ):
         raise ValueError("Unsupported frozen post-training evaluation profile.")
     interval = job.get("checkpoint_interval")
@@ -724,7 +726,7 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
         "schema_version":1,"id":"bees-native-"+label.replace("_","-"),
         "revision":1,"behavior_name":"BeesRL1v1",
         "matches":job["evaluation_matches"],
-        "seed":(job["seed"]+131071+index*65537)%(2**31),
+        "seed":(job.get("evaluation_seed", job["seed"])+131071+index*65537)%(2**31),
         "max_environment_steps_per_match":200000,
         "env_args":[
             "--rl-matchup-mode=sampled",
@@ -754,11 +756,16 @@ def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
     report=json.loads(report_file.read_text(encoding="utf-8"))
     source=report.get("benchmark",{})
     summary=report.get("metrics",{})
-    if(report.get("schema_version")!=1 or
+    index=next((i for i, case in enumerate(evaluation_cases(job["evaluation_profile"]))
+                if case[0]==label and case[3]==opponent), None)
+    if(index is None or report.get("schema_version")!=1 or
        report.get("candidate_sha256")!=model_sha256 or
        report.get("environment_executable_sha256")!=job["game_sha256"] or
        report.get("opponent_path")!="scripted:"+opponent or
+       report.get("evaluation_code_sha256")!=job["evaluator_core_sha256"] or
+       report.get("opponent_script_sha256")!=job["opponent_script_sha256"] or
        source.get("id")!="bees-native-"+label.replace("_","-") or
+       source.get("seed")!=(job.get("evaluation_seed", job["seed"])+131071+index*65537)%(2**31) or
        summary.get("matches")!=job["evaluation_matches"]):
         raise RuntimeError("Independent benchmark result does not match its frozen scenario.")
     results = {}

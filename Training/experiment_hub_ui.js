@@ -4380,7 +4380,7 @@ document.addEventListener('DOMContentLoaded', () => {
             runtime_version:choice.entry.runtime_version,
             ...(choice.entry.wan_key_fingerprint
                 ?{wan_key_fingerprint:choice.entry.wan_key_fingerprint}:{}),
-            max_steps:100000,envs:8,seed:42,device:'cuda',
+            max_steps:100000,envs:8,seed:42,evaluation_seed:42,device:'cuda',
             hyperparameters:{},
         };
         if(project==='courier')return {
@@ -4427,6 +4427,19 @@ document.addEventListener('DOMContentLoaded', () => {
         try {parameters=JSON.parse($('hub-config-json').value);}catch {}
         const cadence=Number($('hub-evaluation-frequency').value);
         const monitoring=$('hub-evaluation-mode').value==='monitor';
+        if(project==='bees_native') {
+            const saving=parameters.checkpoint_interval??
+                designDefinition(parameters)?.entry.fields?.find(entry=>entry.key==='checkpoint_interval')?.default;
+            note.textContent=Number.isSafeInteger(saving)&&saving>0
+                ?'Bees saves a checkpoint every '+saving.toLocaleString()+' environment steps. '+
+                    (monitoring&&Number.isSafeInteger(cadence)&&cadence>0
+                        ?'Request an independent benchmark every '+cadence+
+                            ' saved checkpoint(s), approximately '+(saving*cadence).toLocaleString()+
+                            ' environment steps. Busy evaluators skip snapshots without blocking PPO. '
+                        :'')+'Baseline and final evaluations are configured separately. Keep the evaluation seed fixed when comparing training runs.'
+                :'Select a compatible Bees Design with a checkpoint interval.';
+            return;
+        }
         let saving=null,unit=project==='tinybrains'?'PPO updates':'rounds';
         if(project==='courier') {
             saving=parameters.checkpoint_rounds;
@@ -4637,7 +4650,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderedDesignSignature=signature;
         const editor=$('hub-design-editor');
         $('hub-design-availability').textContent=project==='bees'||chosen?'':(
-            project==='courier'||project==='tinybrains'
+            ['courier','tinybrains','bees_native'].includes(project)
                 ?'Editable project defaults require a connected worker with a trusted, compatible Design-capable adapter. Existing drafts remain preserved; Advanced JSON can be viewed without a worker.'
                 :'This project has no installed Design schema. Registering a project does not install its training adapter.');
         editor.hidden=!chosen;
@@ -4759,8 +4772,8 @@ document.addEventListener('DOMContentLoaded', () => {
             $('hub-design-run').append(benchmarkLabel);
         }
         $('hub-design-source').textContent='Defaults from '+machine.id+
-            ' · approved '+(project==='courier'?'environment':'profile')+
-            ' '+(entry.config_sha256||entry.profile_sha256).slice(0,12)+
+            ' · approved '+(project==='bees_native'?'Unity worker':project==='courier'?'environment':'profile')+
+            ' '+(entry.worker_sha256||entry.config_sha256||entry.profile_sha256).slice(0,12)+
             '. Overrides are frozen in each saved draft and verified by the worker at Start.'+
             (project==='tinybrains'
                 ?' These defaults come from the frozen source run specification. Unchanged settings continue with the imported optimizer checkpoint, which may have different current values.'
@@ -8132,6 +8145,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 ?'\nThe winner retains its original learner host and actor machines, CPU/RAM/GPU budgets and environment counts. All previous actor capacity must be released. The new group is reserved atomically; native Starts still require qualified group authorization.'
                 :'';
             if(wan)payload.reuse_wan_group=true;
+            const optimizerNotice=project==='bees_native'
+                ?'\nThe selected winner retains its training seed and PPO hyperparameters (including its learning rate). The saved next-stage configuration supplies all other settings.'
+                :'';
+            if(project==='bees_native')payload.inherit_winner_optimizer=true;
             const complete=jobs.every(j=>j&&
                 ['finished','stopped'].includes(j.status)&&j.capacity_released_at);
             if(complete) {
@@ -8139,7 +8156,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const winner=decision.ranked[0];
                 if(!confirm('Queue the best independently evaluated '+project+
                     ' candidate?\n'+candidateRankingText(decision)+
-                    '\nThe next stage resumes only when the native model bytes still match the evaluated checkpoint.'+wanNotice))return;
+                    '\nThe next stage resumes only when the native model bytes still match the evaluated checkpoint.'+optimizerNotice+wanNotice))return;
                 const result=await action('hub/candidates/promote',{
                     ...payload,expected_winner_job_id:winner.job_id,
                     confirm_queue:true,
@@ -8150,7 +8167,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     (result.bundle_id?' · reserved WAN bundle '+result.bundle_id:'')+'.');
             }else {
                 if(!confirm('Schedule '+candidateIds.length+' '+project+
-                    ' candidates for automatic best-model selection when all complete? The coordinator will require identical suites, verified final model bytes and released capacity; invalid results require review.'+wanNotice))return;
+                    ' candidates for automatic best-model selection when all complete? The coordinator will require identical suites, verified final model bytes and released capacity; invalid results require review.'+optimizerNotice+wanNotice))return;
                 const plan=await action('hub/candidates/schedule',{
                     ...payload,confirm_queue:true,
                 });
@@ -8184,6 +8201,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!confirm('Resolve reviewed selection '+plan.id+' and queue the winning '+
                 plan.project_id+' checkpoint?\n'+candidateRankingText(decision)+
                 '\nThe original frozen next-stage configuration and resources will be used.'+
+                (plan.inherit_winner_optimizer?' The winner retains its exact training seed and PPO hyperparameters.':'')+
                 (plan.reuse_wan_group?' The winning original Bees WAN actor layout will be reserved again.':'')))return;
             const result=await action('hub/candidates/promote',{
                 selection_plan_id:plan.id,
@@ -8192,6 +8210,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 expected_revision:plan.expected_revision,
                 resources:plan.resources,
                 ...(plan.reuse_wan_group?{reuse_wan_group:true}:{}),
+                ...(plan.inherit_winner_optimizer?{inherit_winner_optimizer:true}:{}),
                 expected_winner_job_id:winner.job_id,
                 confirm_review:true,confirm_queue:true,
             });

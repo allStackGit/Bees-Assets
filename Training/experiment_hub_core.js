@@ -544,7 +544,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(projectId!=='bees_native')return;
     const keys=new Set(['max_steps','envs','seed','device','hyperparameters',
         'environment_args','worker_sha256','trainer_sha256','runtime_version',
-        'evaluation_profile','evaluation_matches','batch_inference','checkpoint_interval',
+        'evaluation_profile','evaluation_matches','evaluation_seed','batch_inference','checkpoint_interval',
         'wan_actors','wan_key_fingerprint','worker_payload_sha256',
         'wan_release_sha256']);
     if(!object(parameters)||Object.keys(parameters).some(key=>!keys.has(key))||
@@ -576,8 +576,11 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(parameters.evaluation_profile??'off')||
         !Number.isSafeInteger(parameters.evaluation_matches??8)||
         (parameters.evaluation_matches??8)<1||
-        (parameters.evaluation_matches??8)>100)
-        throw Error('Native Bees scripted benchmark requires a supported profile and 1–100 matches per scenario.');
+        (parameters.evaluation_matches??8)>100||
+        !Number.isSafeInteger(parameters.evaluation_seed??parameters.seed)||
+        (parameters.evaluation_seed??parameters.seed)<0||
+        (parameters.evaluation_seed??parameters.seed)>2147483647)
+        throw Error('Native Bees scripted benchmark requires a supported profile, independent seed and 1–100 matches per scenario.');
     const args=parameters.environment_args??[];
     if(!Array.isArray(args)||args.length>32||
         args.some(arg=>typeof arg!=='string'||arg.length>256||
@@ -607,8 +610,7 @@ function validateBeesNativeDefinition(projectId,parameters,resources=null) {
             throw Error('Bees native environment count must fit the CPU claim, with exactly one exclusive GPU for ROCm or no GPU for CPU.');
     }
 }
-// Bees' current scripted evaluator runs only after the final PPO checkpoint.
-// Never promise in-training cadence evaluations or a mismatched suite.
+// Intermediate and final Bees scripted benchmarks share one frozen suite.
 function validateBeesFinalEvaluation(projectId,parameters,configuration) {
     if(projectId!=='bees_native')return;
     const monitor=monitoringPolicy(configuration.evaluation_monitor);
@@ -1063,6 +1065,13 @@ function validateBeesContinuation(parent,frozen) {
     const hyperKeys=new Set([...Object.keys(previous),...Object.keys(current)]);
     if([...hyperKeys].some(key=>previous[key]!==current[key]))
         throw Error('Bees checkpoint continuation must preserve PPO hyperparameters. Queue a new independent trial to change optimizer settings.');
+}
+function beesWinnerOptimizer(parent,value) {
+    if(value.inherit_winner_optimizer!==true)return undefined;
+    if(parent?.project_id!=='bees_native')
+        throw Error('Winner optimizer inheritance is only supported for exact Bees Unity continuation.');
+    return {seed:parent.frozen_parameters.seed,
+        hyperparameters:copy(parent.frozen_parameters.hyperparameters||{})};
 }
 function beesWanJob(job) {
     return job?.project_id==='bees_rollout'||
@@ -6772,6 +6781,7 @@ class ExperimentHub {
         const project = this.project(value.project_id);
         if(project.id==='ants')throw Error('Ants-v2 Hub integration is retired.');
         const params = config(value.parameters);
+        if(project.id==='bees_native')params.evaluation_seed??=42;
         validateBeesNativeDefinition(project.id,params);
         const previous=value.id?this.state.configurations.find(c=>
             c.id===value.id&&c.project_id===project.id&&
@@ -6975,7 +6985,7 @@ class ExperimentHub {
             note:'All remote Bees actors and one authoritative PPO learner are now reserved. Use resource-bundle Start only after authenticated broker tunnels and lease receipts are ready.',
         };
     }
-    queueBeesDistributedGroupIn(next,value,snapshot) {
+    queueBeesDistributedGroupIn(next,value,snapshot,learnerOverrides=undefined) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>!['confirm_queue','learner','actors'].includes(key))||
             !object(value.learner)||
@@ -7054,7 +7064,7 @@ class ExperimentHub {
                 throw Error('Bees WAN actor '+actor.machine_id+
                     ' does not approve the learner Unity, PPO runtime or private broker key.');
         }
-        const learner=this.queueIn(next,value.learner,undefined,false,true);
+        const learner=this.queueIn(next,value.learner,learnerOverrides,false,true);
         if(learner.project_id!=='bees_native'||learner.status!=='waiting_adapter'||
             learner.frozen_parameters.wan_actors!==value.actors.length)
             throw Error('Bees WAN learner is not an unstarted native Hub job.');
@@ -8256,16 +8266,18 @@ class ExperimentHub {
              plan.configuration_id!==value.configuration_id||
              plan.expected_revision!==value.expected_revision||
              Boolean(plan.reuse_wan_group)!==Boolean(value.reuse_wan_group)||
+             Boolean(plan.inherit_winner_optimizer)!==Boolean(value.inherit_winner_optimizer)||
              JSON.stringify(plan.resources)!==JSON.stringify(value.resources)))
             throw Error('Candidate selection plan changed or was already fulfilled.');
         const parent=next.jobs.find(j=>j.id===decision.winner_job_id);
+        const overrides=beesWinnerOptimizer(parent,value);
         let job,group=null;
         if(parent.project_id==='bees_native'&&parent.frozen_parameters?.wan_actors>0) {
             const snapshot=this.snapshot();
             const layout=beesCandidateWanRequest(snapshot,parent,value);
             if(!layout.released)
                 throw Error('Release all original Bees WAN actor capacity before promoting the winning learner.');
-            group=this.queueBeesDistributedGroupIn(next,layout.request,snapshot);
+            group=this.queueBeesDistributedGroupIn(next,layout.request,snapshot,overrides);
             job=group.jobs[0];
         }else {
             if(value.reuse_wan_group===true)
@@ -8275,7 +8287,7 @@ class ExperimentHub {
                 expected_revision:value.expected_revision,
                 resources:value.resources,
                 continuation_of_job_id:parent.id,
-            });
+            },overrides);
         }
         job.expected_parent_model_sha256=parent.checkpoint_model_sha256;
         job.candidate_selection={
@@ -8283,6 +8295,7 @@ class ExperimentHub {
             winner_job_id:parent.id,
             checkpoint_sha256:parent.checkpoint_model_sha256,
             score:decision.ranked[0].score,
+            ...(overrides?{inherited_winner_optimizer:true}:{}),
             selected_at:now(),
             ...(plan?{selection_plan_id:plan.id}:{}),
         };
@@ -8353,7 +8366,9 @@ class ExperimentHub {
             throw Error('Explicitly confirm reuse of the original WAN actor group for a distributed Bees continuation.');
         if(jobs[0].project_id==='bees_native') {
             for(const candidate of jobs) {
-                validateBeesContinuation(candidate,selected.parameters);
+                const parameters={...selected.parameters,...beesWinnerOptimizer(candidate,value)};
+                validateBeesNativeDefinition('bees_native',parameters,resourceRequest(value.resources));
+                validateBeesContinuation(candidate,parameters);
                 if(reuseWan) {
                     if(candidate.frozen_parameters.wan_actors!==selected.parameters.wan_actors)
                         throw Error('Every WAN candidate must have the same actor count as the continuation configuration.');
@@ -8361,6 +8376,8 @@ class ExperimentHub {
                 }
             }
         }else {
+            if(value.inherit_winner_optimizer===true)
+                throw Error('Winner optimizer inheritance is only supported for Bees Unity.');
             const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
             if(!SHA256.test(String(selected.parameters?.[pin]||''))||
                 jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
@@ -8385,7 +8402,8 @@ class ExperimentHub {
             candidate_job_ids:ids.slice(),
             configuration_id:selected.id,expected_revision:selected.revision,
             resources,status:'waiting',created_at:now(),
-            ...(reuseWan?{reuse_wan_group:true}:{})};
+            ...(reuseWan?{reuse_wan_group:true}:{}),
+            ...(value.inherit_winner_optimizer===true?{inherit_winner_optimizer:true}:{})};
         plans.push(plan);
         next.candidate_selections=plans;
         this.commit(next);
@@ -8449,6 +8467,12 @@ class ExperimentHub {
         // Freeze the exact input and resources. No executable, shell snippet,
         // directory, or process arguments can be supplied in the job request.
         const frozen = config(selected.parameters);
+        if(project.id==='bees_native') {
+            frozen.evaluation_seed??=42;
+            // Only the confirmed candidate-promotion path supplies winner
+            // overrides. Validate the actual frozen inputs below.
+            if(placementParameters!==undefined)Object.assign(frozen,copy(placementParameters));
+        }
         // New TinyBrains jobs must freeze the complete map/player-count stage.
         // Older saved designs omitted it and silently inherited basic-tiny-2p
         // from their checkpoints, even when the run was labeled Full Maps.
@@ -8471,7 +8495,8 @@ class ExperimentHub {
         if(project.id==='courier'&&(Object.hasOwn(frozen,'remote_lineage_plan')||
             Object.hasOwn(frozen,'shared_policy_cpus')))
             throw Error('Only a reserved Courier group can freeze its approved endpoint plan.');
-        if(placementParameters!==undefined)Object.assign(frozen,copy(placementParameters));
+        if(project.id!=='bees_native'&&placementParameters!==undefined)
+            Object.assign(frozen,copy(placementParameters));
         // Hardware choice belongs to the lease. A saved TinyBrains policy
         // profile without an explicit device works with a CPU-only, one-GPU
         // or multi-GPU lease without requiring a separate profile.

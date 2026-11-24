@@ -64,7 +64,7 @@ function jobPath(artifacts,context) {
 function normalize(parameters,context,approved) {
     const allowed=new Set([
         'max_steps','envs','device','seed','hyperparameters','environment_args',
-        'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','batch_inference','checkpoint_interval',
+        'worker_sha256','trainer_sha256','runtime_version','evaluation_profile','evaluation_matches','evaluation_seed','batch_inference','checkpoint_interval',
         'wan_actors','wan_key_fingerprint','worker_payload_sha256',
         'wan_release_sha256',
     ]);
@@ -122,10 +122,14 @@ function normalize(parameters,context,approved) {
         throw Error('Invalid Bees checkpoint interval.');
     const profile=parameters.evaluation_profile??'off';
     const matches=parameters.evaluation_matches??8;
+    // Already frozen pre-upgrade jobs retain their original training-seed
+    // benchmark identity. New Hub Designs pin an independent evaluation seed.
+    const evaluationSeed=parameters.evaluation_seed??seed;
     if(!['off','scripted-maps-v1','scripted-coverage-v2'].includes(profile)||
-        !Number.isSafeInteger(matches)||matches<1||matches>100)
+        !Number.isSafeInteger(matches)||matches<1||matches>100||
+        !Number.isSafeInteger(evaluationSeed)||evaluationSeed<0||evaluationSeed>2147483647)
         throw Error('Bees evaluation profile must be off, scripted-maps-v1 or scripted-coverage-v2, with 1–100 matches per scenario.');
-    return {maxSteps,envs,seed,device,profile,matches,batching,wanActors,interval,
+    return {maxSteps,envs,seed,device,profile,matches,evaluationSeed,batching,wanActors,interval,
         environmentArgs:envArgs.slice(),hyperparameters:{...overrides}};
 }
 
@@ -136,7 +140,7 @@ const DESIGN_FIELDS=Object.freeze([
         section:'training',type:'integer',default:2000000,min:1000,max:100000000000},
     {key:'envs',label:'Parallel Unity environments',section:'environment',
         type:'integer',default:8,min:1,max:64},
-    {key:'seed',label:'Random seed',section:'training',
+    {key:'seed',label:'Training random seed',section:'training',
         type:'integer',default:42,min:0,max:2147483647},
     {key:'device',label:'Learner device',section:'training',
         type:'enum',default:'cuda',options:['cuda','cpu']},
@@ -158,10 +162,12 @@ const DESIGN_FIELDS=Object.freeze([
         section:'training',type:'boolean',default:true},
     {key:'wan_actors',label:'Remote WAN simulation actor machines',
         section:'environment',type:'integer',default:0,min:0,max:8},
-    {key:'evaluation_profile',label:'Post-training evaluation profile',section:'training',
+    {key:'evaluation_profile',label:'Independent scripted evaluation profile',section:'training',
         type:'enum',default:'off',options:['off','scripted-maps-v1','scripted-coverage-v2']},
     {key:'evaluation_matches',label:'Matches per evaluation scenario',section:'training',
         type:'integer',default:8,min:1,max:100},
+    {key:'evaluation_seed',label:'Independent evaluation seed',section:'training',
+        type:'integer',default:42,min:0,max:2147483647},
 ]);
 // Post-training benchmark suites are independent of PPO. The native runner
 // publishes these only after it has frozen the final ONNX checkpoint.
@@ -329,11 +335,13 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         const suite=BEES_FINAL_SUITES[job.evaluation_profile];
         if(job.job_id!==context.job_id||suite!==context.suite_id||
             job.runtime_version!==context.frozen_parameters?.runtime_version||
-            job.game_sha256!==context.frozen_parameters?.worker_sha256)
+            job.game_sha256!==context.frozen_parameters?.worker_sha256||
+            (job.evaluation_seed??job.seed)!==
+                (context.frozen_parameters?.evaluation_seed??context.frozen_parameters?.seed))
             throw Error('Bees evaluation suite differs from its frozen job.');
         const definition=JSON.stringify({
             suite_id:suite,profile:job.evaluation_profile,
-            matches_per_case:job.evaluation_matches,seed:job.seed,
+            matches_per_case:job.evaluation_matches,seed:job.evaluation_seed??job.seed,
             game_sha256:job.game_sha256,
             evaluator_sha256:job.evaluator_sha256,
             evaluator_core_sha256:job.evaluator_core_sha256,
@@ -452,7 +460,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     proof.opponent_script_sha256!==job.opponent_script_sha256||
                     proof.opponent_path!=='scripted:'+opponent||
                     proof.benchmark?.id!=='bees-native-'+label.replaceAll('_','-')||
-                    proof.benchmark?.seed!==(job.seed+131071+index*65537)%2147483648||
+                    proof.benchmark?.seed!==((job.evaluation_seed??job.seed)+131071+index*65537)%2147483648||
                     item.matches!==job.evaluation_matches)
                     throw Error('Bees benchmark proof differs from its frozen model, runtime or scenario.');
                 for(const key of Object.keys(totals)) {
@@ -619,6 +627,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     wan_key_fingerprint:key.fingerprint}:{}),
                 evaluation_profile:frozen.profile,
                 evaluation_matches:frozen.matches,
+                evaluation_seed:frozen.evaluationSeed,
                 checkpoint_interval:frozen.interval,
                 ...(schedule?{evaluation_schedule:schedule}:{}),
                 batch_inference:frozen.batching,
