@@ -7262,6 +7262,11 @@ def install_inactive_continuous_action_masking() -> Optional[Callable]:
         )
         update_seconds = time.perf_counter() - update_started
         _record_poca_update_busy_seconds(update_seconds)
+        # Capture basic wall-clock optimizer cost independently of verbose
+        # diagnostics or TensorBoard summary cadence.
+        from bees_hub_live_metrics import publish_ppo_update
+        publish_ppo_update(update_seconds, materialize_seconds,
+                           int(completed_minibatches), int(buffer_length))
         if diagnostics_enabled:
             print(
                 "[Bees PPO timing] update end "

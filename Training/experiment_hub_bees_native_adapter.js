@@ -142,7 +142,10 @@ const BEES_FINAL_SUITES=Object.freeze({
     'scripted-maps-v1':'bees_scripted_maps_v1',
     'scripted-coverage-v2':'bees_scripted_coverage_v2',
 });
-const METRICS=Object.freeze(['training_steps','elapsed_training_seconds',
+const METRICS=Object.freeze(['training_steps','training_steps_this_job','elapsed_training_seconds',
+    'learner_progress_age_seconds','mean_group_reward','extrinsic_value_estimate','extrinsic_baseline_estimate',
+    'ppo_updates_this_job','ppo_total_seconds','ppo_total_minibatches','ppo_update_seconds',
+    'ppo_materialize_seconds','ppo_minibatches','ppo_update_experiences','ppo_minibatches_per_second','ppo_busy_fraction',
     'environment_steps_per_second','mean_reward','mean_episode_steps',
     'policy_loss','value_loss','policy_entropy','self_play_elo',
     'self_play_win_rate','evaluation_elapsed_seconds',

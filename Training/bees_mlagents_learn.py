@@ -1030,18 +1030,21 @@ def _install_managed_learner_progress_marker():
     restarts so shutdown stays fail-closed and preserves that optimizer lineage.
     """
 
+    from bees_hub_live_metrics import configured, learner_sample_due, publish_learner_step
+
     path = _managed_learner_progress_path()
-    if path is None:
+    live_enabled = configured()
+    if path is None and not live_enabled:
         return None
 
     from mlagents.trainers.trainer_controller import TrainerController
 
     original = TrainerController.advance
     run_id = os.environ.get("BEES_TRAINING_RUN_ID", "").strip()
-    marker_written = False
+    marker_written = path is None
     try:
-        existing = json.loads(path.read_text(encoding="utf-8"))
-        marker_written = (
+        existing = json.loads(path.read_text(encoding="utf-8")) if path is not None else {}
+        marker_written = path is None or (
             isinstance(existing, dict)
             and str(existing.get("run_id", "")).strip() == run_id
             and isinstance(existing.get("step"), int)
@@ -1054,7 +1057,8 @@ def _install_managed_learner_progress_marker():
     def advance_with_progress(controller, env_manager):
         nonlocal marker_written
         result = original(controller, env_manager)
-        if marker_written:
+        live_due = live_enabled and learner_sample_due()
+        if marker_written and not live_due:
             return result
 
         steps = []
@@ -1065,7 +1069,9 @@ def _install_managed_learner_progress_marker():
                 continue
             if step > 0:
                 steps.append(step)
-        if steps:
+        if live_due:
+            publish_learner_step(max(steps, default=0))
+        if steps and not marker_written:
             try:
                 _atomic_json(
                     path,

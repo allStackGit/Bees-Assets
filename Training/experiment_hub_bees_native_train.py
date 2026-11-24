@@ -37,6 +37,10 @@ TAGS = {
     "Losses/Value Loss": ("value_loss", "scalar"),
     "Policy/Entropy": ("policy_entropy", "scalar"),
     "Self-Play/ELO": ("self_play_elo", "scalar"),
+    "Self-play/ELO": ("self_play_elo", "scalar"),
+    "Environment/Group Cumulative Reward": ("mean_group_reward", "scalar"),
+    "Policy/Extrinsic Value Estimate": ("extrinsic_value_estimate", "scalar"),
+    "Policy/Extrinsic Baseline Estimate": ("extrinsic_baseline_estimate", "scalar"),
     "Self-Play/Win Rate": ("self_play_win_rate", "ratio"),
 }
 
@@ -451,17 +455,39 @@ def scalar_value(record):
     return None
 
 class EventProgress:
-    def __init__(self, root: Path, job_id: str, lineage_root_id: str):
+    def __init__(self, root: Path, job_id: str, lineage_root_id: str,
+                 initial_step: int = 0):
         self.root,self.job_id=root,job_id
         self.lineage_root_id=lineage_root_id
         self.loaders={}
-        self.steps=0
+        self.steps=initial_step
+        self.initial_step=initial_step
         self.values={}
+        self.tag_steps={}
         self.first=time.monotonic()
-        self.last_step=0
+        self.last_step=initial_step
         self.last_at=self.first
+        self.live_sample_at=None
+        self.live_step=initial_step
+        self.live_rate=None
         self.training_finished_at=None
         self.evaluation_started_at=None
+
+    def _live_sample(self, name):
+        filename=self.root/(name+".json")
+        if not filename.exists():
+            return None
+        if filename.is_symlink() or not filename.is_file() or filename.stat().st_size>4096:
+            raise ValueError("Invalid local Bees learner telemetry file.")
+        data=json.loads(filename.read_text(encoding="utf-8"))
+        if (not isinstance(data,dict) or data.get("schema_version")!=1 or
+            data.get("job_id")!=self.job_id):
+            raise ValueError("Bees learner telemetry identity changed.")
+        timestamp=data.get("sampled_monotonic")
+        if (type(timestamp) not in (int,float) or not math.isfinite(timestamp) or
+            not self.first-1 <= timestamp <= time.monotonic()+1):
+            raise ValueError("Invalid Bees learner telemetry clock.")
+        return data
 
     def poll(self):
         training=self.root/"results"/self.lineage_root_id
@@ -477,12 +503,12 @@ class EventProgress:
                 if rows>MAX_EVENT_ROWS_PER_POLL:
                     break
                 step=int(event.step)
-                if step<=0 or step<self.steps:
+                if step<self.initial_step:
                     continue
                 self.steps=max(step,self.steps)
                 for value in event.summary.value:
                     mapped=TAGS.get(value.tag)
-                    if not mapped:
+                    if not mapped or step<self.tag_steps.get(mapped[0],self.initial_step):
                         continue
                     parsed=scalar_value(value)
                     if parsed is None:
@@ -490,18 +516,66 @@ class EventProgress:
                     measurement=measured_metric(parsed,mapped[1])
                     if measurement is not None:
                         self.values[mapped[0]]=measurement
+                        self.tag_steps[mapped[0]]=step
             if rows>MAX_EVENT_ROWS_PER_POLL:
                 break
-        if self.steps<=0:
-            return
         current=time.monotonic()
         elapsed=max(0,(self.training_finished_at or current)-self.first)
-        speed=0.0
-        if self.steps>self.last_step and current>self.last_at:
-            speed=(self.steps-self.last_step)/(current-self.last_at)
-            self.last_step=self.steps
-            self.last_at=current
+        live=self._live_sample("learner-live")
+        if live is not None:
+            step=live.get("step")
+            sampled=live["sampled_monotonic"]
+            if type(step) is not int or not self.initial_step<=step<=1000000000000:
+                # A resumed learner can briefly initialize at zero before
+                # restoring its optimizer; that is not new training progress.
+                if type(step) is int and 0<=step<self.initial_step:
+                    live=None
+                else:
+                    raise ValueError("Invalid Bees live learner step.")
+            elif self.live_sample_at is None or sampled>self.live_sample_at:
+                baseline_at=self.live_sample_at or self.first
+                if step>=self.live_step and sampled>baseline_at:
+                    self.live_rate=(step-self.live_step)/(sampled-baseline_at)
+                    self.live_step=step
+                    self.live_sample_at=sampled
+                self.steps=max(step,self.steps)
+        speed=None
+        if self.training_finished_at is None:
+            if self.live_sample_at is not None:
+                # Do not carry the last burst rate through a long PPO update.
+                speed=self.live_rate if current-self.live_sample_at<=10 else 0.0
+            elif self.steps>self.last_step and current>self.last_at:
+                speed=(self.steps-self.last_step)/(current-self.last_at)
+                self.last_step=self.steps
+                self.last_at=current
         metrics=dict(self.values)
+        if self.live_sample_at is not None:
+            metrics["learner_progress_age_seconds"]={
+                "value":max(0,current-self.live_sample_at),"unit":"seconds"}
+        ppo=self._live_sample("ppo-live")
+        if ppo is not None:
+            for source,name,unit in (
+                ("updates","ppo_updates_this_job","count"),
+                ("total_seconds","ppo_total_seconds","seconds"),
+                ("total_minibatches","ppo_total_minibatches","count"),
+                ("update_seconds","ppo_update_seconds","seconds"),
+                ("materialize_seconds","ppo_materialize_seconds","seconds"),
+                ("minibatches","ppo_minibatches","count"),
+                ("experiences","ppo_update_experiences","count"),
+            ):
+                value=ppo.get(source)
+                if type(value) not in (int,float) or value<0:
+                    raise ValueError("Invalid Bees optimizer telemetry: "+source)
+                measurement=measured_metric(float(value),unit)
+                if measurement is None:
+                    raise ValueError("Invalid Bees optimizer telemetry: "+source)
+                metrics[name]=measurement
+            if ppo["update_seconds"]>0:
+                metrics["ppo_minibatches_per_second"]={
+                    "value":ppo["minibatches"]/ppo["update_seconds"],"unit":"rate"}
+            if elapsed>0:
+                metrics["ppo_busy_fraction"]={
+                    "value":min(1.0,ppo["total_seconds"]/elapsed),"unit":"ratio"}
         status=self.root/"wan-status.json"
         if status.exists() or status.is_symlink():
             if status.is_symlink() or not status.is_file() or status.stat().st_size>2048:
@@ -533,11 +607,12 @@ class EventProgress:
                     metrics[name]=measured
         metrics["elapsed_training_seconds"]={"value":elapsed,"unit":"seconds"}
         metrics["training_steps"]={"value":self.steps,"unit":"count"}
+        metrics["training_steps_this_job"]={"value":max(0,self.steps-self.initial_step),"unit":"count"}
         if self.evaluation_started_at is not None:
             metrics["evaluation_elapsed_seconds"]={
                 "value":max(0,current-self.evaluation_started_at),"unit":"seconds",
             }
-        if speed>0:
+        if speed is not None and math.isfinite(speed) and 0<=speed<=1e12:
             metrics["environment_steps_per_second"]={"value":speed,"unit":"rate"}
         report={
             "schema_version":1,"source":"hub-metrics-v1",
@@ -601,6 +676,7 @@ def record_model(root: Path, job: dict):
     with (root / "model.json").open("x", encoding="utf-8") as handle:
         json.dump(receipt, handle, sort_keys=True)
         handle.write("\n")
+    return receipt
 
 
 
@@ -837,6 +913,12 @@ def main():
         from experiment_hub_tinybrains_rocm_verify import verify_runtime_device
         verify_runtime_device(job["expected_gpu_pci"])
     resume=stage_parent_checkpoint(root,job)
+    initial_step=0
+    if resume:
+        receipt=json.loads((root.parent/job["continuation_of_job_id"]/"model.json").read_text(encoding="utf-8"))
+        initial_step=receipt.get("steps_completed")
+        if type(initial_step) is not int or initial_step<0 or initial_step>=job["max_steps"]:
+            raise ValueError("Continuation maximum steps must exceed its verified parent checkpoint.")
     trainer=freeze_trainer(job,root)
     port,port_lock=reserve_base_port(root,job["job_id"],job["num_envs"])
     native_wan = job["schema_version"] == 3
@@ -862,6 +944,8 @@ def main():
         *(["--env-args",*job["environment_args"]] if job["environment_args"] else []),
     ]
     child_env = os.environ.copy()
+    from bees_hub_live_metrics import ROOT_ENV, JOB_ENV
+    child_env.update({ROOT_ENV: str(root), JOB_ENV: job["job_id"]})
     if native_wan:
         build, trainer_hash, runtime = (
             job["wan_release_sha256"], job["trainer_sha256"], job["runtime_version"]
@@ -1041,7 +1125,7 @@ def main():
         return True
     signal.signal(signal.SIGINT,stop)
     signal.signal(signal.SIGTERM,stop)
-    progress=EventProgress(root,job["job_id"],job["lineage_root_id"])
+    progress=EventProgress(root,job["job_id"],job["lineage_root_id"],initial_step)
     player=None
     try:
         player=StagedUnityPlayer(Path(job["game_binary"]),root)
@@ -1053,6 +1137,7 @@ def main():
         if stopped or observe_stop_marker():
             return 130
         command[4]="--env="+str(live_binary)
+        progress.first=progress.last_at=time.monotonic()
         child=subprocess.Popen(command,cwd=str(Path(job["training_script"]).parent.parent),
                                env=child_env,start_new_session=True)
         # Also close the narrow signal race between the prelaunch check and
@@ -1074,11 +1159,11 @@ def main():
             else:
                 telemetry_error = False
             time.sleep(5)
+        progress.training_finished_at=time.monotonic()
         try:
             progress.poll()
         except (OSError,ValueError,RuntimeError):
             pass
-        progress.training_finished_at=time.monotonic()
         close_evaluation()
         result=child.returncode
         if stopped:
@@ -1092,7 +1177,12 @@ def main():
                       file=sys.stderr,flush=True)
                 return 1
             try:
-                record_model(root,job)
+                final_receipt=record_model(root,job)
+                progress.steps=max(progress.steps,final_receipt["steps_completed"])
+                try:
+                    progress.poll()
+                except (OSError,ValueError,RuntimeError):
+                    pass
                 print("[Bees native Hub] Graceful Stop retained a verified resumable checkpoint.",
                       flush=True)
             except (OSError,ValueError,RuntimeError) as error:
@@ -1111,7 +1201,12 @@ def main():
         else:
             if result!=0:
                 return result or 1
-            record_model(root,job)
+            final_receipt=record_model(root,job)
+            progress.steps=max(progress.steps,final_receipt["steps_completed"])
+            try:
+                progress.poll()
+            except (OSError,ValueError,RuntimeError):
+                pass
         if job["evaluation_profile"] in ("scripted-maps-v1","scripted-coverage-v2") and (
             schedule is None or schedule["include_final"]
         ):

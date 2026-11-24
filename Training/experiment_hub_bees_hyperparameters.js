@@ -186,4 +186,17 @@ function validate(overrides={},protocol=3,defaults=null) {
     }
     return {...overrides};
 }
-module.exports={SCHEMA,fields,validate};
+function supports(catalog,overrides={}) {
+    try {
+        if(![2,3].includes(catalog?.native_job_protocol))return false;
+        const defaults=Object.fromEntries((catalog.fields||[]).filter(field=>
+            field.key.startsWith('hyperparameters.')).map(field=>[
+                field.key.slice('hyperparameters.'.length),field.default,
+            ]));
+        if(!Number.isFinite(defaults.batch_size)||!Number.isFinite(defaults.buffer_size)||
+            Object.keys(overrides).some(key=>!Object.hasOwn(defaults,key)))return false;
+        validate(overrides,catalog.native_job_protocol,defaults);
+        return true;
+    }catch{return false;}
+}
+module.exports={SCHEMA,fields,validate,supports};
