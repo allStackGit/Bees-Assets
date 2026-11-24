@@ -1218,6 +1218,22 @@ class ImmutableGpuScalarBank:
             positions=[self._indices[key] for key in record_keys]
         except KeyError:
             return None
+        indices=torch.as_tensor(positions,device=self.device,dtype=torch.int64)
+        return self.gather_indices(indices)
+
+    def gather_indices(self, indices):
+        """Select original rollout rows using an already-resident index plan.
+
+        The producer assigns row positions in the exact order supplied to
+        stage(). Preserve the existing key-based entry point for callers
+        without that immutable ordering contract.
+        """
+        if self._values is None:
+            return None
+        if (not isinstance(indices,torch.Tensor) or indices.ndim!=1 or
+                indices.device!=self.device or
+                indices.dtype not in (torch.int32,torch.int64)):
+            raise ValueError("Scalar bank requires local integer row indices")
         stream=torch.cuda.current_stream(self.device)
         if self._ready is not None:
             try:
@@ -1228,7 +1244,6 @@ class ImmutableGpuScalarBank:
                 # inputs, and never repeats after the first gather.
                 self._ready.synchronize()
             self._ready=None
-        indices=torch.as_tensor(positions,device=self.device,dtype=torch.int64)
         result=self._values.index_select(0,indices)
         self.saved_bytes += result.numel()*result.element_size()
         self.gather_calls += 1
