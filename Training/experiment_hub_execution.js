@@ -341,7 +341,7 @@ class LocalExecution {
                     issues.push((rule.suite_id+': '+
                         String(error.message||error)).slice(0,160));
                 }
-                if(typeof localAdapter.readEvaluationFailure==='function')try {
+                if(job.project_id!=='bees_native'&&typeof localAdapter.readEvaluationFailure==='function')try {
                     const failure=localAdapter.readEvaluationFailure(context);
                     if(failure!=null&&(state==='running'||
                         failure.checkpoint_sha256===job.final_checkpoint_sha256))
@@ -426,6 +426,32 @@ class LocalExecution {
             }catch(error) {
                 report.evaluation_issue=(rule.suite_id+': '+String(error.message||error)).slice(0,160);
                 report.evaluation_issues=[report.evaluation_issue];
+            }
+        }
+        if(job.project_id==='bees_native'&&ownsArtifacts&&
+            ['running','stop_requested','finished','stopped','failed'].includes(state)&&
+            activeEvaluation(job)&&supportsEvaluation(this.evaluationSuites,job)&&
+            typeof localAdapter?.readEvaluationFailure==='function') {
+            const rule=evaluationRules(activeEvaluation(job))[0];
+            const context=Object.freeze({
+                job_id:job.id,project_id:job.project_id,
+                artifact_lineage_root_id:job.artifact_lineage_root_id||job.id,
+                continuation_of_job_id:job.continuation_of_job_id||null,
+                frozen_parameters:job.frozen_parameters,state,
+                final_checkpoint_sha256:report.checkpoint_model_sha256||job.final_checkpoint_sha256||null,
+                evaluation_failure_archive_ack:job.evaluation_failure_archive_ack||null,
+                dispatch_id:order.dispatch_id,suite_id:rule.suite_id,
+            });
+            try {
+                const failure=await localAdapter.readEvaluationFailure(context);
+                report.bees_evaluation_failure_pending=Boolean(failure);
+                if(failure)report.evaluation_failures=[evaluationFailure(failure,context)];
+            }catch(error) {
+                report.bees_evaluation_failure_pending=true;
+                const issue=(rule.suite_id+': failure observation: '+
+                    String(error.message||error)).slice(0,160);
+                report.evaluation_issues=[...new Set([...(report.evaluation_issues||[]),issue])].slice(-8);
+                report.evaluation_issue=report.evaluation_issues.at(-1);
             }
         }
         if(lease.status!=='released'&&ownsArtifacts&&typeof localAdapter?.readProgress==='function'&&

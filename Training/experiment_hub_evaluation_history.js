@@ -509,6 +509,21 @@ class EvaluationHistory {
             throw error;
         }
     }
+    latestFailure(job,suiteId) {
+        if(!UUID.test(String(job?.id))||
+            !PROJECT.test(String(job?.project_id))||
+            !UUID.test(String(job?.dispatch_id))||
+            !SUITE.test(String(suiteId)))
+            throw Error('Invalid evaluation failure archive acknowledgement identity.');
+        const rows=this.load(job.id,job.project_id).diagnostics;
+        for(let i=rows.length-1;i>=0;i--) {
+            const row=rows[i];
+            if(row.evaluation_status==='failed'&&row.suite_id===suiteId&&
+                row.dispatch_id===job.dispatch_id)
+                return {checkpoint_sha256:row.checkpoint_sha256,attempted_at:row.attempted_at};
+        }
+        return null;
+    }
     hasReceiptConflict(job) {
         const id=job?.id;
         if(!UUID.test(String(id))||!PROJECT.test(String(job?.project_id)))

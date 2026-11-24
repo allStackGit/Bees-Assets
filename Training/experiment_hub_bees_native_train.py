@@ -841,6 +841,24 @@ def main():
         })
     evaluation_child = None
     pending = checkpoint_root / "pending"
+
+    def record_evaluation_failure(directory, sha, step, reason):
+        # One immutable attempt, not a zero-score benchmark. The agent
+        # independently verifies its snapshot and suite before archiving.
+        failure = {
+            "schema_version": 1, "model_sha256": sha,
+            "steps_completed": step,
+            "attempted_at": datetime.now(timezone.utc).isoformat(
+                timespec="milliseconds").replace("+00:00", "Z"),
+            "reason": " ".join(str(reason).split())[:160] or "Evaluation failed",
+        }
+        temporary = directory / "failure.tmp"
+        with temporary.open("x", encoding="utf-8") as stream:
+            json.dump(failure, stream, sort_keys=True)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.rename(directory / "failure.json")
     def poll_evaluation(allow_start=True):
         nonlocal evaluation_child
         if schedule is None:
@@ -861,6 +879,10 @@ def main():
                 else:
                     pending.rename(destination)
             else:
+                record_evaluation_failure(
+                    pending, sha, identity["step"],
+                    "Checkpoint evaluator exited with status " + str(result)
+                    if result else "Checkpoint evaluator produced no summary")
                 pending.rename(checkpoint_root / "failed" / (sha + "-" + uuid.uuid4().hex))
                 print("[Bees Hub evaluation] Checkpoint evaluation failed; PPO continues.",
                       file=sys.stderr, flush=True)
@@ -1044,101 +1066,113 @@ def main():
         ):
             evaluation_root=root/"evaluations"
             model=json.loads((root/"model.json").read_text(encoding="utf-8"))
-            cached = checkpoint_root / "completed" / model["sha256"]
-            if cached.is_dir() and (cached / "summary.json").is_file():
-                # Identical model bytes reuse the identical benchmark; never
-                # introduce a contradictory second receipt for the same suite.
-                shutil.copytree(cached, evaluation_root,
-                                ignore=shutil.ignore_patterns("model.onnx", "snapshot.json"))
-                print("[Bees Hub evaluation] Reusing exact final checkpoint evaluation.",
-                      flush=True)
-            else:
-                evaluation_root.mkdir(mode=0o700)
-                observed=[]
-                cases=evaluation_cases(job["evaluation_profile"])
-                progress.evaluation_started_at=time.monotonic()
-                progress.values["evaluation_cases_total"]={
-                    "value":len(cases),"unit":"count",
-                }
-                progress.values["evaluation_cases_completed"]={
-                    "value":0,"unit":"count",
-                }
-                progress.values["evaluation_matches_completed"]={
-                    "value":0,"unit":"count",
-                }
-                progress.poll()
-                for index,case in enumerate(cases):
-                    if not stopped:
-                        observe_stop_marker()
-                    if stopped: return 0
-                    label,_,_,opponent=case
-                    recipe=benchmark_recipe(evaluation_root,job,case,index)
-                    for source,digest in (
-                        ("evaluator_script","evaluator_sha256"),
-                        ("evaluator_core","evaluator_core_sha256"),
-                        ("opponent_script","opponent_script_sha256"),
-                    ):
-                        require_file(Path(job[source]),job[digest])
-                    output=evaluation_root/("stdout-"+label+".txt")
-                    command=[
-                        sys.executable,"-B",job["evaluator_script"],
-                        "--benchmark",str(recipe),
-                        "--candidate",model["model"],
-                        "--candidate-sha256",model["sha256"],
-                        "--opponent","scripted:"+opponent,
-                        "--env",str(live_binary),
-                        "--build-id",job["game_sha256"],
-                        "--run-id",job["job_id"],
-                        "--output-root",str(evaluation_root),
-                        "--base-port",str(port),
-                    ]
-                    with output.open("xb") as stream:
-                        child=subprocess.Popen(command,
-                            cwd=str(Path(job["training_script"]).parent),
-                            stdout=stream,start_new_session=True,
-                            env={**os.environ, "BEES_HUB_EVAL_THREADS":
-                                 str(schedule["cpu_threads"] if schedule else 2)})
-                        while child.poll() is None:
-                            if not stopped:
-                                observe_stop_marker()
-                            time.sleep(0.25)
-                    if stopped: return 0
-                    if child.returncode!=0:
-                        raise RuntimeError("Independent Bees evaluation failed for "+label)
-                    if output.stat().st_size>16384:
-                        raise RuntimeError("Benchmark output path exceeded the expected size.")
-                    lines=output.read_text(encoding="utf-8").strip().splitlines()
-                    if not lines:
-                        raise RuntimeError("Benchmark evaluator returned no result.")
-                    reported=Path(lines[-1])
-                    if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
-                        raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
-                    observed.append(collect_benchmark(
-                        evaluation_root, reported, job, label, opponent, model["sha256"]
-                    ))
+            try:
+                cached = checkpoint_root / "completed" / model["sha256"]
+                if cached.is_dir() and (cached / "summary.json").is_file():
+                    # Identical model bytes reuse the identical benchmark; never
+                    # introduce a contradictory second receipt for the same suite.
+                    shutil.copytree(cached, evaluation_root,
+                                    ignore=shutil.ignore_patterns("model.onnx", "snapshot.json"))
+                    print("[Bees Hub evaluation] Reusing exact final checkpoint evaluation.",
+                          flush=True)
+                else:
+                    evaluation_root.mkdir(mode=0o700)
+                    observed=[]
+                    cases=evaluation_cases(job["evaluation_profile"])
+                    progress.evaluation_started_at=time.monotonic()
+                    progress.values["evaluation_cases_total"]={
+                        "value":len(cases),"unit":"count",
+                    }
                     progress.values["evaluation_cases_completed"]={
-                        "value":len(observed),"unit":"count",
+                        "value":0,"unit":"count",
                     }
                     progress.values["evaluation_matches_completed"]={
-                        "value":sum(item["matches"] for item in observed),"unit":"count",
+                        "value":0,"unit":"count",
                     }
-                    # A case is only counted after its frozen benchmark receipt
-                    # and outcome accounting have been verified.
                     progress.poll()
-                summary={
-                    "schema_version":1,"job_id":job["job_id"],
-                    "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
-                    "case_count":len(observed),"cases":observed,
-                    "steps_completed":model["steps_completed"],
-                    "total_matches":sum(item["matches"] for item in observed),
-                    "total_wins":sum(item["wins"] for item in observed),
-                    "total_draws":sum(item["draws"] for item in observed),
-                    "total_losses":sum(item["losses"] for item in observed),
-                    "total_timeouts":sum(item["timeouts"] for item in observed),
-                }
-                with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
-                    json.dump(summary,stream,sort_keys=True,indent=2)
-                    stream.write("\n")
+                    for index,case in enumerate(cases):
+                        if not stopped:
+                            observe_stop_marker()
+                        if stopped: return 0
+                        label,_,_,opponent=case
+                        recipe=benchmark_recipe(evaluation_root,job,case,index)
+                        for source,digest in (
+                            ("evaluator_script","evaluator_sha256"),
+                            ("evaluator_core","evaluator_core_sha256"),
+                            ("opponent_script","opponent_script_sha256"),
+                        ):
+                            require_file(Path(job[source]),job[digest])
+                        output=evaluation_root/("stdout-"+label+".txt")
+                        command=[
+                            sys.executable,"-B",job["evaluator_script"],
+                            "--benchmark",str(recipe),
+                            "--candidate",model["model"],
+                            "--candidate-sha256",model["sha256"],
+                            "--opponent","scripted:"+opponent,
+                            "--env",str(live_binary),
+                            "--build-id",job["game_sha256"],
+                            "--run-id",job["job_id"],
+                            "--output-root",str(evaluation_root),
+                            "--base-port",str(port),
+                        ]
+                        with output.open("xb") as stream:
+                            child=subprocess.Popen(command,
+                                cwd=str(Path(job["training_script"]).parent),
+                                stdout=stream,start_new_session=True,
+                                env={**os.environ, "BEES_HUB_EVAL_THREADS":
+                                     str(schedule["cpu_threads"] if schedule else 2)})
+                            while child.poll() is None:
+                                if not stopped:
+                                    observe_stop_marker()
+                                time.sleep(0.25)
+                        if stopped: return 0
+                        if child.returncode!=0:
+                            raise RuntimeError("Independent Bees evaluation failed for "+label)
+                        if output.stat().st_size>16384:
+                            raise RuntimeError("Benchmark output path exceeded the expected size.")
+                        lines=output.read_text(encoding="utf-8").strip().splitlines()
+                        if not lines:
+                            raise RuntimeError("Benchmark evaluator returned no result.")
+                        reported=Path(lines[-1])
+                        if reported.parent!=evaluation_root or not reported.name.endswith(".json"):
+                            raise RuntimeError("Benchmark evaluator returned an unexpected output path.")
+                        observed.append(collect_benchmark(
+                            evaluation_root, reported, job, label, opponent, model["sha256"]
+                        ))
+                        progress.values["evaluation_cases_completed"]={
+                            "value":len(observed),"unit":"count",
+                        }
+                        progress.values["evaluation_matches_completed"]={
+                            "value":sum(item["matches"] for item in observed),"unit":"count",
+                        }
+                        # A case is only counted after its frozen benchmark receipt
+                        # and outcome accounting have been verified.
+                        progress.poll()
+                    summary={
+                        "schema_version":1,"job_id":job["job_id"],
+                        "profile":job["evaluation_profile"],"model_sha256":model["sha256"],
+                        "case_count":len(observed),"cases":observed,
+                        "steps_completed":model["steps_completed"],
+                        "total_matches":sum(item["matches"] for item in observed),
+                        "total_wins":sum(item["wins"] for item in observed),
+                        "total_draws":sum(item["draws"] for item in observed),
+                        "total_losses":sum(item["losses"] for item in observed),
+                        "total_timeouts":sum(item["timeouts"] for item in observed),
+                    }
+                    with (evaluation_root/"summary.json").open("x",encoding="utf-8") as stream:
+                        json.dump(summary,stream,sort_keys=True,indent=2)
+                        stream.write("\n")
+            except (OSError, ValueError, RuntimeError) as error:
+                # Training and its verified checkpoint are already complete.
+                # Do not publish an unevaluated policy as a valid candidate.
+                if schedule is None:
+                    raise
+                evaluation_root.mkdir(mode=0o700, exist_ok=True)
+                record_evaluation_failure(evaluation_root, model["sha256"],
+                                          model["steps_completed"], error)
+                print("[Bees Hub evaluation] Final benchmark unavailable: " + str(error),
+                      file=sys.stderr, flush=True)
+                return 0
         publish_policy_candidate(root,job)
         return 0
     finally:

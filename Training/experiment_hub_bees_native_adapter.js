@@ -316,6 +316,33 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         };
     }
 
+    function evaluationJob(context) {
+    if(context?.project_id!=='bees_native'||
+        !UUID.test(String(context.dispatch_id||''))||
+        !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
+        throw Error('Invalid Bees evaluation dispatch or suite.');
+    const root=jobPath(artifacts,context);
+    const input=path.join(root,'job.json');
+    if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
+        throw Error('Frozen Bees evaluation job is unavailable.');
+    const job=JSON.parse(fs.readFileSync(input,'utf8'));
+    const suite=BEES_FINAL_SUITES[job.evaluation_profile];
+    if(job.job_id!==context.job_id||suite!==context.suite_id||
+        job.runtime_version!==context.frozen_parameters?.runtime_version||
+        job.game_sha256!==context.frozen_parameters?.worker_sha256)
+        throw Error('Bees evaluation suite differs from its frozen job.');
+    const definition=JSON.stringify({
+        suite_id:suite,profile:job.evaluation_profile,
+        matches_per_case:job.evaluation_matches,seed:job.seed,
+        game_sha256:job.game_sha256,
+        evaluator_sha256:job.evaluator_sha256,
+        evaluator_core_sha256:job.evaluator_core_sha256,
+        opponent_script_sha256:job.opponent_script_sha256,
+        runtime_sha256:job.runtime_version,
+    });
+        return {root,job,suite,definition,
+            suiteHash:crypto.createHash('sha256').update(definition,'utf8').digest('hex')};
+    }
     return {
         executable:python,cwd:project,stop_policy:'interrupt-main',
         checkpoint_stop_file(context) {
@@ -347,20 +374,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         model_checkpoint_sha256(context) {return checkpoint(context).sha256;},
         evaluation_suites:Object.values(BEES_FINAL_SUITES),
         readEvaluation(context) {
-            if(context?.project_id!=='bees_native'||
-                !UUID.test(String(context.dispatch_id||''))||
-                !Object.values(BEES_FINAL_SUITES).includes(context.suite_id))
-                throw Error('Invalid Bees evaluation dispatch or suite.');
-            const root=jobPath(artifacts,context);
-            const input=path.join(root,'job.json');
-            if(fs.realpathSync(input)!==input||fs.statSync(input).size>65536)
-                throw Error('Frozen Bees evaluation job is unavailable.');
-            const job=JSON.parse(fs.readFileSync(input,'utf8'));
-            const suite=BEES_FINAL_SUITES[job.evaluation_profile];
-            if(job.job_id!==context.job_id||suite!==context.suite_id||
-                job.runtime_version!==context.frozen_parameters?.runtime_version||
-                job.game_sha256!==context.frozen_parameters?.worker_sha256)
-                throw Error('Bees evaluation suite differs from its frozen job.');
+            const {root,job,suite,definition,suiteHash}=evaluationJob(context);
             const complete=path.join(root,'checkpoint-evaluations','completed');
             const snapshots=()=>{
                 if(!fs.existsSync(complete))return [];
@@ -446,18 +460,9 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     throw Error('Bees checkpoint evaluation summary does not match case receipts.');
             if(fileHash(summary)!==summaryHash||fileHash(model)!==chosen.sha)
                 throw Error('Bees evaluation files changed during verification.');
-            const definition=JSON.stringify({
-                suite_id:suite,profile:job.evaluation_profile,
-                matches_per_case:job.evaluation_matches,seed:job.seed,
-                game_sha256:job.game_sha256,
-                evaluator_sha256:job.evaluator_sha256,
-                evaluator_core_sha256:job.evaluator_core_sha256,
-                opponent_script_sha256:job.opponent_script_sha256,
-                runtime_sha256:job.runtime_version,
-            });
             return {
                 schema_version:1,suite_id:suite,
-                suite_sha256:crypto.createHash('sha256').update(definition,'utf8').digest('hex'),
+                suite_sha256:suiteHash,
                 suite_definition_canonical:definition,
                 dispatch_id:context.dispatch_id,checkpoint_sha256:chosen.sha,
                 trials:totals.matches,successes:totals.wins,
@@ -470,6 +475,74 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     timeout_rate:{value:totals.timeouts/totals.matches,unit:'ratio'},
                     draw_count:{value:totals.draws,unit:'count'},
                 },
+            };
+        },
+        readEvaluationFailure(context) {
+            const {root,job,suite,suiteHash}=evaluationJob(context);
+            const failed=path.join(root,'checkpoint-evaluations','failed');
+            const attempts=[];
+            function read(directory,expectedSha,model,expectedStep) {
+                const file=path.join(directory,'failure.json');
+                if(!fs.existsSync(file))return;
+                if(fs.realpathSync(file)!==file||!fs.statSync(file).isFile()||
+                    fs.statSync(file).size>4096)
+                    throw Error('Bees evaluation failure receipt is redirected or oversized.');
+                const data=JSON.parse(fs.readFileSync(file,'utf8'));
+                if(data.schema_version!==1||data.model_sha256!==expectedSha||
+                    data.steps_completed!==expectedStep||
+                    !Number.isSafeInteger(expectedStep)||expectedStep<0||
+                    typeof data.attempted_at!=='string'||
+                    !Number.isFinite(Date.parse(data.attempted_at))||
+                    new Date(data.attempted_at).toISOString()!==data.attempted_at||
+                    typeof data.reason!=='string'||!data.reason||
+                    data.reason.length>160||data.reason.split(/\s+/).join(' ')!==data.reason)
+                    throw Error('Invalid Bees failed evaluation attempt.');
+                attempts.push({directory,model,data});
+            }
+            if(fs.existsSync(failed)) {
+                if(fs.realpathSync(failed)!==failed)
+                    throw Error('Bees failed evaluation directory is redirected.');
+                for(const entry of fs.readdirSync(failed,{withFileTypes:true})) {
+                    if(!entry.isDirectory()||entry.isSymbolicLink()||
+                        !/^[a-f0-9]{64}-[a-f0-9]{32}$/.test(entry.name))continue;
+                    const directory=path.join(failed,entry.name);
+                    const identity=path.join(directory,'snapshot.json');
+                    if(fs.realpathSync(identity)!==identity||!fs.statSync(identity).isFile()||
+                        fs.statSync(identity).size>4096)
+                        throw Error('Invalid Bees failed checkpoint snapshot.');
+                    const snapshot=JSON.parse(fs.readFileSync(identity,'utf8'));
+                    const sha=entry.name.slice(0,64);
+                    if(snapshot.schema_version!==1||snapshot.model_sha256!==sha)
+                        throw Error('Bees failed checkpoint snapshot identity changed.');
+                    read(directory,sha,path.join(directory,'model.onnx'),snapshot.step);
+                }
+            }
+            const finalDirectory=path.join(root,'evaluations');
+            if(['finished','stopped'].includes(context.state)&&
+                fs.existsSync(path.join(finalDirectory,'failure.json'))) {
+                const receipt=checkpoint(context);
+                if(receipt.sha256!==context.final_checkpoint_sha256)
+                    throw Error('Final Bees failed evaluation differs from verified model.');
+                const identity=JSON.parse(fs.readFileSync(path.join(root,'model.json'),'utf8'));
+                read(finalDirectory,receipt.sha256,receipt.model,identity.steps_completed);
+            }
+            const key=row=>row.data.attempted_at+':'+row.data.model_sha256;
+            attempts.sort((a,b)=>key(a).localeCompare(key(b)));
+            const ack=context.evaluation_failure_archive_ack;
+            const after=ack?ack.attempted_at+':'+ack.checkpoint_sha256:null;
+            const next=attempts.find(row=>!after||key(row)>after);
+            if(!next)return null;
+            if(fs.realpathSync(next.model)!==next.model||
+                !fs.statSync(next.model).isFile()||fileHash(next.model)!==next.data.model_sha256)
+                throw Error('Bees failed evaluation model bytes changed.');
+            return {
+                schema_version:1,evaluation_status:'failed',
+                project_id:'bees_native',job_id:job.job_id,dispatch_id:context.dispatch_id,
+                suite_id:suite,suite_sha256:suiteHash,
+                runtime_sha256:job.runtime_version,
+                checkpoint_sha256:next.data.model_sha256,
+                steps_completed:next.data.steps_completed,
+                attempted_at:next.data.attempted_at,reason:next.data.reason,
             };
         },
         args(parameters,context) {

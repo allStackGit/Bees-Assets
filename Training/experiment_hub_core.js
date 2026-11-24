@@ -625,9 +625,7 @@ function validateBeesFinalEvaluation(projectId,parameters,configuration) {
         if(rule.min_trials>cases*(parameters.evaluation_matches??8))
             throw Error('Bees evaluation policy requests more trials than the frozen suite provides.');
     }
-    if(monitor?.regression_alert?.stop_on_regression===true)
-        throw Error('Bees currently supports independent success thresholds, not regression-triggered Stop.');
-}
+ }
 // Persisted TinyBrains authoring metadata originates exclusively from a
 // bounded, authenticated agent report. Offline catalogues may define drafts,
 // but may never prove execution readiness or reserve native resources.
@@ -985,6 +983,12 @@ function finalEvaluationPending(snapshot,job,observedAt) {
             deadline=Math.max(deadline,lastRelease+FINAL_EVALUATION_GRACE_MS);
     }
     return observedAt<deadline;
+}
+function beesFailureArchivePending(job,observedAt) {
+    if(job.project_id!=='bees_native'||job.bees_evaluation_failure_pending!==true||
+        !['finished','stopped','failed'].includes(job.status))return false;
+    const at=Date.parse(job.capacity_released_at||job.execution_updated_at);
+    return Number.isFinite(at)&&observedAt<at+FINAL_EVALUATION_GRACE_MS;
 }
 function retainFinalEvaluations(job,report,allowOwnedBeesTerminal=false) {
     const rules=missingFinalEvaluationRules(job,allowOwnedBeesTerminal);
@@ -5179,6 +5183,16 @@ class ExperimentHub {
                 lease.machine_id!==machine.id||job.assigned_machine_id!==machine.id||
                 lease.project_id!==job.project_id)
                 throw Error('Native execution report does not match its job and machine.');
+            // A terminal Bees owner may still owe durable failed-attempt
+            // records. Its independent archive cursor never grants capacity.
+            if(job.project_id==='bees_native'&&supportsEvaluation(evaluationSuites,job)&&
+                ['finished','stopped','failed'].includes(report.state)&&
+                (!['finished','stopped','failed'].includes(job.status)||job.status===report.state)&&
+                typeof report.bees_evaluation_failure_pending==='boolean'&&
+                job.bees_evaluation_failure_pending!==report.bees_evaluation_failure_pending) {
+                job.bees_evaluation_failure_pending=report.bees_evaluation_failure_pending;
+                changed=true;
+            }
             // Released capacity stays released. A matching terminal Inspect
             // may add evidence for the exact final checkpoint only.
             if(lease.status==='released'&&lease.released_at&&
@@ -5336,7 +5350,7 @@ class ExperimentHub {
             // Independently validate failed-attempt observations. They are
             // inert for Stop, continuation and candidate ranking and cannot
             // replace any successful checkpoint receipt.
-            if(report.state==='running'&&activeEvaluation(job)&&
+            if((report.state==='running'||job.project_id==='bees_native'&&report.state==='stop_requested')&&activeEvaluation(job)&&
                 supportsEvaluation(evaluationSuites,job)&&
                 report.evaluation_failures!=null)try {
                 const rules=evaluationRules(activeEvaluation(job));
@@ -5564,7 +5578,8 @@ class ExperimentHub {
                 !j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)||
              j.dispatch_id&&supportsEvaluation(machine.evaluation_suites,j)&&
-                finalEvaluationPending(snapshot,j,observedAt)||
+                (finalEvaluationPending(snapshot,j,observedAt)||
+                    beesFailureArchivePending(j,observedAt))||
              j.dispatch_id&&j.status==='finished'&&
                 Boolean(j.checkpoint_reinspection_requested_at)||
              j.status==='waiting_adapter'&&
@@ -5608,6 +5623,7 @@ class ExperimentHub {
                 l.machine_id===machineId&&(l.status==='acknowledged'||
                     (l.status==='released'&&l.released_at&&
                         (finalEvaluationPending(snapshot,job,observedAt)||
+                         beesFailureArchivePending(job,observedAt)||
                          Boolean(job.checkpoint_reinspection_requested_at)))));
             if(!lease)continue;
             const adapterInstalled=machine.installed_projects.includes(job.project_id);
@@ -5717,6 +5733,12 @@ class ExperimentHub {
                                 return this.evaluationHistory.latestAccepted(job,
                                     evaluationRules(activeEvaluation(job))[0].suite_id)
                                     ?.checkpoint_sha256||null;
+                            }catch {return null;}
+                        })(),
+                        evaluation_failure_archive_ack:(()=>{
+                            try {
+                                return this.evaluationHistory.latestFailure(job,
+                                    evaluationRules(activeEvaluation(job))[0].suite_id);
                             }catch {return null;}
                         })(),
                     }:{}),
@@ -6207,11 +6229,20 @@ class ExperimentHub {
                 (job.status==='finished'&&job.checkpoint_ready_verified===true||
                  job.status==='stopped'&&job.checkpoint_stop_verified===true)&&
                 supportsEvaluation(machine.evaluation_suites||{},job);
-            if(terminalFailureReport&&Array.isArray(report.evaluation_failures)&&
+            const beesTerminal=job.project_id==='bees_native'&&
+                ['finished','stopped','failed'].includes(job.status)&&
+                report.state===job.status&&job.assigned_machine_id===machine.id&&
+                report.lease_id===job.lease_id&&
+                supportsEvaluation(machine.evaluation_suites||{},job);
+            if((terminalFailureReport||beesTerminal)&&Array.isArray(report.evaluation_failures)&&
                 report.evaluation_failures.length<=8)
                 for(const failure of report.evaluation_failures)
-                    if(failure?.checkpoint_sha256===job.checkpoint_model_sha256)
+                    if(beesTerminal||failure?.checkpoint_sha256===job.checkpoint_model_sha256)
                         this.evaluationHistory.recordFailure(job,failure);
+            if(beesTerminal)
+                for(const issue of report.evaluation_issues||[])
+                    this.evaluationHistory.recordIssue(job,issue,
+                        evaluationRules(policy).find(rule=>issue.startsWith(rule.suite_id+': '))?.suite_id||null);
             const raw=Array.isArray(report.evaluations)?report.evaluations:
                 report.evaluation?[report.evaluation]:[];
             for(const value of raw) {
