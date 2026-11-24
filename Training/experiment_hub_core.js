@@ -1063,6 +1063,72 @@ function validateBeesContinuation(parent,frozen) {
     if([...hyperKeys].some(key=>previous[key]!==current[key]))
         throw Error('Bees checkpoint continuation must preserve PPO hyperparameters. Queue a new independent trial to change optimizer settings.');
 }
+function beesWanJob(job) {
+    return job?.project_id==='bees_rollout'||
+        job?.project_id==='bees_native'&&job.frozen_parameters?.wan_actors>0;
+}
+// The winner's original immutable actor layout is the only layout implicitly
+// approved by candidate selection. No model can move to another learner host.
+function beesCandidateWanRequest(snapshot,parent,value) {
+    if(parent?.project_id!=='bees_native'||!parent.frozen_parameters?.wan_actors||
+        value.reuse_wan_group!==true)
+        throw Error('Confirm reuse of the winning Bees WAN learner and its original actor layout.');
+    const bundle=parent.resource_bundle;
+    const members=snapshot.jobs.filter(job=>job.resource_bundle?.id===bundle?.id)
+        .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index);
+    if(!bundle||bundle.index!==1||bundle.size!==parent.frozen_parameters.wan_actors+1||
+        members.length!==bundle.size||members[0]?.id!==parent.id||
+        members.some((job,i)=>job.resource_bundle.index!==i+1||
+            job.resource_bundle.size!==members.length||
+            !ID.test(String(job.assigned_machine_id||''))||
+            (i>0&&(job.project_id!=='bees_rollout'||
+                job.frozen_parameters?.learner_job_id!==parent.id||
+                job.frozen_parameters?.slot!==i-1||
+                job.frozen_parameters?.lineage_root_id!==
+                    (parent.artifact_lineage_root_id||parent.id)||
+                ['wan_release_sha256','trainer_sha256','runtime_version',
+                    'wan_key_fingerprint'].some(key=>
+                        job.frozen_parameters[key]!==parent.frozen_parameters[key]))))||
+        new Set(members.map(job=>job.assigned_machine_id)).size!==members.length)
+        throw Error('Winning Bees WAN candidate lacks its complete original learner/actor membership.');
+    const request={confirm_queue:true,learner:{
+        configuration_id:value.configuration_id,expected_revision:value.expected_revision,
+        resources:resourceRequest(value.resources),machine_id:parent.assigned_machine_id,
+        continuation_of_job_id:parent.id,
+    },actors:members.slice(1).map(job=>({
+        machine_id:job.assigned_machine_id,resources:resourceRequest(job.resources),
+        envs:job.frozen_parameters.envs,device:job.frozen_parameters.device,
+    }))};
+    const released=members.every(job=>
+        ['finished','stopped','failed'].includes(job.status)&&job.capacity_released_at&&
+        snapshot.reservations.some(lease=>lease.id===job.lease_id&&
+            lease.job_id===job.id&&lease.project_id===job.project_id&&
+            lease.machine_id===job.assigned_machine_id&&
+            lease.issued_by==='experiment-hub'&&lease.status==='released'&&lease.released_at));
+    return {request,released};
+}
+function beesCandidateWanCapacityBlock(snapshot,group,session) {
+    if(!group.released)return 'Awaiting verified release of every original Bees WAN actor.';
+    const placements=[group.request.learner,...group.request.actors];
+    for(const placement of placements) {
+        if(!session.machine_ids.includes(placement.machine_id))
+            return 'Arm native automation on every winning Bees WAN machine.';
+        if(placement.resources.gpu_count>0&&!session.claim_exclusive_gpu)
+            return 'Bees WAN winner continuation awaits explicitly opted-in GPU claims.';
+        const machine=snapshot.machines.find(item=>item.id===placement.machine_id);
+        if(!machine||machine.status!=='connected'||machine.software_update_blocked||
+            !machine.native_preflight_passed)
+            return 'Awaiting the connected qualified Bees WAN machine '+placement.machine_id+'.';
+        if(snapshot.jobs.some(job=>beesWanJob(job)&&
+            job.assigned_machine_id===placement.machine_id&&
+            (!job.capacity_released_at||!['finished','stopped','failed','cancelled'].includes(job.status))))
+            return 'Awaiting release of the fixed Bees WAN broker/actor port on '+placement.machine_id+'.';
+        if(!resourcePlacements([machine],snapshot.reservations,
+            placement.resources)[0]?.capacity_fits)
+            return 'Awaiting Bees WAN continuation capacity on '+placement.machine_id+'.';
+    }
+    return null;
+}
 function independentCandidateLineages(snapshot,jobs) {
     const roots=jobs.map(job=>job.artifact_lineage_root_id||job.id);
     if(new Set(roots).size===roots.length)return true;
@@ -2999,6 +3065,7 @@ class ExperimentHub {
                 (blocked.continuation_of_job_id||blocked.after_job_id)+
                 ' released capacity without an eligible stage handoff; stage '+
                 blocked.id+' requires operator review.');
+            let wanWaitingReason=null;
             // Fulfill at most one frozen candidate decision per pass.
             // Evaluation/checkpoint mismatches remain visible and cannot
             // silently promote a different native model.
@@ -3019,6 +3086,15 @@ class ExperimentHub {
                 try {
                     const decision=this.rankCandidates({
                         candidate_job_ids:plan.candidate_job_ids});
+                    if(plan.reuse_wan_group===true) {
+                        const parent=candidates.find(job=>job?.id===decision.winner_job_id);
+                        const layout=beesCandidateWanRequest(snapshot,parent,plan);
+                        const blocked=beesCandidateWanCapacityBlock(snapshot,layout,session);
+                        if(blocked) {
+                            wanWaitingReason=blocked;
+                            continue;
+                        }
+                    }
                     const result=this.queueBestCandidate({...plan,
                         selection_plan_id:plan.id,
                         expected_winner_job_id:decision.winner_job_id,
@@ -3072,8 +3148,38 @@ class ExperimentHub {
             const startingMachines=new Set(snapshot.jobs.filter(j=>
                 ['start_requested','launch_requested'].includes(j.status)&&
                 !j.capacity_released_at).map(j=>j.assigned_machine_id));
+            // An automatically selected WAN winner is one atomic bundle,
+            // not a set of independent queued jobs. Only the current armed
+            // session may launch it, and only after every original claim is ready.
+            const automaticWanGroups=(snapshot.candidate_selections||[])
+                .filter(plan=>plan.status==='queued'&&plan.reuse_wan_group===true&&
+                    plan.promoted_bundle_id)
+                .map(plan=>snapshot.jobs.filter(job=>
+                    job.resource_bundle?.id===plan.promoted_bundle_id)
+                    .sort((a,b)=>a.resource_bundle.index-b.resource_bundle.index))
+                .filter(members=>members.length>1&&members[0]?.project_id==='bees_native'&&
+                    members.length===members[0].resource_bundle.size&&
+                    members.every(job=>job.status==='waiting_adapter'&&!job.dispatch_id&&job.lease_id&&
+                        !reservedForGroupStarts.has(job.id)&&
+                        this.automationSessionCurrent(session.session_id,job.assigned_machine_id)));
+            for(const members of automaticWanGroups) {
+                if(members.some(job=>blockedMachines.has(job.assigned_machine_id)||
+                    startingMachines.has(job.assigned_machine_id)||
+                    job.resources.gpu_count>0&&!session.start_qualified_gpu||
+                    job.native_start_readiness?.eligible!==true))continue;
+                this.authorizeResourceBundle({
+                    bundle_id:members[0].resource_bundle.id,
+                    expected_job_ids:members.map(job=>job.id),
+                    confirm_start:true,release_on_terminal:true,
+                },'automation');
+                session.managed_job_ids.push(...members.map(job=>job.id));
+                session.last_started_project_id='bees_native';
+                return transitioned('Authorized all '+members.length+
+                    ' Bees WAN winner continuation members as one verified bundle.');
+            }
             for(const job of pendingStarts) {
-                if((job.resources.gpu_count!==0&&!session.start_qualified_gpu)||!job.lease_id||
+                if(beesWanJob(job)||
+                    (job.resources.gpu_count!==0&&!session.start_qualified_gpu)||!job.lease_id||
                     !session.machine_ids.includes(job.assigned_machine_id)||
                     blockedMachines.has(job.assigned_machine_id)||
                     startingMachines.has(job.assigned_machine_id)||
@@ -3094,6 +3200,12 @@ class ExperimentHub {
             const overcommitted=new Set(selected.filter(m=>m.capacity_overcommitted).map(m=>m.id));
             const queuedLeases=new Set(pending.map(job=>job.lease_id));
             session.claimed_lease_ids=session.claimed_lease_ids.filter(id=>queuedLeases.has(id));
+            // Reserved WAN groups came from an approved winner decision;
+            // the current session must still separately opt into GPU probes.
+            if(session.claim_exclusive_gpu&&session.probe_exclusive_gpu)
+                session.claimed_lease_ids=[...new Set([...session.claimed_lease_ids,
+                    ...automaticWanGroups.flatMap(members=>members
+                        .filter(job=>job.resources.gpu_count>0).map(job=>job.lease_id))])];
             const owned=new Set(session.claimed_lease_ids);
             const canHostJob=(machine,job)=>
                 machine.installed_projects?.includes(job.project_id)&&
@@ -3211,7 +3323,7 @@ class ExperimentHub {
             }
             const claimable=job=>{
                 const r=job.resources;
-                return !job.lease_id&&r.ram_mb>=128&&(
+                return !beesWanJob(job)&&!job.lease_id&&r.ram_mb>=128&&(
                     r.gpu_count===0&&!(r.gpus||[]).length||
                     session.claim_exclusive_gpu&&(
                         r.gpu_count===1&&['exclusive','shared'].includes(r.gpu_mode)||
@@ -3254,14 +3366,14 @@ class ExperimentHub {
                 session.machine_ids.includes(j.assigned_machine_id)&&
                 !session.managed_job_ids.includes(j.id)&&!j.capacity_released_at&&
                 ['finished','stopped'].includes(j.status)&&j.lease_id);
-            session.waiting_reason=manualComplete
+            session.waiting_reason=wanWaitingReason||(manualComplete
                 ?'Completed jobs outside this automation session retain capacity until manually released.'
                 :overcommitted.size
                     ?'Outstanding claims exceed CPU/RAM capacity on '+[...overcommitted].join(', ')+
                         '; move idle claims or release verified capacity.'
                     :session.start_qualified_gpu||session.claim_exclusive_gpu
                         ?'Awaiting capacity, agent receipts or a platform-specific GPU authorization.'
-                        :'No eligible CPU-only transition; awaiting agent receipts or available capacity.';
+                        :'No eligible CPU-only transition; awaiting agent receipts or available capacity.');
             return this.automationStatus();
         }catch(error) {
             // An ambiguous state must never provoke repeated automatic
@@ -6814,6 +6926,18 @@ class ExperimentHub {
     // a single Hub transaction. ResourceBundle owns all starts/stops; workers
     // own only Unity simulation and inference, never PPO or checkpoints.
     queueBeesDistributedGroup(value) {
+        const next=copy(this.state);
+        const {bundleId,jobs,leases}=this.queueBeesDistributedGroupIn(next,value,this.snapshot());
+        this.commit(next);
+        return {
+            bundle_id:bundleId,
+            members:jobs.map(copy),
+            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
+            starts_authorized:0,
+            note:'All remote Bees actors and one authoritative PPO learner are now reserved. Use resource-bundle Start only after authenticated broker tunnels and lease receipts are ready.',
+        };
+    }
+    queueBeesDistributedGroupIn(next,value,snapshot) {
         if(!object(value)||value.confirm_queue!==true||
             Object.keys(value).some(key=>!['confirm_queue','learner','actors'].includes(key))||
             !object(value.learner)||
@@ -6832,7 +6956,6 @@ class ExperimentHub {
             new Set(value.actors.map(item=>item.machine_id)).size!==value.actors.length||
             value.actors.some(item=>item.machine_id===value.learner.machine_id))
             throw Error('Bees WAN group needs one native learner and 1–8 separately leased remote machines.');
-        const snapshot=this.snapshot();
         const machines=new Map(snapshot.machines.map(machine=>[machine.id,machine]));
         const owner=machines.get(value.learner.machine_id);
         const eligible=machine=>machine&&machine.status==='connected'&&
@@ -6859,7 +6982,7 @@ class ExperimentHub {
         if(existingWan)
             throw Error('A Bees WAN learner already holds or may still own the fixed broker port on '+
                 owner.id+' (job '+existingWan.id+'). Reconcile and release its capacity before reserving another WAN group.');
-        const configRow=this.state.configurations.find(item=>
+        const configRow=next.configurations.find(item=>
             item.id===value.learner.configuration_id);
         if(!configRow||configRow.project_id!=='bees_native'||
             (configRow.parameters?.wan_actors??0)!==value.actors.length)
@@ -6893,7 +7016,6 @@ class ExperimentHub {
                 throw Error('Bees WAN actor '+actor.machine_id+
                     ' does not approve the learner Unity, PPO runtime or private broker key.');
         }
-        const next=copy(this.state);
         const learner=this.queueIn(next,value.learner,undefined,false,true);
         if(learner.project_id!=='bees_native'||learner.status!=='waiting_adapter'||
             learner.frozen_parameters.wan_actors!==value.actors.length)
@@ -6941,14 +7063,7 @@ class ExperimentHub {
             job.resource_bundle={id:bundleId,index:index+1,size:jobs.length};
             job.release_on_terminal=true;
         }
-        this.commit(next);
-        return {
-            bundle_id:bundleId,
-            members:jobs.map(copy),
-            leases:leases.map(lease=>({...copy(lease),receipt_fresh:false})),
-            starts_authorized:0,
-            note:'All remote Bees actors and one authoritative PPO learner are now reserved. Use resource-bundle Start only after authenticated broker tunnels and lease receipts are ready.',
-        };
+        return {bundleId,jobs,leases};
     }
 
     // Atomically reserve fixed resources for independently executable jobs
@@ -7038,7 +7153,11 @@ class ExperimentHub {
     // Grant independent machine-local native Starts for a reserved bundle
     // in one registry commit. Each Start is independently OS-enforced by its
     // machine; this grants no simultaneous-run or data-plane guarantee.
-    authorizeResourceBundle(value) {
+    authorizeResourceBundle(value,origin='operator') {
+        if(this.softwareMaintenance)
+            throw Error('Software release maintenance is in progress; no new bundle Start is authorized.');
+        if(!['operator','automation'].includes(origin))
+            throw Error('Unknown bundle Start authorization source.');
         if(!object(value)||Object.keys(value).some(key=>![
             'bundle_id','expected_job_ids','confirm_start','release_on_terminal',
         ].includes(key))||
@@ -7047,6 +7166,13 @@ class ExperimentHub {
             throw Error('Select an exact bundle and its terminal-release policy.');
         const snapshot=this.snapshot();
         const members=exactResourceBundle(snapshot,value,'confirm_start');
+        if(origin==='automation'&&(!members.every(job=>
+            this.automationSessionCurrent(this.automation.session_id,job.assigned_machine_id)&&
+            (job.resources.gpu_count===0||this.automation.start_qualified_gpu))||
+            !(this.state.candidate_selections||[]).some(plan=>plan.status==='queued'&&
+                plan.reuse_wan_group===true&&plan.promoted_bundle_id===value.bundle_id&&
+                plan.promoted_job_id===members[0].id)))
+            throw Error('Current native automation does not authorize this Bees WAN winner bundle.');
         for(const job of members) {
             const readiness=nativeStartReadiness(snapshot,job);
             if(!readiness.eligible)
@@ -7068,6 +7194,8 @@ class ExperimentHub {
         for(const job of members) {
             const selected=next.jobs.find(item=>item.id===job.id);
             selected.status='start_requested';
+            if(origin==='automation')
+                selected.automation_start_session_id=this.automation.session_id;
             selected.dispatch_id=crypto.randomUUID();
             selected.start_requested_at=startedAt;
             selected.start_first_offered_at=null;
@@ -8089,15 +8217,28 @@ class ExperimentHub {
                 JSON.stringify(value.candidate_job_ids)||
              plan.configuration_id!==value.configuration_id||
              plan.expected_revision!==value.expected_revision||
+             Boolean(plan.reuse_wan_group)!==Boolean(value.reuse_wan_group)||
              JSON.stringify(plan.resources)!==JSON.stringify(value.resources)))
             throw Error('Candidate selection plan changed or was already fulfilled.');
         const parent=next.jobs.find(j=>j.id===decision.winner_job_id);
-        const job=this.queueIn(next,{
-            configuration_id:value.configuration_id,
-            expected_revision:value.expected_revision,
-            resources:value.resources,
-            continuation_of_job_id:parent.id,
-        });
+        let job,group=null;
+        if(parent.project_id==='bees_native'&&parent.frozen_parameters?.wan_actors>0) {
+            const snapshot=this.snapshot();
+            const layout=beesCandidateWanRequest(snapshot,parent,value);
+            if(!layout.released)
+                throw Error('Release all original Bees WAN actor capacity before promoting the winning learner.');
+            group=this.queueBeesDistributedGroupIn(next,layout.request,snapshot);
+            job=group.jobs[0];
+        }else {
+            if(value.reuse_wan_group===true)
+                throw Error('The winning candidate is not a distributed Bees WAN learner.');
+            job=this.queueIn(next,{
+                configuration_id:value.configuration_id,
+                expected_revision:value.expected_revision,
+                resources:value.resources,
+                continuation_of_job_id:parent.id,
+            });
+        }
         job.expected_parent_model_sha256=parent.checkpoint_model_sha256;
         job.candidate_selection={
             candidate_job_ids:value.candidate_job_ids.slice(),
@@ -8112,13 +8253,16 @@ class ExperimentHub {
             delete plan.error;
             plan.winner_job_id=parent.id;
             plan.promoted_job_id=job.id;
+            if(group)plan.promoted_bundle_id=group.bundleId;
             plan.resolved_at=job.candidate_selection.selected_at;
             plan.scores=decision.ranked.map(item=>({
                 job_id:item.job_id,score:item.score,
             }));
         }
         this.commit(next);
-        return {job:copy(job),selection:decision};
+        return {job:copy(job),selection:decision,
+            ...(group?{bundle_id:group.bundleId,members:group.jobs.map(copy),
+                leases:group.leases.map(lease=>({...copy(lease),receipt_fresh:false}))}:{})};
     }
     // A reusable winner selection is armed before experiments finish.
     // Its result and the selected continuation commit together, never
@@ -8166,10 +8310,18 @@ class ExperimentHub {
             (Object.hasOwn(selected.parameters,'import_checkpoint')||
                 Object.hasOwn(selected.parameters,'import_checkpoint_sha256')))
             throw Error('Candidate winner continuation needs a TinyBrains configuration without an external checkpoint import.');
+        const reuseWan=jobs[0].project_id==='bees_native'&&selected.parameters.wan_actors>0;
+        if(Boolean(value.reuse_wan_group)!==Boolean(reuseWan))
+            throw Error('Explicitly confirm reuse of the original WAN actor group for a distributed Bees continuation.');
         if(jobs[0].project_id==='bees_native') {
-            if(selected.parameters.wan_actors>0||jobs.some(j=>j.frozen_parameters?.wan_actors>0))
-                throw Error('WAN candidate ranking is supported, but continuation requires a separately reserved Bees actor group.');
-            for(const candidate of jobs)validateBeesContinuation(candidate,selected.parameters);
+            for(const candidate of jobs) {
+                validateBeesContinuation(candidate,selected.parameters);
+                if(reuseWan) {
+                    if(candidate.frozen_parameters.wan_actors!==selected.parameters.wan_actors)
+                        throw Error('Every WAN candidate must have the same actor count as the continuation configuration.');
+                    beesCandidateWanRequest(this.state,candidate,value);
+                }
+            }
         }else {
             const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
             if(!SHA256.test(String(selected.parameters?.[pin]||''))||
@@ -8194,7 +8346,8 @@ class ExperimentHub {
         const plan={id:crypto.randomUUID(),project_id:jobs[0].project_id,
             candidate_job_ids:ids.slice(),
             configuration_id:selected.id,expected_revision:selected.revision,
-            resources,status:'waiting',created_at:now()};
+            resources,status:'waiting',created_at:now(),
+            ...(reuseWan?{reuse_wan_group:true}:{})};
         plans.push(plan);
         next.candidate_selections=plans;
         this.commit(next);

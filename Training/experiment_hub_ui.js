@@ -2447,8 +2447,7 @@ document.addEventListener('DOMContentLoaded', () => {
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
             new Set(chosenIds).size!==chosenIds.length||!configs.length||
             !['courier','tinybrains','bees_native'].includes(project)||
-            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only||
-                project==='bees_native'&&jobs.find(j=>j.id===id)?.frozen_parameters?.wan_actors>0);
+            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only);
         const allPlans=(state.candidate_selections||[])
             .filter(p=>p.project_id===project);
         const plans=allPlans.slice(-5).reverse();
@@ -8128,6 +8127,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 expected_revision:configuration.revision,resources,
             };
             const jobs=candidateIds.map(id=>state.jobs.find(j=>j.id===id));
+            const wan=project==='bees_native'&&jobs.some(j=>j?.frozen_parameters?.wan_actors>0);
+            const wanNotice=wan
+                ?'\nThe winner retains its original learner host and actor machines, CPU/RAM/GPU budgets and environment counts. All previous actor capacity must be released. The new group is reserved atomically; native Starts still require qualified group authorization.'
+                :'';
+            if(wan)payload.reuse_wan_group=true;
             const complete=jobs.every(j=>j&&
                 ['finished','stopped'].includes(j.status)&&j.capacity_released_at);
             if(complete) {
@@ -8135,17 +8139,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const winner=decision.ranked[0];
                 if(!confirm('Queue the best independently evaluated '+project+
                     ' candidate?\n'+candidateRankingText(decision)+
-                    '\nThe next stage resumes only when the native model bytes still match the evaluated checkpoint.'))return;
+                    '\nThe next stage resumes only when the native model bytes still match the evaluated checkpoint.'+wanNotice))return;
                 const result=await action('hub/candidates/promote',{
                     ...payload,expected_winner_job_id:winner.job_id,
                     confirm_queue:true,
                 });
                 feedback('hub-compare-selection-message',
                     'Queued exact-model continuation '+result.job.id+
-                    ' from winning candidate '+winner.job_id+'.');
+                    ' from winning candidate '+winner.job_id+
+                    (result.bundle_id?' · reserved WAN bundle '+result.bundle_id:'')+'.');
             }else {
                 if(!confirm('Schedule '+candidateIds.length+' '+project+
-                    ' candidates for automatic best-model selection when all complete? The coordinator will require identical suites, verified final model bytes and released capacity; invalid results require review.'))return;
+                    ' candidates for automatic best-model selection when all complete? The coordinator will require identical suites, verified final model bytes and released capacity; invalid results require review.'+wanNotice))return;
                 const plan=await action('hub/candidates/schedule',{
                     ...payload,confirm_queue:true,
                 });
@@ -8178,13 +8183,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const winner=decision.ranked[0];
             if(!confirm('Resolve reviewed selection '+plan.id+' and queue the winning '+
                 plan.project_id+' checkpoint?\n'+candidateRankingText(decision)+
-                '\nThe original frozen next-stage configuration and resources will be used.'))return;
+                '\nThe original frozen next-stage configuration and resources will be used.'+
+                (plan.reuse_wan_group?' The winning original Bees WAN actor layout will be reserved again.':'')))return;
             const result=await action('hub/candidates/promote',{
                 selection_plan_id:plan.id,
                 candidate_job_ids:plan.candidate_job_ids,
                 configuration_id:plan.configuration_id,
                 expected_revision:plan.expected_revision,
                 resources:plan.resources,
+                ...(plan.reuse_wan_group?{reuse_wan_group:true}:{}),
                 expected_winner_job_id:winner.job_id,
                 confirm_review:true,confirm_queue:true,
             });
