@@ -280,7 +280,7 @@ def distribute(manifest: Path, inventory: Path, selected: set[str],
                                manifest.stat().st_size +
                                sum(script.stat().st_size for script in scripts)),
             "activate": activate,
-            "agent_restart_required": activate,
+            "agent_activation": "at-idle-boundary" if activate else "not-selected",
         })
     if not apply:
         return plan

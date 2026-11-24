@@ -4338,7 +4338,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     return {entry,machine};
             }else if(project==='bees_native') {
                 const entry=machine.design_catalog?.bees_native;
-                if(entry&&(!entry.activation_status||entry.activation_status==='active')&&
+                if(entry?.native_job_protocol===2&&(!entry.activation_status||entry.activation_status==='active')&&
                     (!parameters.worker_sha256||entry.worker_sha256===parameters.worker_sha256)&&
                     (!parameters.trainer_sha256||
                         entry.trainer_sha256===parameters.trainer_sha256)&&
@@ -7760,6 +7760,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 :m.native_preflight_reason||
                     capability?.reason||'No authenticated native capability report.';
             const unity=m.design_catalog?.bees_native||m.design_catalog?.bees_rollout;
+            if(m.design_catalog?.bees_native&&m.design_catalog.bees_native.native_job_protocol!==2) {
+                const warning=document.createElement('div');
+                warning.className='hub-secondary';
+                warning.textContent='Native runner outdated: rebuild and activate a current Unity release before queuing training.';
+                control.append(warning);
+            }
             if(unity?.activation_status) {
                 const status=document.createElement('div');
                 status.className='hub-secondary';

@@ -358,8 +358,10 @@ threshold for `bees_scripted_maps_v1` or `bees_scripted_coverage_v2`,
 but only when the saved Bees training configuration selects the matching
 `evaluation_profile`. The receipt reports exact final ONNX bytes and
 independent benchmark wins after the policy candidate is published.
-These are **final-only** thresholds, not checkpoint-cadence or early-stop
-evaluations; in-training monitoring is deliberately not advertised.
+The learner also supports checkpoint-cadence evaluation, optional baseline
+and final evaluations, independent evaluation seeds, success thresholds and
+regression-triggered stopping. The selected scripted profile must match the
+configured evaluation suite.
 To add Hub-reserved remote Unity actors, use the independently owned WAN
 group below.
 
@@ -426,8 +428,12 @@ use the enrolled Hub worker software's `Training/` directory and does not
 need a second Bees-Assets checkout; omit
 `EXPERIMENT_HUB_BEES_ASSETS_ROOT` in that case. A local Python 3.10
 installation with ML-Agents 1.1.0, PyTorch and TensorBoard is still required.
-Restart only **idle** agents after activation; active jobs continue
-using their original immutable player and learner.
+Updated Hub agents automatically load the selected release when the Hub has
+acknowledged the pending selection and outstanding Bees leases and local jobs
+have cleared. Active jobs retain their original immutable player and learner.
+The Machines tab reports the loaded build and activation state. Older frozen
+native runners cannot receive current job schemas: rebuild from the current
+source and activate that release before queuing new training.
 
 To transfer an exact build to enrolled SSH-accessible machines,
 create a private JSON inventory with explicit host identities. For example:
@@ -515,16 +521,16 @@ python3 -B Training/bees_hub_worker_install.py activate \
     --root /home/halifax/ai/bees-unity-workers --release "$release"
 ```
 
-Only then restart idle Hub agents. No build or deployment step interrupts
-existing training.
+Updated Hub agents adopt the selected build at the idle boundary described
+above; a manual restart is not required for subsequent release selections.
+No build or deployment step interrupts existing training.
 
 The distributor validates the selected inventory and local artifacts first,
 then copies and verifies an immutable installation on **every selected machine**
 before activating any selector. If an upload or installation fails, all
 existing active releases remain selected. Activation is atomic **per machine**,
 not across a network: if connectivity fails during the activation phase,
-rerun the same release to finish the remaining machines before restarting
-their Hub agents. Each machine verifies the platform-specific player ZIP,
+rerun the same release to finish selecting it on the remaining machines. Each machine verifies the platform-specific player ZIP,
 shared frozen Python runtime ZIP, manifest, and installation helpers; the exact
 trainer and actor sources no longer depend on the remote checkout's revision.
 It does not change passwords, install Unity/Python,

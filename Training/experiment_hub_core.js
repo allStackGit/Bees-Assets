@@ -41,6 +41,7 @@ function supportsJobRuntime(machine,job) {
             (!pinned?.activation_status||pinned.activation_status==='active'||
                 Boolean(job.lease_id))&&
             machine?.installed_projects?.includes('bees_native')&&
+            pinned?.native_job_protocol===2&&
             pinned?.worker_sha256===job.frozen_parameters?.worker_sha256&&
             pinned?.trainer_sha256===job.frozen_parameters?.trainer_sha256&&
             pinned?.runtime_version===job.frozen_parameters?.runtime_version&&

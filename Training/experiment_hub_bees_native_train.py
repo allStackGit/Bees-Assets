@@ -25,6 +25,7 @@ from tensorboard.backend.event_processing.event_file_loader import EventFileLoad
 from bees_unity_port_reservation import reserve_base_port
 from bees_unity_worker_runtime import StagedUnityPlayer, clone_or_copy
 
+HUB_NATIVE_JOB_PROTOCOL = 2
 MAX_EVENT_FILES = 64
 MAX_METRIC_BYTES = 32768
 MAX_EVENT_ROWS_PER_POLL = 4096
@@ -184,7 +185,7 @@ def inspect_job(filename: Path) -> dict:
         raise ValueError("Unknown Bees learner device.")
     if "game_identity_version" in job and job["game_identity_version"] != 2:
         raise ValueError("Unsupported Bees Unity content identity version.")
-    if (job["schema_version"] == 3 or job.get("game_identity_version") == 2
+    if (job["schema_version"] == 3 or job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL
         or "game_payload_sha256" in job):
         from bees_unity_worker_identity import unity_worker_tree_sha256
         if not isinstance(job.get("game_payload_sha256"), str) or (
@@ -755,7 +756,7 @@ def benchmark_recipe(root: Path, job: dict, case: tuple, index: int) -> Path:
 def benchmark_build_id(job: dict) -> str:
     # Older receipts used only the executable hash. New jobs identify the
     # complete, verified staged player, including Unity data and assemblies.
-    return (job["game_payload_sha256"] if job.get("game_identity_version") == 2
+    return (job["game_payload_sha256"] if job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL
             else job["game_sha256"])
 
 
@@ -774,7 +775,7 @@ def collect_benchmark(evaluation_root: Path, report_file: Path, job: dict,
     if(index is None or report.get("schema_version")!=1 or
        report.get("candidate_sha256")!=model_sha256 or
        report.get("environment_executable_sha256")!=job["game_sha256"] or
-       (job.get("game_identity_version") == 2 and
+       (job.get("game_identity_version") == HUB_NATIVE_JOB_PROTOCOL and
         report.get("build_id") != benchmark_build_id(job)) or
        report.get("opponent_path")!="scripted:"+opponent or
        report.get("evaluation_code_sha256")!=job["evaluator_core_sha256"] or

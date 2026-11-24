@@ -261,7 +261,11 @@ function validateCatalog(raw,installed=[],approved={}) {
         if(entry.wan_key_fingerprint!==undefined&&
             !/^[0-9a-f]{64}$/.test(entry.wan_key_fingerprint))
             throw Error('Bees WAN private key identity must be a pinned SHA-256 fingerprint.');
+        if(entry.native_job_protocol!==undefined&&
+            (!Number.isSafeInteger(entry.native_job_protocol)||entry.native_job_protocol<0))
+            throw Error('Invalid Bees native job protocol.');
         result.bees_native={...validateFields(entry),...unityActivation(entry),
+            native_job_protocol:entry.native_job_protocol??0,
             worker_sha256:entry.worker_sha256,
             trainer_sha256:entry.trainer_sha256,
             runtime_version:entry.runtime_version,

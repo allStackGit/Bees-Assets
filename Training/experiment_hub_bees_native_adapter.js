@@ -15,6 +15,7 @@ const {unityWorkerTreeSha256,pinnedWorkerRelease}=
 
 const UUID=/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 const SHA=/^[0-9a-f]{64}$/;
+const HUB_NATIVE_JOB_PROTOCOL=2;
 const PCI=/^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$/;
 const SAFE_PATH=/^[A-Za-z0-9_./:@=+\-, ]+$/;
 const FLAGS=/^--rl-[a-z0-9-]+(?:=[^\r\n\x00]{0,192})?$/i;
@@ -225,6 +226,10 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
     const trainer=trustedFile(pinned.trainer,'Frozen Bees trainer YAML');
     const training=trustedFile(pinned.training,'Frozen Bees ML-Agents learner');
     const runner=trustedFile(pinned.runner,'Frozen Bees native Hub runner');
+    // An installed player may still carry an earlier frozen runner. Keep its
+    // historical artifacts readable, but never dispatch a newer job schema to it.
+    const protocol=Number(/^HUB_NATIVE_JOB_PROTOCOL = (\d+)\r?$/m.exec(
+        fs.readFileSync(runner,'utf8'))?.[1]||0);
     const evaluator=trustedFile(pinned.evaluator,'Frozen Bees benchmark evaluator');
     const evaluatorCore=trustedFile(pinned.evaluatorCore,'Frozen Bees evaluation runtime');
     const opponentScript=trustedFile(pinned.opponentScript,'Frozen Bees scripted opponent library');
@@ -250,6 +255,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         runtime_version:pinned.runtimeVersion,
         trainer_sha256:fileHash(trainer),
         training_sha256:fileHash(training),
+        runner_sha256:fileHash(runner),
         evaluator_sha256:fileHash(evaluator),
         evaluator_core_sha256:fileHash(evaluatorCore),
         opponent_script_sha256:fileHash(opponentScript),
@@ -363,7 +369,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         checkpoint_stop_file(context) {
             return path.join(jobPath(artifacts,context),'stop.request');
         },
-        design_catalog:{bees_native:{version:1,
+        design_catalog:{bees_native:{version:1,native_job_protocol:protocol,
             worker_sha256:approved.worker_sha256,
             runtime_version:approved.runtime_version,
             trainer_sha256:approved.trainer_sha256,
@@ -572,12 +578,15 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
         },
         args(parameters,context) {
             jobPath(artifacts,context);
+            if(protocol!==HUB_NATIVE_JOB_PROTOCOL)
+                throw Error('The selected Unity release contains an obsolete native runner. Rebuild and activate a current worker release.');
             const frozen=normalize(parameters,context,approved);
             if(fileHash(worker)!==approved.worker_sha256||
                 fs.readFileSync(path.join(pinned.root,'bees-runtime-version.txt'),'utf8').trim()!==
                     approved.runtime_version||
                 fileHash(trainer)!==approved.trainer_sha256||
                 fileHash(training)!==approved.training_sha256||
+                fileHash(runner)!==approved.runner_sha256||
                 fileHash(evaluator)!==approved.evaluator_sha256||
                 fileHash(evaluatorCore)!==approved.evaluator_core_sha256||
                 fileHash(opponentScript)!==approved.opponent_script_sha256)
@@ -620,7 +629,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 expected_parent_checkpoint_sha256:parent.checkpoint_sha256,
                 game_binary:worker,game_sha256:approved.worker_sha256,
                 game_payload_sha256:approved.worker_payload_sha256,
-                game_identity_version:2,
+                game_identity_version:HUB_NATIVE_JOB_PROTOCOL,
                 runtime_version:approved.runtime_version,
                 training_script:training,training_sha256:approved.training_sha256,
                 trainer_source:trainer,trainer_sha256:approved.trainer_sha256,
