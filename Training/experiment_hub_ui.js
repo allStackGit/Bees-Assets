@@ -2441,12 +2441,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         $('hub-compare-selection-preview').disabled=!readyForRanking||
             new Set(chosenIds).size!==chosenIds.length||
-            !['courier','tinybrains'].includes(project);
+            !['courier','tinybrains','bees_native'].includes(project);
         $('hub-compare-selection-queue').textContent=readyForRanking
             ?'Queue best evaluated continuation':'Schedule candidate selection';
         $('hub-compare-selection-queue').disabled=chosenIds.length<2||
             new Set(chosenIds).size!==chosenIds.length||!configs.length||
-            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only);
+            !['courier','tinybrains','bees_native'].includes(project)||
+            chosenIds.some(id=>jobs.find(j=>j.id===id)?.evaluation_history_only||
+                project==='bees_native'&&jobs.find(j=>j.id===id)?.frozen_parameters?.wan_actors>0);
         const allPlans=(state.candidate_selections||[])
             .filter(p=>p.project_id===project);
         const plans=allPlans.slice(-5).reverse();
@@ -8109,8 +8111,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     $('hub-compare-selection-queue').addEventListener('click',async()=>{
         try {
-            if(!['courier','tinybrains'].includes(project))
-                throw Error('Model promotion needs the Courier or TinyBrains adapter.');
+            if(!['courier','tinybrains','bees_native'].includes(project))
+                throw Error('Model promotion needs a checkpoint-capable evaluated adapter.');
             const candidateIds=compareSlots.map(slot=>$('hub-compare-'+slot).value)
                 .filter(Boolean);
             if(candidateIds.length<2||new Set(candidateIds).size!==candidateIds.length)

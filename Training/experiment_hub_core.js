@@ -1037,8 +1037,41 @@ function candidateEvaluationPolicy(job) {
 // Only compare policies that have actually been evaluated and remain the
 // exact bytes used for native checkpoint continuation. Training charts and
 // a checkpoint-ready flag alone cannot select a winning model.
+function validateBeesContinuation(parent,frozen) {
+    if((parent.frozen_parameters?.wan_actors||0)>0||
+        (frozen.wan_actors||0)>0) {
+        if(!(parent.frozen_parameters?.wan_actors>0&&frozen.wan_actors>0)||
+            parent.frozen_parameters.worker_payload_sha256!==frozen.worker_payload_sha256||
+            parent.frozen_parameters.wan_release_sha256!==frozen.wan_release_sha256||
+            parent.frozen_parameters.wan_key_fingerprint!==frozen.wan_key_fingerprint)
+            throw Error('WAN checkpoint continuation must keep identical Unity content and broker key across the original lineage.');
+    }
+    for(const key of ['worker_sha256','trainer_sha256','runtime_version','seed']) {
+        if(parent.frozen_parameters?.[key]!==frozen[key])
+            throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
+    }
+    // An inherited optimizer can retain its previous effective
+    // learning-rate and momentum state. Do not advertise a new
+    // PPO configuration as an exact checkpoint continuation.
+    const previous=parent.frozen_parameters?.hyperparameters||{};
+    const current=frozen.hyperparameters||{};
+    const hyperKeys=new Set([...Object.keys(previous),...Object.keys(current)]);
+    if([...hyperKeys].some(key=>previous[key]!==current[key]))
+        throw Error('Bees checkpoint continuation must preserve PPO hyperparameters. Queue a new independent trial to change optimizer settings.');
+}
+function independentCandidateLineages(snapshot,jobs) {
+    const roots=jobs.map(job=>job.artifact_lineage_root_id||job.id);
+    if(new Set(roots).size===roots.length)return true;
+    const parentId=jobs[0].continuation_of_job_id;
+    const source=snapshot.jobs.find(job=>job.id===parentId);
+    return Boolean(parentId&&source&&source.status==='finished'&&
+        source.capacity_released_at&&source.checkpoint_ready_verified===true&&
+        SHA256.test(String(source.checkpoint_model_sha256||''))&&
+        jobs.every(job=>job.continuation_of_job_id===parentId&&
+            job.expected_parent_model_sha256===source.checkpoint_model_sha256));
+}
 function comparableCandidate(job) {
-    if(!job||!['courier','tinybrains'].includes(job.project_id)||
+    if(!job||!['courier','tinybrains','bees_native'].includes(job.project_id)||
         !['finished','stopped'].includes(job.status)||
         !checkpointContinuationComplete(job)||
         !independentSequenceComplete(job)||
@@ -7970,8 +8003,7 @@ class ExperimentHub {
             throw Error('Select 2–16 distinct candidate job IDs.');
         const jobs=ids.map(id=>this.state.jobs.find(job=>job.id===id));
         if(jobs.some(job=>!job))throw Error('Candidate job is missing.');
-        const roots=jobs.map(job=>job.artifact_lineage_root_id||job.id);
-        if(new Set(roots).size!==roots.length)
+        if(!independentCandidateLineages(this.state,jobs))
             throw Error('Compare independent checkpoint lineages, not repeated stages from one model.');
         const compared=jobs.map(job=>{
             const lease=this.state.reservations.find(l=>l.id===job.lease_id&&
@@ -8063,26 +8095,14 @@ class ExperimentHub {
             new Set(ids).size!==ids.length)
             throw Error('Select 2–16 distinct candidate jobs.');
         const jobs=ids.map(id=>this.state.jobs.find(j=>j.id===id));
-        if(jobs.some(j=>!j)||!['courier','tinybrains'].includes(jobs[0].project_id)||
+        if(jobs.some(j=>!j)||!['courier','tinybrains','bees_native'].includes(jobs[0].project_id)||
             jobs.some(j=>j.project_id!==jobs[0].project_id||
                 !activeEvaluation(j)||
                 !['waiting_adapter','waiting_predecessor','start_requested',
                     'launch_requested','running','stop_requested','finished','stopped'].includes(j.status)))
             throw Error('Candidate jobs must belong to one supported project and have independent evaluations.');
-        const roots=jobs.map(j=>j.artifact_lineage_root_id||j.id);
-        // A verified finished checkpoint may be forked into independent
-        // training jobs. Those siblings are valid candidate experiments
-        // even though their source artifact lineage root is shared.
-        const parentId=jobs[0].continuation_of_job_id;
-        const forkSource=this.state.jobs.find(j=>j.id===parentId);
-        const independentForks=Boolean(parentId&&forkSource&&
-            forkSource.status==='finished'&&forkSource.capacity_released_at&&
-            forkSource.checkpoint_ready_verified===true&&
-            SHA256.test(String(forkSource.checkpoint_model_sha256||''))&&
-            jobs.every(j=>j.continuation_of_job_id===parentId&&
-                j.expected_parent_model_sha256===forkSource.checkpoint_model_sha256));
         const policies=jobs.map(candidateEvaluationPolicy);
-        if((new Set(roots).size!==roots.length&&!independentForks)||
+        if(!independentCandidateLineages(this.state,jobs)||
             new Set(policies.map(item=>item.signature)).size!==1)
             throw Error('Candidate models need independent lineages or verified checkpoint forks, and matching frozen evaluation policies.');
         const suiteDigests=new Map();
@@ -8109,10 +8129,16 @@ class ExperimentHub {
             (Object.hasOwn(selected.parameters,'import_checkpoint')||
                 Object.hasOwn(selected.parameters,'import_checkpoint_sha256')))
             throw Error('Candidate winner continuation needs a TinyBrains configuration without an external checkpoint import.');
-        const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
-        if(!SHA256.test(String(selected.parameters?.[pin]||''))||
-            jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
-            throw Error('Every candidate must be compatible with the same approved continuation environment.');
+        if(jobs[0].project_id==='bees_native') {
+            if(selected.parameters.wan_actors>0||jobs.some(j=>j.frozen_parameters?.wan_actors>0))
+                throw Error('WAN candidate ranking is supported, but continuation requires a separately reserved Bees actor group.');
+            for(const candidate of jobs)validateBeesContinuation(candidate,selected.parameters);
+        }else {
+            const pin=jobs[0].project_id==='courier'?'config_sha256':'profile_sha256';
+            if(!SHA256.test(String(selected.parameters?.[pin]||''))||
+                jobs.some(j=>j.frozen_parameters?.[pin]!==selected.parameters[pin]))
+                throw Error('Every candidate must be compatible with the same approved continuation environment.');
+        }
         const resources=resourceRequest(value.resources);
         const next=copy(this.state),plans=next.candidate_selections||[];
         // The winner job retains its own decision and the contender jobs
@@ -8378,28 +8404,7 @@ class ExperimentHub {
                 throw Error('This predecessor already has an active or unresolved successor.');
         }
         if(parent) {
-            if(project.id==='bees_native') {
-                if((parent.frozen_parameters?.wan_actors||0)>0||
-                    (frozen.wan_actors||0)>0) {
-                    if(!(parent.frozen_parameters?.wan_actors>0&&frozen.wan_actors>0)||
-                        parent.frozen_parameters.worker_payload_sha256!==frozen.worker_payload_sha256||
-                        parent.frozen_parameters.wan_release_sha256!==frozen.wan_release_sha256||
-                        parent.frozen_parameters.wan_key_fingerprint!==frozen.wan_key_fingerprint)
-                        throw Error('WAN checkpoint continuation must keep identical Unity content and broker key across the original lineage.');
-                }
-                for(const key of ['worker_sha256','trainer_sha256','runtime_version','seed']) {
-                    if(parent.frozen_parameters?.[key]!==frozen[key])
-                        throw Error('Bees checkpoint continuation must preserve the approved Unity executable, learner runtime, trainer and seed: '+key);
-                }
-                // An inherited optimizer can retain its previous effective
-                // learning-rate and momentum state. Do not advertise a new
-                // PPO configuration as an exact checkpoint continuation.
-                const previous=parent.frozen_parameters?.hyperparameters||{};
-                const current=frozen.hyperparameters||{};
-                const hyperKeys=new Set([...Object.keys(previous),...Object.keys(current)]);
-                if([...hyperKeys].some(key=>previous[key]!==current[key]))
-                    throw Error('Bees checkpoint continuation must preserve PPO hyperparameters. Queue a new independent trial to change optimizer settings.');
-            }
+            if(project.id==='bees_native')validateBeesContinuation(parent,frozen);
             if(project.id==='courier'&&(
                 (parent.frozen_parameters?.shared_policy===true)!==(frozen.shared_policy===true)||
                 frozen.shared_policy===true&&parent.frozen_parameters?.seed!==frozen.seed))
