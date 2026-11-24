@@ -764,7 +764,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                 try {
                     if(fs.realpathSync(candidateDir)!==candidateDir||
                         fs.realpathSync(candidateManifest)!==candidateManifest||
-                        fs.statSync(candidateManifest).size>8192)
+                        fs.statSync(candidateManifest).size>32768)
                         throw Error('Native Bees policy candidate is redirected or oversized.');
                     const published=JSON.parse(fs.readFileSync(candidateManifest,'utf8'));
                     const receipt=checkpoint(context);
@@ -777,7 +777,7 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                     if(original.job_id!==context.job_id||
                         (original.lineage_root_id||original.job_id)!==context.artifact_lineage_root_id)
                         throw Error('Bees candidate job identity changed.');
-                    if(published.schema_version!==1||
+                    if(![1,2].includes(published.schema_version)||
                         published.kind!=='bees-unity-onnx-candidate'||
                         published.deployment_status!=='not-promoted'||
                         published.job_id!==context.job_id||
@@ -798,6 +798,17 @@ function createBeesNativeAdapter({projectRoot,pythonPath,workerExecutable,artifa
                         fs.statSync(model).size!==published.model_size_bytes||
                         fileHash(model)!==published.model_sha256)
                         throw Error('Native Bees exported policy model changed after publication.');
+                    if(published.schema_version===2) {
+                        const effective=path.join(candidateDir,'trainer.yaml');
+                        if(published.training_step!==receipt.steps_completed||
+                            published.training_config_file!=='trainer.yaml'||
+                            !SHA.test(String(published.training_config_sha256||''))||
+                            fs.realpathSync(effective)!==effective||
+                            !fs.statSync(effective).isFile()||fs.statSync(effective).size>1048576||
+                            fileHash(effective)!==published.training_config_sha256||
+                            fileHash(path.join(root,'trainer.yaml'))!==published.training_config_sha256)
+                            throw Error('Native Bees candidate effective trainer or training step changed.');
+                    }
                     const evidence=published.evaluation;
                     if(evidence!==null) {
                         const summary=path.join(candidateDir,'evaluation-summary.json');

@@ -763,8 +763,20 @@ def publish_policy_candidate(root: Path, job: dict) -> Path:
                 os.fsync(writer.fileno())
             if sha256_file(candidate_evaluation) != evaluation["sha256"]:
                 raise ValueError("Bees candidate evaluation changed while exporting.")
+        from bees_native_policy_candidate import policy_contract
+        compatibility, signature = policy_contract(json.loads(
+            Path(job["trainer_source"]).with_name("continual_learning_config.json")
+            .read_text(encoding="utf-8")))
+        effective_trainer = temporary / "trainer.yaml"
+        shutil.copyfile(root / "trainer.yaml", effective_trainer)
+        os.chmod(effective_trainer, 0o600)
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
+            "training_step": receipt["steps_completed"],
+            "policy_compatibility": compatibility,
+            "policy_signature": signature,
+            "training_config_file": "trainer.yaml",
+            "training_config_sha256": sha256_file(effective_trainer),
             "kind": "bees-unity-onnx-candidate",
             "deployment_status": "not-promoted",
             "job_id": job["job_id"],

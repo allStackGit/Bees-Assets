@@ -645,6 +645,7 @@ class ContinualLearningStore:
         source_checkpoint: Optional[str] = None,
         status: str = "candidate",
         metadata: Optional[Mapping[str, Any]] = None,
+        expected_artifact_sha256: Optional[str] = None,
     ) -> Dict[str, Any]:
         self._require_initialized()
         source = Path(artifact).expanduser().resolve()
@@ -664,6 +665,8 @@ class ContinualLearningStore:
             raise PromotionError("Register models as candidate/training; use promote() to make a champion.")
 
         artifact_hash = sha256_file(source)
+        if expected_artifact_sha256 is not None and artifact_hash != expected_artifact_sha256:
+            raise ValidationError("Selected model bytes differ from the operator-pinned SHA-256.")
         model_id = f"bees-rl-v{self.compatibility.policy_abi_version}-{artifact_hash[:24]}"
         cfg_hash = config_hash(training_config_path)
         created_at = utc_now()
